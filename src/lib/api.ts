@@ -71,9 +71,13 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 // No Content-Type header here — the browser sets the multipart boundary
 // itself when the body is a FormData instance.
-async function requestForm<T>(path: string, formData: FormData): Promise<T> {
+async function requestForm<T>(
+  path: string,
+  formData: FormData,
+  method: "POST" | "PUT" = "POST",
+): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
-    method: "POST",
+    method,
     credentials: "include",
     body: formData,
   });
@@ -305,6 +309,9 @@ export const api = {
   },
   async adminCreateExamplePost(formData: FormData): Promise<ExamplePost> {
     return requestForm("/admin/example-posts", formData);
+  },
+  async adminUpdateExamplePost(id: number, formData: FormData): Promise<ExamplePost> {
+    return requestForm(`/admin/example-posts/${id}`, formData, "PUT");
   },
   async adminDeleteExamplePost(id: number): Promise<void> {
     await request(`/admin/example-posts/${id}`, { method: "DELETE" });

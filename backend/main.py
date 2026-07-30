@@ -35,6 +35,7 @@ from db import (
     get_admin_stats,
     get_all_events,
     get_brand_dna,
+    get_example_post,
     get_monthly_openai_spend,
     get_user_by_email,
     get_user_by_id,
@@ -58,6 +59,7 @@ from db import (
     touch_last_login,
     update_business_category,
     update_event,
+    update_example_post,
     update_hide_global_events,
     update_prompt_template,
     upsert_brand_dna,
@@ -922,6 +924,30 @@ def admin_create_example_post(
     admin = require_admin(request)
     image_url = upload_example_image(image, admin["id"])
     row = create_example_post(None, business_category, platform, caption, image_url, admin["id"])
+    return example_post_to_dict(row)
+
+
+@app.put("/admin/example-posts/{post_id}")
+def admin_update_example_post(
+    post_id: int,
+    request: Request,
+    business_category: str = Form(...),
+    platform: str = Form(...),
+    caption: str = Form(...),
+    image: UploadFile | None = File(None),
+):
+    admin = require_admin(request)
+    existing = get_example_post(post_id)
+    if existing is None or existing["user_id"] is not None:
+        raise HTTPException(status_code=404, detail="Example post not found")
+    image_url = (
+        upload_example_image(image, admin["id"])
+        if image is not None and image.filename
+        else existing["image_url"]
+    )
+    row = update_example_post(post_id, business_category, platform, caption, image_url)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Example post not found")
     return example_post_to_dict(row)
 
 
