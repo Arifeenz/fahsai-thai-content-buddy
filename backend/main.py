@@ -88,7 +88,11 @@ if RESEND_API_KEY:
 
 SENTRY_DSN = os.environ.get("SENTRY_DSN")
 if SENTRY_DSN:
-    sentry_sdk.init(dsn=SENTRY_DSN, traces_sample_rate=0)
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        traces_sample_rate=0,
+        environment="production" if FRONTEND_ORIGIN.startswith("https://") else "development",
+    )
 
 SESSION_COOKIE = "fahsai_session"
 SESSION_TTL = timedelta(days=7)
