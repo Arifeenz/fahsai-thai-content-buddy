@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+google-auth
+pyjwt
+python-dotenv
+openai
+bcrypt
+slowapi
+resend
+psycopg[binary]

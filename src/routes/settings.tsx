@@ -1,6 +1,9 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { AppShell, PageHeader } from "@/components/app-shell";
-import { LogOut, User, Bell, Globe } from "lucide-react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
+import { AppShell, PageHeader, useCurrentUser } from "@/components/app-shell";
+import { useRequireAuth } from "@/lib/auth-guard";
+import { api, businessCategoryLabel, type BusinessCategory } from "@/lib/api";
+import { LogOut, User, Bell, Globe, Store } from "lucide-react";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -30,16 +33,77 @@ function Row({ icon: Icon, title, desc, children }: any) {
 }
 
 function SettingsPage() {
+  const { ready } = useRequireAuth();
+  const user = useCurrentUser();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  async function logout() {
+    await api.logout();
+    navigate({ to: "/" });
+  }
+
+  async function changeBusinessCategory(value: BusinessCategory) {
+    await api.updateMe(value);
+    queryClient.invalidateQueries({ queryKey: ["me"] });
+  }
+
+  const profileDesc = user
+    ? `${user.name} • ${user.email}${
+        user.last_login_at
+          ? ` • เข้าสู่ระบบล่าสุด ${new Date(user.last_login_at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" })}`
+          : ""
+      }`
+    : "ยังไม่ได้เข้าสู่ระบบ";
+
+  if (!ready) {
+    return (
+      <AppShell>
+        <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">
+          กำลังโหลด...
+        </div>
+      </AppShell>
+    );
+  }
+
   return (
     <AppShell>
       <div className="p-6 md:p-8">
         <PageHeader title="ตั้งค่า" subtitle="ปรับแต่งบัญชีของคุณ" />
         <div className="grid gap-3 max-w-2xl">
-          <Row icon={User} title="โปรไฟล์" desc="คุณฟ้าใส • FAHSAI Coffee — ยะลา">
-            <button className="rounded-full border border-border px-4 py-1.5 text-sm hover:bg-white/5">แก้ไข</button>
+          <Row icon={User} title="โปรไฟล์" desc={profileDesc}>
+            <span className="rounded-full border border-border px-4 py-1.5 text-xs text-muted-foreground">
+              ซิงค์จาก Google
+            </span>
           </Row>
+          {user?.role !== "admin" && (
+            <Row
+              icon={Store}
+              title="ประเภทธุรกิจ"
+              desc="ใช้เลือก prompt ที่เหมาะกับร้านคุณตอนสร้างคอนเทนต์"
+            >
+              <select
+                value={user?.business_category ?? ""}
+                onChange={(e) => changeBusinessCategory(e.target.value as BusinessCategory)}
+                className="rounded-full border border-border bg-input px-3 py-1.5 text-sm"
+              >
+                <option value="" disabled>
+                  เลือกประเภท
+                </option>
+                {Object.entries(businessCategoryLabel).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </Row>
+          )}
           <Row icon={Bell} title="การแจ้งเตือน" desc="รับข่าวสาร โปรโมชั่น และเคล็ดลับจาก FAHSAI">
-            <input type="checkbox" defaultChecked className="h-5 w-5 accent-[oklch(0.82_0.13_85)]" />
+            <input
+              type="checkbox"
+              defaultChecked
+              className="h-5 w-5 accent-[oklch(0.82_0.13_85)]"
+            />
           </Row>
           <Row icon={Globe} title="ภาษา" desc="ภาษาไทย (Thai)">
             <select className="rounded-full border border-border bg-input px-3 py-1.5 text-sm">
@@ -47,7 +111,10 @@ function SettingsPage() {
               <option>English</option>
             </select>
           </Row>
-          <Link to="/" className="glass-card mt-2 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-4 rounded-2xl p-5 text-destructive hover:bg-white/5">
+          <button
+            onClick={logout}
+            className="glass-card mt-2 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-4 rounded-2xl p-5 text-left text-destructive hover:bg-white/5"
+          >
             <div className="grid h-10 w-10 place-items-center rounded-lg bg-destructive/15">
               <LogOut className="h-5 w-5" />
             </div>
@@ -55,7 +122,7 @@ function SettingsPage() {
               <div className="font-bold">ออกจากระบบ</div>
               <div className="text-sm text-muted-foreground">กลับไปหน้าเข้าสู่ระบบ</div>
             </div>
-          </Link>
+          </button>
         </div>
       </div>
     </AppShell>

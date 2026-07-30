@@ -1,11 +1,9 @@
-// Mock API layer for FAHSAI. All backend calls flow through here so they can
-// later be swapped for a real FastAPI backend (POST /businesses/{id}/generate
-// with JWT etc).
-
 export type Platform = "facebook" | "line" | "instagram";
 export type Tone = "friendly" | "professional" | "playful" | "promo";
 export type ContentStatus = "draft" | "approved" | "posted";
 export type DnaDocType = "history" | "menu" | "usp" | "tone";
+export type Role = "admin" | "user";
+export type BusinessCategory = "food_beverage" | "online_shop";
 
 export interface GenerateInput {
   businessId: string;
@@ -20,87 +18,231 @@ export interface ContentItem {
   status: ContentStatus;
   createdAt: string;
 }
+export interface AdminContentItem extends ContentItem {
+  owner_name: string;
+  owner_email: string;
+}
 export interface DnaDocument {
   doc_type: DnaDocType;
   content: string;
 }
+export interface AuthUser {
+  name: string;
+  email: string;
+  picture?: string;
+  role: Role;
+  business_category?: BusinessCategory;
+  last_login_at?: string;
+  hide_global_events: boolean;
+  email_verified: boolean;
+}
+export interface AdminUser {
+  id: number;
+  name: string;
+  email: string;
+  role: Role;
+  business_category?: BusinessCategory;
+  created_at: string;
+  last_login_at?: string;
+}
+export interface PromptTemplate {
+  id: number;
+  business_category?: BusinessCategory;
+  platform: Platform;
+  tone?: Tone;
+  template_text: string;
+  updated_at: string;
+}
 
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
-const sampleCaptions: Record<Platform, string[]> = {
-  facebook: [
-    "☕ ตื่นเช้ามาที่ยะลาวันนี้ กลิ่นกาแฟหอมกรุ่นรอคุณอยู่นะคะ ✨\nร้านเราคั่วเมล็ดใหม่ทุกวัน หวานนิดขมกำลังดี ดื่มแล้วสดชื่นทั้งวัน 🌤️\nแวะมาทักทายกันได้เลยค่ะ เปิดตั้งแต่ 7 โมงเช้า ถึง 5 โมงเย็น\n#กาแฟยะลา #ร้านกาแฟใต้ #FAHSAI",
-    "พิเศษวันนี้! ☀️ เมนูกาแฟส้มสูตรฟ้าใส หวานเปรี้ยวลงตัว เย็นชื่นใจ\nสั่ง 2 แก้วลด 20 บาท เฉพาะช่วงบ่ายเท่านั้นนะคะ\nแวะมาลองกันได้ที่ร้านค่ะ 💛",
-  ],
-  line: [
-    "สวัสดีค่ะลูกค้าคนเก่ง 💛\nวันนี้ร้านเรามีเมนูใหม่ 'ลาเต้มะพร้าวยะลา' หวานมันกลมกล่อม สั่งผ่าน LINE รับส่วนลด 10% เลยค่ะ\nพิมพ์ 'สั่ง' เพื่อสั่งเลยนะคะ ☕✨",
-  ],
-  instagram: [
-    "sun-kissed mornings in Yala ☀️☕\nลาเต้แก้วโปรดของคุณ พร้อมเสิร์ฟที่ FAHSAI Coffee\nเปิดทุกวัน 7:00–17:00\n·\n·\n#yalacoffee #southernthailand #specialtycoffee #ฟ้าใส",
-  ],
-};
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.detail ?? `Request to ${path} failed`);
+  }
+  return res.json();
+}
 
-let mockLibrary: ContentItem[] = [
-  { id: "c1", platform: "facebook", preview: "โปรโมชั่นสงกรานต์ ลด 20% เฉพาะช่วงบ่าย ☀️", status: "posted", createdAt: "2026-07-20" },
-  { id: "c2", platform: "line",     preview: "เมนูใหม่ ลาเต้มะพร้าวยะลา หวานมันกลมกล่อม",   status: "approved", createdAt: "2026-07-22" },
-  { id: "c3", platform: "instagram",preview: "sun-kissed mornings in Yala ☕",              status: "draft",    createdAt: "2026-07-25" },
-  { id: "c4", platform: "facebook", preview: "ชวนแม่ๆ มาจิบกาแฟฟรี วันแม่ปีนี้ 💐",         status: "draft",    createdAt: "2026-07-27" },
-];
-
-let mockDna: Record<DnaDocType, string> = {
-  history: "ร้าน FAHSAI Coffee เปิดที่ยะลาปี 2565 เริ่มจากคั่วเมล็ดในบ้านเล็กๆ ก่อนขยายเป็นคาเฟ่ริมถนนสิโรรส",
-  menu: "กาแฟดริป ลาเต้ อเมริกาโน่ กาแฟส้ม เค้กมะพร้าว ชาชักใต้",
-  usp: "เมล็ดคั่วสดใหม่ทุกวัน บรรยากาศอบอุ่นแบบชายแดนใต้ พนักงานพูดสามภาษา ไทย มลายู อังกฤษ",
-  tone: "อบอุ่น เป็นกันเอง ใช้คำว่า 'ค่ะ/ครับ' พูดเหมือนเพื่อนบ้านทักทาย ไม่เป็นทางการ",
-};
+export interface UpcomingEvent {
+  name: string;
+  days_until: number;
+  suggestion_text: string;
+}
+export interface EventItem {
+  id: number;
+  name: string;
+  month: number;
+  day: number;
+  suggestion_text: string;
+  is_personal: boolean;
+  days_until: number;
+}
+export interface SecurityEvent {
+  id: number;
+  event_type: string;
+  identifier: string;
+  endpoint: string;
+  user_name: string | null;
+  user_email: string | null;
+  created_at: string;
+}
 
 export const api = {
-  async login(_email: string, _password: string) {
-    await wait(600);
-    return { token: "mock-jwt", user: { name: "คุณฟ้าใส", shop: "FAHSAI Coffee — ยะลา" } };
+  async login(email: string, password: string): Promise<{ user: AuthUser }> {
+    return request("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
   },
-  async loginWithGoogle() {
-    await wait(600);
-    return { token: "mock-jwt", user: { name: "คุณฟ้าใส", shop: "FAHSAI Coffee — ยะลา" } };
+  async signup(name: string, email: string, password: string): Promise<{ user: AuthUser }> {
+    return request("/auth/signup", {
+      method: "POST",
+      body: JSON.stringify({ name, email, password }),
+    });
+  },
+  // Real Google login: credential is the ID token from Google Identity Services,
+  // verified server-side in the FastAPI backend (backend/main.py).
+  async loginWithGoogle(credential: string): Promise<{ user: AuthUser }> {
+    return request("/auth/google", { method: "POST", body: JSON.stringify({ credential }) });
+  },
+  async getMe(): Promise<{ user: AuthUser }> {
+    return request("/auth/me");
+  },
+  async updateMe(business_category: BusinessCategory): Promise<{ user: AuthUser }> {
+    return request("/me", { method: "PATCH", body: JSON.stringify({ business_category }) });
+  },
+  async setHideGlobalEvents(hide_global_events: boolean): Promise<{ user: AuthUser }> {
+    return request("/me/calendar-preference", {
+      method: "PATCH",
+      body: JSON.stringify({ hide_global_events }),
+    });
+  },
+  async logout() {
+    await request("/auth/logout", { method: "POST" });
+  },
+  async verifyEmail(token: string): Promise<void> {
+    await request("/auth/verify-email", { method: "POST", body: JSON.stringify({ token }) });
+  },
+  async resendVerification(): Promise<void> {
+    await request("/auth/resend-verification", { method: "POST" });
+  },
+  async forgotPassword(email: string): Promise<void> {
+    await request("/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) });
+  },
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    await request("/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, new_password: newPassword }),
+    });
   },
 
   async getDna(): Promise<Record<DnaDocType, string>> {
-    await wait(300); return { ...mockDna };
+    return request("/brand-dna");
   },
-  async saveDna(docs: Record<DnaDocType, string>) {
-    await wait(600); mockDna = { ...docs }; return { ok: true };
+  async saveDna(docs: Record<DnaDocType, string>): Promise<Record<DnaDocType, string>> {
+    return request("/brand-dna", { method: "PUT", body: JSON.stringify(docs) });
   },
 
-  // POST /businesses/{id}/generate
   async generate(input: GenerateInput): Promise<{ caption: string }> {
-    await wait(2000);
-    const pool = sampleCaptions[input.platform];
-    const caption = pool[Math.floor(Math.random() * pool.length)];
-    return { caption };
+    return request("/generate", {
+      method: "POST",
+      body: JSON.stringify({ prompt: input.prompt, platform: input.platform, tone: input.tone }),
+    });
   },
 
   async listContent(): Promise<ContentItem[]> {
-    await wait(300); return [...mockLibrary].reverse();
+    const { items } = await request<{ items: ContentItem[] }>("/content");
+    return items;
   },
   async saveContent(item: Omit<ContentItem, "id" | "createdAt">): Promise<ContentItem> {
-    await wait(400);
-    const created: ContentItem = {
-      ...item,
-      id: `c${Date.now()}`,
-      createdAt: new Date().toISOString().slice(0, 10),
-    };
-    mockLibrary.push(created);
-    return created;
+    return request("/content", { method: "POST", body: JSON.stringify(item) });
   },
 
   async stats() {
-    await wait(200);
-    return {
-      newPosts: 12,
-      approved: 34,
-      posted: 21,
-      successRate: 98.5,
-    };
+    return request<{
+      newPosts: number;
+      approved: number;
+      posted: number;
+      successRate: number;
+      pendingReview: number;
+      daysSinceLastPost: number | null;
+    }>("/stats");
+  },
+  async getUpcomingEvent(): Promise<UpcomingEvent | null> {
+    const { event } = await request<{ event: UpcomingEvent | null }>("/events/upcoming");
+    return event;
+  },
+  async listEvents(): Promise<EventItem[]> {
+    const { events } = await request<{ events: EventItem[] }>("/events");
+    return events;
+  },
+  async createEvent(data: { name: string; month: number; day: number }): Promise<EventItem> {
+    return request("/events", { method: "POST", body: JSON.stringify(data) });
+  },
+  async deleteEvent(id: number): Promise<void> {
+    await request(`/events/${id}`, { method: "DELETE" });
+  },
+
+  async adminGetStats(): Promise<{
+    total_users: number;
+    total_content: number;
+    new_users_week: number;
+    new_content_week: number;
+    security_events_week: number;
+  }> {
+    return request("/admin/stats");
+  },
+  async adminListSecurityEvents(): Promise<SecurityEvent[]> {
+    const { events } = await request<{ events: SecurityEvent[] }>("/admin/security-events");
+    return events;
+  },
+  async adminListUsers(): Promise<AdminUser[]> {
+    const { users } = await request<{ users: AdminUser[] }>("/admin/users");
+    return users;
+  },
+  async adminListContent(): Promise<AdminContentItem[]> {
+    const { items } = await request<{ items: AdminContentItem[] }>("/admin/content");
+    return items;
+  },
+  async adminListPromptTemplates(): Promise<PromptTemplate[]> {
+    const { templates } = await request<{ templates: PromptTemplate[] }>("/admin/prompt-templates");
+    return templates;
+  },
+  async adminCreatePromptTemplate(
+    data: Omit<PromptTemplate, "id" | "updated_at">,
+  ): Promise<PromptTemplate> {
+    return request("/admin/prompt-templates", { method: "POST", body: JSON.stringify(data) });
+  },
+  async adminUpdatePromptTemplate(
+    id: number,
+    data: Omit<PromptTemplate, "id" | "updated_at">,
+  ): Promise<PromptTemplate> {
+    return request(`/admin/prompt-templates/${id}`, { method: "PUT", body: JSON.stringify(data) });
+  },
+  async adminDeletePromptTemplate(id: number): Promise<void> {
+    await request(`/admin/prompt-templates/${id}`, { method: "DELETE" });
+  },
+
+  async adminListEvents(): Promise<EventItem[]> {
+    const { events } = await request<{ events: EventItem[] }>("/admin/events");
+    return events;
+  },
+  async adminCreateEvent(
+    data: Omit<EventItem, "id" | "is_personal" | "days_until">,
+  ): Promise<EventItem> {
+    return request("/admin/events", { method: "POST", body: JSON.stringify(data) });
+  },
+  async adminUpdateEvent(
+    id: number,
+    data: Omit<EventItem, "id" | "is_personal" | "days_until">,
+  ): Promise<EventItem> {
+    return request(`/admin/events/${id}`, { method: "PUT", body: JSON.stringify(data) });
+  },
+  async adminDeleteEvent(id: number): Promise<void> {
+    await request(`/admin/events/${id}`, { method: "DELETE" });
   },
 };
 
@@ -114,4 +256,9 @@ export const statusLabel: Record<ContentStatus, string> = {
   draft: "ร่าง",
   approved: "อนุมัติแล้ว",
   posted: "โพสต์แล้ว",
+};
+
+export const businessCategoryLabel: Record<BusinessCategory, string> = {
+  food_beverage: "ร้านอาหาร/เครื่องดื่ม",
+  online_shop: "ขายของออนไลน์",
 };

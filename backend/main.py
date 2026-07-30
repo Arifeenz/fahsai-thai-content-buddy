@@ -1,0 +1,772 @@
+import os
+import random
+import secrets
+import sys
+from datetime import date, datetime, timedelta, timezone
+
+import bcrypt
+import jwt
+import resend
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token
+from openai import OpenAI
+from pydantic import BaseModel
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+
+from db import (
+    create_content_item,
+    create_email_user,
+    create_event,
+    create_prompt_template,
+    delete_event,
+    delete_prompt_template,
+    get_admin_stats,
+    get_all_events,
+    get_brand_dna,
+    get_user_by_email,
+    get_user_by_id,
+    get_user_by_reset_token,
+    init_db,
+    list_all_content,
+    list_all_users,
+    list_content_for_user,
+    list_events_for_user,
+    list_prompt_templates,
+    list_security_events,
+    log_security_event,
+    reset_password as db_reset_password,
+    set_reset_token,
+    set_verification_token,
+    touch_last_login,
+    update_business_category,
+    update_event,
+    update_hide_global_events,
+    update_prompt_template,
+    upsert_brand_dna,
+    upsert_google_user,
+    verify_email_by_token,
+)
+
+load_dotenv()
+
+# Windows terminals default to cp1252, which can't print the Thai text in
+# the mock email fallback below — force UTF-8 so console logging never crashes.
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
+GOOGLE_CLIENT_ID = os.environ["GOOGLE_CLIENT_ID"]
+JWT_SECRET = os.environ["JWT_SECRET"]
+FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "http://localhost:3000")
+ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()}
+
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+# If unset, /generate falls back to randomly picking an admin-authored template
+# instead of calling the OpenAI API — lets the app run before a key is configured.
+openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
+RESEND_FROM_EMAIL = os.environ.get("RESEND_FROM_EMAIL", "onboarding@resend.dev")
+if RESEND_API_KEY:
+    resend.api_key = RESEND_API_KEY
+
+SESSION_COOKIE = "fahsai_session"
+SESSION_TTL = timedelta(days=7)
+VERIFICATION_TOKEN_TTL = timedelta(hours=24)
+RESET_TOKEN_TTL = timedelta(hours=1)
+
+
+def send_email(to: str, subject: str, html: str) -> None:
+    # No Resend key configured yet — print the link so the feature is
+    # testable immediately, same fallback pattern as OPENAI_API_KEY above.
+    if not RESEND_API_KEY:
+        print(f"[email:mock] to={to} subject={subject}\n{html}")
+        return
+    try:
+        resend.Emails.send(
+            {"from": RESEND_FROM_EMAIL, "to": [to], "subject": subject, "html": html}
+        )
+    except Exception as exc:
+        # Verification/reset email is a soft gate, not a hard requirement —
+        # a delivery failure (e.g. Resend's sandbox domain only allows
+        # sending to the account owner until a real domain is verified)
+        # must never break signup/login. Fall back to the console link.
+        print(f"[email:failed] to={to} subject={subject} error={exc}\n{html}")
+
+
+def send_verification_email(user_id: int, email: str) -> None:
+    token = secrets.token_urlsafe(32)
+    expires_at = (datetime.now(timezone.utc) + VERIFICATION_TOKEN_TTL).strftime("%Y-%m-%d %H:%M:%S")
+    set_verification_token(user_id, token, expires_at)
+    link = f"{FRONTEND_ORIGIN}/verify-email?token={token}"
+    send_email(
+        email,
+        "ยืนยันอีเมลของคุณ — FAHSAI",
+        f'<p>กดลิงก์นี้เพื่อยืนยันอีเมลของคุณ (หมดอายุใน 24 ชั่วโมง):</p><p><a href="{link}">{link}</a></p>',
+    )
+
+
+def rate_limit_key(request: Request) -> str:
+    # Keys by logged-in user when possible (e.g. /generate, which has a real
+    # cost per call), falling back to IP for endpoints with no session yet
+    # (login/signup, where brute-force/spam protection is the concern).
+    token = request.cookies.get(SESSION_COOKIE)
+    if token:
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+            return f"user:{payload['sub']}"
+        except jwt.PyJWTError:
+            pass
+    return f"ip:{get_remote_address(request)}"
+
+
+limiter = Limiter(key_func=rate_limit_key)
+
+app = FastAPI()
+app.state.limiter = limiter
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[FRONTEND_ORIGIN],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    log_security_event("rate_limit_exceeded", rate_limit_key(request), request.url.path)
+    return JSONResponse(
+        status_code=429, content={"detail": "ทำรายการถี่เกินไป กรุณาลองใหม่ภายหลังนะคะ"}
+    )
+
+
+@app.on_event("startup")
+def on_startup() -> None:
+    init_db()
+
+
+class GoogleLoginRequest(BaseModel):
+    credential: str
+
+
+class SignupRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class VerifyEmailRequest(BaseModel):
+    token: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+
+class UpdateMeRequest(BaseModel):
+    business_category: str
+
+
+class CalendarPreferenceWrite(BaseModel):
+    hide_global_events: bool
+
+
+class GenerateRequest(BaseModel):
+    prompt: str
+    platform: str
+    tone: str | None = None
+
+
+class ContentItemCreate(BaseModel):
+    platform: str
+    preview: str
+    status: str
+
+
+class PromptTemplateWrite(BaseModel):
+    business_category: str | None = None
+    platform: str
+    tone: str | None = None
+    template_text: str
+
+
+class BrandDnaWrite(BaseModel):
+    history: str = ""
+    menu: str = ""
+    usp: str = ""
+    tone: str = ""
+
+
+class EventCreate(BaseModel):
+    name: str
+    month: int
+    day: int
+
+
+class EventWrite(BaseModel):
+    name: str
+    month: int
+    day: int
+    suggestion_text: str = ""
+
+
+def days_until_next(month: int, day: int, today: date) -> int:
+    this_year = date(today.year, month, day)
+    if this_year >= today:
+        return (this_year - today).days
+    next_year = date(today.year + 1, month, day)
+    return (next_year - today).days
+
+
+def create_session_token(user_id: int) -> str:
+    payload = {
+        "sub": str(user_id),
+        "exp": datetime.now(timezone.utc) + SESSION_TTL,
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+
+
+def read_session_user(request: Request):
+    token = request.cookies.get(SESSION_COOKIE)
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+    except jwt.PyJWTError:
+        return None
+    return get_user_by_id(int(payload["sub"]))
+
+
+def require_user(request: Request):
+    user = read_session_user(request)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return user
+
+
+def require_admin(request: Request):
+    user = require_user(request)
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
+def to_utc_iso(timestamp: datetime | None) -> str | None:
+    # Postgres TIMESTAMP columns have no timezone marker; they're always UTC,
+    # so mark it explicitly for correct parsing by JS Date on the frontend.
+    return timestamp.isoformat() + "Z" if timestamp else None
+
+
+def user_to_dict(row) -> dict:
+    return {
+        "name": row["name"],
+        "email": row["email"],
+        "picture": row["picture"],
+        "role": row["role"],
+        "business_category": row["business_category"],
+        "last_login_at": to_utc_iso(row["last_login_at"]),
+        "hide_global_events": bool(row["hide_global_events"]),
+        "email_verified": bool(row["email_verified"]),
+    }
+
+
+def admin_user_to_dict(row) -> dict:
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "email": row["email"],
+        "role": row["role"],
+        "business_category": row["business_category"],
+        "created_at": to_utc_iso(row["created_at"]),
+        "last_login_at": to_utc_iso(row["last_login_at"]),
+    }
+
+
+def content_to_dict(row) -> dict:
+    return {
+        "id": row["id"],
+        "platform": row["platform"],
+        "preview": row["preview"],
+        "status": row["status"],
+        "createdAt": row["created_at"].date().isoformat() if row["created_at"] else None,
+    }
+
+
+def admin_content_to_dict(row) -> dict:
+    d = content_to_dict(row)
+    d["owner_name"] = row["owner_name"]
+    d["owner_email"] = row["owner_email"]
+    return d
+
+
+def template_to_dict(row) -> dict:
+    return {
+        "id": row["id"],
+        "business_category": row["business_category"],
+        "platform": row["platform"],
+        "tone": row["tone"],
+        "template_text": row["template_text"],
+        "updated_at": to_utc_iso(row["updated_at"]),
+    }
+
+
+def event_to_dict(row, today: date) -> dict:
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "month": row["month"],
+        "day": row["day"],
+        "suggestion_text": row["suggestion_text"],
+        "is_personal": row["user_id"] is not None,
+        "days_until": days_until_next(row["month"], row["day"], today),
+    }
+
+
+def issue_session_cookie(response: Response, user_id: int) -> None:
+    token = create_session_token(user_id)
+    response.set_cookie(
+        key=SESSION_COOKIE,
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=FRONTEND_ORIGIN.startswith("https://"),
+        max_age=int(SESSION_TTL.total_seconds()),
+        path="/",
+    )
+
+
+@app.post("/auth/google")
+def google_login(body: GoogleLoginRequest, response: Response):
+    try:
+        claims = id_token.verify_oauth2_token(
+            body.credential, google_requests.Request(), GOOGLE_CLIENT_ID
+        )
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Invalid Google credential")
+
+    role = "admin" if claims["email"].lower() in ADMIN_EMAILS else "user"
+    user = upsert_google_user(
+        google_sub=claims["sub"],
+        email=claims["email"],
+        name=claims.get("name"),
+        picture=claims.get("picture"),
+        role=role,
+    )
+
+    issue_session_cookie(response, user["id"])
+    return {"user": user_to_dict(user)}
+
+
+@app.post("/auth/signup")
+@limiter.limit("5/minute")
+def signup(body: SignupRequest, response: Response, request: Request):
+    email = body.email.strip().lower()
+    if "@" not in email or "." not in email.split("@")[-1]:
+        raise HTTPException(status_code=400, detail="อีเมลไม่ถูกต้อง")
+    if len(body.password) < 8:
+        raise HTTPException(status_code=400, detail="รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร")
+    if get_user_by_email(email) is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="อีเมลนี้มีบัญชีอยู่แล้ว ลองเข้าสู่ระบบด้วย Google หรืออีเมลนี้แทนนะคะ",
+        )
+
+    password_hash = bcrypt.hashpw(body.password.encode(), bcrypt.gensalt()).decode()
+    role = "admin" if email in ADMIN_EMAILS else "user"
+    user = create_email_user(email, password_hash, body.name.strip(), role)
+    send_verification_email(user["id"], user["email"])
+
+    issue_session_cookie(response, user["id"])
+    return {"user": user_to_dict(user)}
+
+
+@app.post("/auth/login")
+@limiter.limit("5/minute")
+def login(body: LoginRequest, response: Response, request: Request):
+    email = body.email.strip().lower()
+    user = get_user_by_email(email)
+    if user is None or user["password_hash"] is None:
+        raise HTTPException(status_code=401, detail="อีเมลหรือรหัสผ่านไม่ถูกต้อง")
+    if not bcrypt.checkpw(body.password.encode(), user["password_hash"].encode()):
+        raise HTTPException(status_code=401, detail="อีเมลหรือรหัสผ่านไม่ถูกต้อง")
+
+    user = touch_last_login(user["id"])
+    issue_session_cookie(response, user["id"])
+    return {"user": user_to_dict(user)}
+
+
+@app.get("/auth/me")
+def me(request: Request):
+    user = require_user(request)
+    return {"user": user_to_dict(user)}
+
+
+@app.patch("/me")
+def update_me(body: UpdateMeRequest, request: Request):
+    user = require_user(request)
+    updated = update_business_category(user["id"], body.business_category)
+    return {"user": user_to_dict(updated)}
+
+
+@app.patch("/me/calendar-preference")
+def update_calendar_preference(body: CalendarPreferenceWrite, request: Request):
+    user = require_user(request)
+    updated = update_hide_global_events(user["id"], body.hide_global_events)
+    return {"user": user_to_dict(updated)}
+
+
+@app.post("/auth/logout")
+def logout(response: Response):
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    return {"ok": True}
+
+
+@app.post("/auth/verify-email")
+@limiter.limit("10/minute")
+def verify_email(body: VerifyEmailRequest, request: Request):
+    user = verify_email_by_token(body.token)
+    if user is None:
+        raise HTTPException(status_code=400, detail="ลิงก์ยืนยันไม่ถูกต้องหรือหมดอายุแล้วนะคะ")
+    return {"ok": True}
+
+
+@app.post("/auth/resend-verification")
+@limiter.limit("5/minute")
+def resend_verification(request: Request):
+    user = require_user(request)
+    if user["email_verified"]:
+        return {"ok": True}
+    send_verification_email(user["id"], user["email"])
+    return {"ok": True}
+
+
+@app.post("/auth/forgot-password")
+@limiter.limit("5/minute")
+def forgot_password(body: ForgotPasswordRequest, request: Request):
+    email = body.email.strip().lower()
+    user = get_user_by_email(email)
+    if user is not None and user["password_hash"] is not None:
+        token = secrets.token_urlsafe(32)
+        expires_at = (datetime.now(timezone.utc) + RESET_TOKEN_TTL).strftime("%Y-%m-%d %H:%M:%S")
+        set_reset_token(user["id"], token, expires_at)
+        link = f"{FRONTEND_ORIGIN}/reset-password?token={token}"
+        send_email(
+            user["email"],
+            "ตั้งรหัสผ่านใหม่ — FAHSAI",
+            f'<p>กดลิงก์นี้เพื่อตั้งรหัสผ่านใหม่ (หมดอายุใน 1 ชั่วโมง):</p><p><a href="{link}">{link}</a></p>',
+        )
+    # Always the same response, whether or not the account exists — avoids
+    # leaking which emails are registered (same reasoning as the login error).
+    return {"ok": True}
+
+
+@app.post("/auth/reset-password")
+@limiter.limit("5/minute")
+def reset_password_endpoint(body: ResetPasswordRequest, request: Request):
+    user = get_user_by_reset_token(body.token)
+    if user is None:
+        raise HTTPException(status_code=400, detail="ลิงก์รีเซ็ตไม่ถูกต้องหรือหมดอายุแล้วนะคะ")
+    if len(body.new_password) < 8:
+        raise HTTPException(status_code=400, detail="รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร")
+    password_hash = bcrypt.hashpw(body.new_password.encode(), bcrypt.gensalt()).decode()
+    db_reset_password(user["id"], password_hash)
+    return {"ok": True}
+
+
+@app.get("/content")
+def get_my_content(request: Request):
+    user = require_user(request)
+    return {"items": [content_to_dict(row) for row in list_content_for_user(user["id"])]}
+
+
+@app.post("/content")
+def post_my_content(body: ContentItemCreate, request: Request):
+    user = require_user(request)
+    row = create_content_item(user["id"], body.platform, body.preview, body.status)
+    return content_to_dict(row)
+
+
+@app.get("/stats")
+def get_my_stats(request: Request):
+    user = require_user(request)
+    items = list_content_for_user(user["id"])
+    now = datetime.now(timezone.utc)
+    new_posts = sum(
+        1
+        for row in items
+        if row["created_at"]
+        and (now - row["created_at"].replace(tzinfo=timezone.utc)).days < 7
+    )
+    approved = sum(1 for row in items if row["status"] == "approved")
+    posted = sum(1 for row in items if row["status"] == "posted")
+    pending_review = sum(1 for row in items if row["status"] == "draft")
+    total = len(items)
+    success_rate = round((posted / total) * 100, 1) if total else 0.0
+
+    posted_at = [
+        row["created_at"].replace(tzinfo=timezone.utc)
+        for row in items
+        if row["status"] == "posted" and row["created_at"]
+    ]
+    days_since_last_post = (now - max(posted_at)).days if posted_at else None
+
+    return {
+        "newPosts": new_posts,
+        "approved": approved,
+        "posted": posted,
+        "successRate": success_rate,
+        "pendingReview": pending_review,
+        "daysSinceLastPost": days_since_last_post,
+    }
+
+
+@app.get("/brand-dna")
+def get_brand_dna_endpoint(request: Request):
+    user = require_user(request)
+    return get_brand_dna(user["id"])
+
+
+@app.put("/brand-dna")
+def put_brand_dna_endpoint(body: BrandDnaWrite, request: Request):
+    user = require_user(request)
+    return upsert_brand_dna(user["id"], body.model_dump())
+
+
+@app.get("/events/upcoming")
+def upcoming_event(request: Request):
+    require_user(request)
+    today = datetime.now(timezone.utc).date()
+    nearest = None
+    nearest_days = None
+    for row in get_all_events():
+        d = days_until_next(row["month"], row["day"], today)
+        if nearest_days is None or d < nearest_days:
+            nearest_days = d
+            nearest = row
+    if nearest is None or nearest_days > 14:
+        return {"event": None}
+    return {
+        "event": {
+            "name": nearest["name"],
+            "days_until": nearest_days,
+            "suggestion_text": nearest["suggestion_text"],
+        }
+    }
+
+
+@app.get("/events")
+def list_my_events(request: Request):
+    user = require_user(request)
+    today = datetime.now(timezone.utc).date()
+    hide_global = bool(user["hide_global_events"])
+    events = [
+        event_to_dict(row, today) for row in list_events_for_user(user["id"], hide_global)
+    ]
+    events.sort(key=lambda e: e["days_until"])
+    return {"events": events[:7]}
+
+
+@app.post("/events")
+def create_my_event(body: EventCreate, request: Request):
+    user = require_user(request)
+    row = create_event(user["id"], body.name, body.month, body.day)
+    return event_to_dict(row, datetime.now(timezone.utc).date())
+
+
+@app.delete("/events/{event_id}")
+def delete_my_event(event_id: int, request: Request):
+    user = require_user(request)
+    deleted = delete_event(event_id, user["id"])
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return {"ok": True}
+
+
+PLATFORM_LABELS = {"facebook": "Facebook", "line": "LINE OA", "instagram": "Instagram"}
+TONE_LABELS = {
+    "friendly": "เป็นกันเอง",
+    "professional": "ทางการ",
+    "playful": "สนุกสนาน",
+    "promo": "โปรโมชั่น",
+}
+
+
+@app.post("/generate")
+@limiter.limit("15/hour")
+def generate_content(body: GenerateRequest, request: Request):
+    user = require_user(request)
+    templates = list_prompt_templates(business_category=user["business_category"], platform=body.platform)
+
+    if openai_client is None:
+        # No API key configured yet — keep the app usable with the old
+        # random-pick-from-templates behavior instead of a real LLM.
+        if not templates:
+            raise HTTPException(
+                status_code=404,
+                detail="ยังไม่มี prompt template สำหรับแพลตฟอร์มนี้ — ให้แอดมินเพิ่มก่อนนะคะ",
+            )
+        chosen = random.choice(templates)
+        return {"caption": chosen["template_text"]}
+
+    dna = get_brand_dna(user["id"])
+    example_posts = "\n---\n".join(t["template_text"] for t in templates[:3])
+    platform_label = PLATFORM_LABELS.get(body.platform, body.platform)
+    tone_label = TONE_LABELS.get(body.tone or "", body.tone or "เป็นกันเอง")
+    examples_section = (
+        f"ตัวอย่างโพสต์ที่ร้านเคยเขียน ใช้เป็นแนวทางโทนเสียงเท่านั้น ห้ามก็อปมาตรงๆ:\n{example_posts}"
+        if example_posts
+        else ""
+    )
+
+    system_prompt = f"""คุณคือ FAHSAI ผู้ช่วยเขียนโพสต์โซเชียลมีเดียให้ร้าน SME ไทย เขียนเป็นภาษาไทยเท่านั้น
+
+ข้อมูลร้าน:
+- ประวัติร้าน: {dna["history"] or "ไม่ระบุ"}
+- เมนู/สินค้าเด่น: {dna["menu"] or "ไม่ระบุ"}
+- จุดขาย (USP): {dna["usp"] or "ไม่ระบุ"}
+- บุคลิกแบรนด์: {dna["tone"] or "ไม่ระบุ"}
+
+โพสต์นี้จะลงแพลตฟอร์ม {platform_label} ด้วยโทน "{tone_label}" ให้ความยาวและสไตล์เหมาะกับแพลตฟอร์มนั้น (Facebook เขียนได้ยาวหน่อย, LINE OA กระชับเป็นกันเอง, Instagram ใช้แฮชแท็กได้)
+
+{examples_section}
+
+ตอบกลับด้วยข้อความโพสต์เท่านั้น ไม่ต้องมีคำอธิบายอื่น"""
+
+    try:
+        response = openai_client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": body.prompt},
+            ],
+            max_tokens=500,
+            timeout=20,
+        )
+        caption = response.choices[0].message.content
+    except Exception:
+        raise HTTPException(
+            status_code=502, detail="สร้างคอนเทนต์ไม่สำเร็จ ลองใหม่อีกครั้งนะคะ"
+        )
+
+    return {"caption": caption}
+
+
+@app.get("/admin/stats")
+def admin_stats(request: Request):
+    require_admin(request)
+    return get_admin_stats()
+
+
+@app.get("/admin/security-events")
+def admin_security_events(request: Request):
+    require_admin(request)
+    events = []
+    for row in list_security_events():
+        events.append(
+            {
+                "id": row["id"],
+                "event_type": row["event_type"],
+                "identifier": row["identifier"],
+                "endpoint": row["endpoint"],
+                "user_name": row["user_name"],
+                "user_email": row["user_email"],
+                "created_at": to_utc_iso(row["created_at"]),
+            }
+        )
+    return {"events": events}
+
+
+@app.get("/admin/users")
+def admin_list_users(request: Request):
+    require_admin(request)
+    return {"users": [admin_user_to_dict(row) for row in list_all_users()]}
+
+
+@app.get("/admin/content")
+def admin_get_all_content(request: Request):
+    require_admin(request)
+    return {"items": [admin_content_to_dict(row) for row in list_all_content()]}
+
+
+@app.get("/admin/prompt-templates")
+def admin_list_prompt_templates(request: Request):
+    require_admin(request)
+    return {"templates": [template_to_dict(row) for row in list_prompt_templates()]}
+
+
+@app.post("/admin/prompt-templates")
+def admin_create_prompt_template(body: PromptTemplateWrite, request: Request):
+    admin = require_admin(request)
+    row = create_prompt_template(
+        body.business_category, body.platform, body.tone, body.template_text, admin["id"]
+    )
+    return template_to_dict(row)
+
+
+@app.put("/admin/prompt-templates/{template_id}")
+def admin_update_prompt_template(template_id: int, body: PromptTemplateWrite, request: Request):
+    require_admin(request)
+    row = update_prompt_template(
+        template_id, body.business_category, body.platform, body.tone, body.template_text
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return template_to_dict(row)
+
+
+@app.delete("/admin/prompt-templates/{template_id}")
+def admin_delete_prompt_template(template_id: int, request: Request):
+    require_admin(request)
+    delete_prompt_template(template_id)
+    return {"ok": True}
+
+
+@app.get("/admin/events")
+def admin_list_events(request: Request):
+    require_admin(request)
+    today = datetime.now(timezone.utc).date()
+    return {"events": [event_to_dict(row, today) for row in get_all_events()]}
+
+
+@app.post("/admin/events")
+def admin_create_event(body: EventWrite, request: Request):
+    require_admin(request)
+    row = create_event(None, body.name, body.month, body.day, body.suggestion_text)
+    return event_to_dict(row, datetime.now(timezone.utc).date())
+
+
+@app.put("/admin/events/{event_id}")
+def admin_update_event(event_id: int, body: EventWrite, request: Request):
+    require_admin(request)
+    row = update_event(event_id, body.name, body.month, body.day, body.suggestion_text)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return event_to_dict(row, datetime.now(timezone.utc).date())
+
+
+@app.delete("/admin/events/{event_id}")
+def admin_delete_event(event_id: int, request: Request):
+    require_admin(request)
+    deleted = delete_event(event_id, None)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return {"ok": True}
