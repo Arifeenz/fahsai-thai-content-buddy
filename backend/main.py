@@ -662,7 +662,8 @@ def generate_content(body: GenerateRequest, request: Request):
             timeout=20,
         )
         caption = response.choices[0].message.content
-    except Exception:
+    except Exception as exc:
+        print(f"[generate:openai_error] {type(exc).__name__}: {exc}")
         raise HTTPException(
             status_code=502, detail="สร้างคอนเทนต์ไม่สำเร็จ ลองใหม่อีกครั้งนะคะ"
         )
