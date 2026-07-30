@@ -14,6 +14,7 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as BrandDnaRouteImport } from './routes/brand-dna'
 import { Route as CreateRouteImport } from './routes/create'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as ExamplesRouteImport } from './routes/examples'
 import { Route as LibraryRouteImport } from './routes/library'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as SettingsRouteImport } from './routes/settings'
@@ -22,6 +23,7 @@ import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminContentRouteImport } from './routes/admin.content'
 import { Route as AdminEventsRouteImport } from './routes/admin.events'
+import { Route as AdminExamplesRouteImport } from './routes/admin.examples'
 import { Route as AdminGenerationsRouteImport } from './routes/admin.generations'
 import { Route as AdminSecurityRouteImport } from './routes/admin.security'
 import { Route as AdminTemplatesRouteImport } from './routes/admin.templates'
@@ -50,6 +52,11 @@ const CreateRoute = CreateRouteImport.update({
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExamplesRoute = ExamplesRouteImport.update({
+  id: '/examples',
+  path: '/examples',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LibraryRoute = LibraryRouteImport.update({
@@ -92,6 +99,11 @@ const AdminEventsRoute = AdminEventsRouteImport.update({
   path: '/events',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminExamplesRoute = AdminExamplesRouteImport.update({
+  id: '/examples',
+  path: '/examples',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminGenerationsRoute = AdminGenerationsRouteImport.update({
   id: '/generations',
   path: '/generations',
@@ -119,6 +131,7 @@ export interface FileRoutesByFullPath {
   '/brand-dna': typeof BrandDnaRoute
   '/create': typeof CreateRoute
   '/dashboard': typeof DashboardRoute
+  '/examples': typeof ExamplesRoute
   '/library': typeof LibraryRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
@@ -126,6 +139,7 @@ export interface FileRoutesByFullPath {
   '/verify-email': typeof VerifyEmailRoute
   '/admin/content': typeof AdminContentRoute
   '/admin/events': typeof AdminEventsRoute
+  '/admin/examples': typeof AdminExamplesRoute
   '/admin/generations': typeof AdminGenerationsRoute
   '/admin/security': typeof AdminSecurityRoute
   '/admin/templates': typeof AdminTemplatesRoute
@@ -137,6 +151,7 @@ export interface FileRoutesByTo {
   '/brand-dna': typeof BrandDnaRoute
   '/create': typeof CreateRoute
   '/dashboard': typeof DashboardRoute
+  '/examples': typeof ExamplesRoute
   '/library': typeof LibraryRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
@@ -144,6 +159,7 @@ export interface FileRoutesByTo {
   '/verify-email': typeof VerifyEmailRoute
   '/admin/content': typeof AdminContentRoute
   '/admin/events': typeof AdminEventsRoute
+  '/admin/examples': typeof AdminExamplesRoute
   '/admin/generations': typeof AdminGenerationsRoute
   '/admin/security': typeof AdminSecurityRoute
   '/admin/templates': typeof AdminTemplatesRoute
@@ -157,6 +173,7 @@ export interface FileRoutesById {
   '/brand-dna': typeof BrandDnaRoute
   '/create': typeof CreateRoute
   '/dashboard': typeof DashboardRoute
+  '/examples': typeof ExamplesRoute
   '/library': typeof LibraryRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
@@ -164,6 +181,7 @@ export interface FileRoutesById {
   '/verify-email': typeof VerifyEmailRoute
   '/admin/content': typeof AdminContentRoute
   '/admin/events': typeof AdminEventsRoute
+  '/admin/examples': typeof AdminExamplesRoute
   '/admin/generations': typeof AdminGenerationsRoute
   '/admin/security': typeof AdminSecurityRoute
   '/admin/templates': typeof AdminTemplatesRoute
@@ -178,6 +196,7 @@ export interface FileRouteTypes {
     | '/brand-dna'
     | '/create'
     | '/dashboard'
+    | '/examples'
     | '/library'
     | '/reset-password'
     | '/settings'
@@ -185,6 +204,7 @@ export interface FileRouteTypes {
     | '/verify-email'
     | '/admin/content'
     | '/admin/events'
+    | '/admin/examples'
     | '/admin/generations'
     | '/admin/security'
     | '/admin/templates'
@@ -196,6 +216,7 @@ export interface FileRouteTypes {
     | '/brand-dna'
     | '/create'
     | '/dashboard'
+    | '/examples'
     | '/library'
     | '/reset-password'
     | '/settings'
@@ -203,6 +224,7 @@ export interface FileRouteTypes {
     | '/verify-email'
     | '/admin/content'
     | '/admin/events'
+    | '/admin/examples'
     | '/admin/generations'
     | '/admin/security'
     | '/admin/templates'
@@ -215,6 +237,7 @@ export interface FileRouteTypes {
     | '/brand-dna'
     | '/create'
     | '/dashboard'
+    | '/examples'
     | '/library'
     | '/reset-password'
     | '/settings'
@@ -222,6 +245,7 @@ export interface FileRouteTypes {
     | '/verify-email'
     | '/admin/content'
     | '/admin/events'
+    | '/admin/examples'
     | '/admin/generations'
     | '/admin/security'
     | '/admin/templates'
@@ -235,6 +259,7 @@ export interface RootRouteChildren {
   BrandDnaRoute: typeof BrandDnaRoute
   CreateRoute: typeof CreateRoute
   DashboardRoute: typeof DashboardRoute
+  ExamplesRoute: typeof ExamplesRoute
   LibraryRoute: typeof LibraryRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SettingsRoute: typeof SettingsRoute
@@ -277,6 +302,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/examples': {
+      id: '/examples'
+      path: '/examples'
+      fullPath: '/examples'
+      preLoaderRoute: typeof ExamplesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/library': {
@@ -335,6 +367,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminEventsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/examples': {
+      id: '/admin/examples'
+      path: '/examples'
+      fullPath: '/admin/examples'
+      preLoaderRoute: typeof AdminExamplesRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/generations': {
       id: '/admin/generations'
       path: '/generations'
@@ -369,6 +408,7 @@ declare module '@tanstack/react-router' {
 interface AdminRouteChildren {
   AdminContentRoute: typeof AdminContentRoute
   AdminEventsRoute: typeof AdminEventsRoute
+  AdminExamplesRoute: typeof AdminExamplesRoute
   AdminGenerationsRoute: typeof AdminGenerationsRoute
   AdminSecurityRoute: typeof AdminSecurityRoute
   AdminTemplatesRoute: typeof AdminTemplatesRoute
@@ -379,6 +419,7 @@ interface AdminRouteChildren {
 const AdminRouteChildren: AdminRouteChildren = {
   AdminContentRoute: AdminContentRoute,
   AdminEventsRoute: AdminEventsRoute,
+  AdminExamplesRoute: AdminExamplesRoute,
   AdminGenerationsRoute: AdminGenerationsRoute,
   AdminSecurityRoute: AdminSecurityRoute,
   AdminTemplatesRoute: AdminTemplatesRoute,
@@ -394,6 +435,7 @@ const rootRouteChildren: RootRouteChildren = {
   BrandDnaRoute: BrandDnaRoute,
   CreateRoute: CreateRoute,
   DashboardRoute: DashboardRoute,
+  ExamplesRoute: ExamplesRoute,
   LibraryRoute: LibraryRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SettingsRoute: SettingsRoute,

@@ -9,3 +9,5 @@ slowapi
 resend
 psycopg[binary]
 sentry-sdk[fastapi]
+supabase
+python-multipart

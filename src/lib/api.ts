@@ -69,6 +69,21 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
+// No Content-Type header here — the browser sets the multipart boundary
+// itself when the body is a FormData instance.
+async function requestForm<T>(path: string, formData: FormData): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    credentials: "include",
+    body: formData,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.detail ?? `Request to ${path} failed`);
+  }
+  return res.json();
+}
+
 export interface UpcomingEvent {
   name: string;
   days_until: number;
@@ -101,6 +116,19 @@ export interface GenerationLogEntry {
   prompt: string;
   caption: string;
   created_at: string;
+}
+export interface ExamplePost {
+  id: number;
+  is_personal: boolean;
+  business_category?: BusinessCategory;
+  platform: Platform;
+  caption: string;
+  image_url: string | null;
+  created_at: string;
+}
+export interface AdminExamplePost extends ExamplePost {
+  owner_name: string | null;
+  owner_email: string | null;
 }
 
 export const api = {
@@ -259,6 +287,30 @@ export const api = {
   },
   async adminDeleteEvent(id: number): Promise<void> {
     await request(`/admin/events/${id}`, { method: "DELETE" });
+  },
+
+  async listMyExamplePosts(): Promise<ExamplePost[]> {
+    const { posts } = await request<{ posts: ExamplePost[] }>("/example-posts");
+    return posts;
+  },
+  async createExamplePost(formData: FormData): Promise<ExamplePost> {
+    return requestForm("/example-posts", formData);
+  },
+  async deleteExamplePost(id: number): Promise<void> {
+    await request(`/example-posts/${id}`, { method: "DELETE" });
+  },
+  async adminListExamplePosts(): Promise<AdminExamplePost[]> {
+    const { posts } = await request<{ posts: AdminExamplePost[] }>("/admin/example-posts");
+    return posts;
+  },
+  async adminCreateExamplePost(formData: FormData): Promise<ExamplePost> {
+    return requestForm("/admin/example-posts", formData);
+  },
+  async adminDeleteExamplePost(id: number): Promise<void> {
+    await request(`/admin/example-posts/${id}`, { method: "DELETE" });
+  },
+  async adminPromoteExamplePost(id: number): Promise<ExamplePost> {
+    return request(`/admin/example-posts/${id}/promote`, { method: "POST" });
   },
 };
 

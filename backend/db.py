@@ -118,6 +118,21 @@ def init_db() -> None:
     _add_column_if_missing(conn, "generation_log", "completion_tokens INTEGER")
     _add_column_if_missing(conn, "generation_log", "estimated_cost_usd DOUBLE PRECISION")
 
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS example_posts (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id),
+            business_category TEXT,
+            platform TEXT NOT NULL,
+            caption TEXT NOT NULL,
+            image_url TEXT,
+            created_by INTEGER NOT NULL REFERENCES users(id),
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
     event_count = conn.execute("SELECT COUNT(*) AS n FROM events").fetchone()["n"]
     if event_count == 0:
         conn.cursor().executemany(
@@ -543,6 +558,125 @@ def delete_prompt_template(template_id: int) -> None:
     conn.execute("DELETE FROM prompt_templates WHERE id = %s", (template_id,))
     conn.commit()
     conn.close()
+
+
+def create_example_post(
+    user_id: int | None,
+    business_category: str | None,
+    platform: str,
+    caption: str,
+    image_url: str | None,
+    created_by: int,
+) -> dict:
+    conn = get_connection()
+    row = conn.execute(
+        """
+        INSERT INTO example_posts (user_id, business_category, platform, caption, image_url, created_by)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        RETURNING *
+        """,
+        (user_id, business_category, platform, caption, image_url, created_by),
+    ).fetchone()
+    conn.commit()
+    conn.close()
+    return row
+
+
+def list_example_posts_for_generation(
+    user_id: int,
+    business_category: str | None,
+    platform: str,
+    personal_limit: int = 2,
+    global_limit: int = 2,
+) -> list[dict]:
+    conn = get_connection()
+    personal = conn.execute(
+        """
+        SELECT * FROM example_posts
+        WHERE user_id = %s AND platform = %s
+        ORDER BY created_at DESC
+        LIMIT %s
+        """,
+        (user_id, platform, personal_limit),
+    ).fetchall()
+    global_rows = conn.execute(
+        """
+        SELECT * FROM example_posts
+        WHERE user_id IS NULL AND platform = %s
+            AND (business_category = %s OR business_category IS NULL)
+        ORDER BY created_at DESC
+        LIMIT %s
+        """,
+        (platform, business_category, global_limit),
+    ).fetchall()
+    conn.close()
+    return [*personal, *global_rows]
+
+
+def list_example_posts_for_user(user_id: int) -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM example_posts WHERE user_id = %s ORDER BY created_at DESC", (user_id,)
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def list_all_example_posts() -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT example_posts.*, users.name AS owner_name, users.email AS owner_email
+        FROM example_posts
+        LEFT JOIN users ON users.id = example_posts.user_id
+        ORDER BY example_posts.created_at DESC
+        """
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def delete_example_post(post_id: int, owner_user_id: int | None) -> bool:
+    conn = get_connection()
+    if owner_user_id is None:
+        cur = conn.execute(
+            "DELETE FROM example_posts WHERE id = %s AND user_id IS NULL", (post_id,)
+        )
+    else:
+        cur = conn.execute(
+            "DELETE FROM example_posts WHERE id = %s AND user_id = %s", (post_id, owner_user_id)
+        )
+    conn.commit()
+    deleted = cur.rowcount > 0
+    conn.close()
+    return deleted
+
+
+def promote_example_post_to_global(post_id: int) -> dict | None:
+    conn = get_connection()
+    source = conn.execute(
+        "SELECT * FROM example_posts WHERE id = %s AND user_id IS NOT NULL", (post_id,)
+    ).fetchone()
+    if source is None:
+        conn.close()
+        return None
+    row = conn.execute(
+        """
+        INSERT INTO example_posts (user_id, business_category, platform, caption, image_url, created_by)
+        VALUES (NULL, %s, %s, %s, %s, %s)
+        RETURNING *
+        """,
+        (
+            source["business_category"],
+            source["platform"],
+            source["caption"],
+            source["image_url"],
+            source["created_by"],
+        ),
+    ).fetchone()
+    conn.commit()
+    conn.close()
+    return row
 
 
 DNA_DOC_TYPES = ["history", "menu", "usp", "tone"]

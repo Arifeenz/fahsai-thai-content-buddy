@@ -2,6 +2,7 @@ import os
 import random
 import secrets
 import sys
+import uuid
 from datetime import date, datetime, timedelta, timezone
 
 import bcrypt
@@ -9,7 +10,7 @@ import jwt
 import resend
 import sentry_sdk
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from google.auth.transport import requests as google_requests
@@ -19,14 +20,17 @@ from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+from supabase import create_client
 
 from db import (
     create_content_item,
     create_email_user,
     create_event,
+    create_example_post,
     create_generation_log,
     create_prompt_template,
     delete_event,
+    delete_example_post,
     delete_prompt_template,
     get_admin_stats,
     get_all_events,
@@ -37,13 +41,17 @@ from db import (
     get_user_by_reset_token,
     init_db,
     list_all_content,
+    list_all_example_posts,
     list_all_users,
     list_content_for_user,
     list_events_for_user,
+    list_example_posts_for_generation,
+    list_example_posts_for_user,
     list_generation_logs,
     list_prompt_templates,
     list_security_events,
     log_security_event,
+    promote_example_post_to_global,
     reset_password as db_reset_password,
     set_reset_token,
     set_verification_token,
@@ -94,10 +102,40 @@ if SENTRY_DSN:
         environment="production" if FRONTEND_ORIGIN.startswith("https://") else "development",
     )
 
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+supabase_client = (
+    create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY
+    else None
+)
+EXAMPLE_POSTS_BUCKET = "example-posts"
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
 SESSION_COOKIE = "fahsai_session"
 SESSION_TTL = timedelta(days=7)
 VERIFICATION_TOKEN_TTL = timedelta(hours=24)
 RESET_TOKEN_TTL = timedelta(hours=1)
+
+
+def upload_example_image(file: UploadFile | None, owner_id: int) -> str | None:
+    if file is None or not file.filename:
+        return None
+    if not (file.content_type or "").startswith("image/"):
+        raise HTTPException(status_code=400, detail="ไฟล์ต้องเป็นรูปภาพเท่านั้นนะคะ")
+    if supabase_client is None:
+        raise HTTPException(
+            status_code=503, detail="ระบบเก็บรูปภาพยังไม่ได้ตั้งค่า ลองแนบแค่ข้อความไปก่อนนะคะ"
+        )
+    contents = file.file.read()
+    if len(contents) > MAX_IMAGE_BYTES:
+        raise HTTPException(status_code=400, detail="ไฟล์รูปภาพใหญ่เกินไป (จำกัด 5MB นะคะ)")
+    ext = (file.filename.rsplit(".", 1)[-1] if "." in file.filename else "jpg").lower()
+    path = f"{owner_id}/{uuid.uuid4()}.{ext}"
+    supabase_client.storage.from_(EXAMPLE_POSTS_BUCKET).upload(
+        path, contents, {"content-type": file.content_type}
+    )
+    return supabase_client.storage.from_(EXAMPLE_POSTS_BUCKET).get_public_url(path)
 
 
 def send_email(to: str, subject: str, html: str) -> None:
@@ -329,6 +367,25 @@ def content_to_dict(row) -> dict:
 
 def admin_content_to_dict(row) -> dict:
     d = content_to_dict(row)
+    d["owner_name"] = row["owner_name"]
+    d["owner_email"] = row["owner_email"]
+    return d
+
+
+def example_post_to_dict(row) -> dict:
+    return {
+        "id": row["id"],
+        "is_personal": row["user_id"] is not None,
+        "business_category": row["business_category"],
+        "platform": row["platform"],
+        "caption": row["caption"],
+        "image_url": row["image_url"],
+        "created_at": to_utc_iso(row["created_at"]),
+    }
+
+
+def admin_example_post_to_dict(row) -> dict:
+    d = example_post_to_dict(row)
     d["owner_name"] = row["owner_name"]
     d["owner_email"] = row["owner_email"]
     return d
@@ -617,6 +674,36 @@ def delete_my_event(event_id: int, request: Request):
     return {"ok": True}
 
 
+@app.get("/example-posts")
+def list_my_example_posts(request: Request):
+    user = require_user(request)
+    return {"posts": [example_post_to_dict(row) for row in list_example_posts_for_user(user["id"])]}
+
+
+@app.post("/example-posts")
+def create_my_example_post(
+    request: Request,
+    platform: str = Form(...),
+    caption: str = Form(...),
+    image: UploadFile | None = File(None),
+):
+    user = require_user(request)
+    image_url = upload_example_image(image, user["id"])
+    row = create_example_post(
+        user["id"], user["business_category"], platform, caption, image_url, user["id"]
+    )
+    return example_post_to_dict(row)
+
+
+@app.delete("/example-posts/{post_id}")
+def delete_my_example_post(post_id: int, request: Request):
+    user = require_user(request)
+    deleted = delete_example_post(post_id, user["id"])
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Example post not found")
+    return {"ok": True}
+
+
 PLATFORM_LABELS = {"facebook": "Facebook", "line": "LINE OA", "instagram": "Instagram"}
 TONE_LABELS = {
     "friendly": "เป็นกันเอง",
@@ -649,12 +736,20 @@ def generate_content(body: GenerateRequest, request: Request):
         return {"caption": chosen["template_text"]}
 
     dna = get_brand_dna(user["id"])
-    example_posts = "\n---\n".join(t["template_text"] for t in templates[:3])
+    style_examples = "\n---\n".join(t["template_text"] for t in templates[:3])
+    example_post_rows = list_example_posts_for_generation(
+        user["id"], user["business_category"], body.platform
+    )
+    if example_post_rows:
+        post_captions = "\n---\n".join(p["caption"] for p in example_post_rows)
+        style_examples = (
+            f"{style_examples}\n---\n{post_captions}" if style_examples else post_captions
+        )
     platform_label = PLATFORM_LABELS.get(body.platform, body.platform)
     tone_label = TONE_LABELS.get(body.tone or "", body.tone or "เป็นกันเอง")
     examples_section = (
-        f"ตัวอย่างโพสต์ที่ร้านเคยเขียน ใช้เป็นแนวทางโทนเสียงเท่านั้น ห้ามก็อปมาตรงๆ:\n{example_posts}"
-        if example_posts
+        f"ตัวอย่างโพสต์ที่ร้านเคยเขียน ใช้เป็นแนวทางโทนเสียงเท่านั้น ห้ามก็อปมาตรงๆ:\n{style_examples}"
+        if style_examples
         else ""
     )
 
@@ -670,14 +765,23 @@ def generate_content(body: GenerateRequest, request: Request):
 
 {examples_section}
 
+{"มีรูปตัวอย่างโพสต์แนบมาด้วย ลองดูสไตล์ภาพ สี และบรรยากาศ ใช้เป็นแนวทางแต่งข้อความให้เข้ากัน" if any(p["image_url"] for p in example_post_rows) else ""}
+
 ตอบกลับด้วยข้อความโพสต์เท่านั้น ไม่ต้องมีคำอธิบายอื่น"""
+
+    user_content: list[dict] = [{"type": "text", "text": body.prompt}]
+    for p in example_post_rows:
+        if p["image_url"] and sum(1 for c in user_content if c["type"] == "image_url") < 3:
+            user_content.append(
+                {"type": "image_url", "image_url": {"url": p["image_url"], "detail": "low"}}
+            )
 
     try:
         response = openai_client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": body.prompt},
+                {"role": "user", "content": user_content},
             ],
             max_tokens=500,
             timeout=20,
@@ -799,6 +903,44 @@ def admin_delete_prompt_template(template_id: int, request: Request):
     require_admin(request)
     delete_prompt_template(template_id)
     return {"ok": True}
+
+
+@app.get("/admin/example-posts")
+def admin_list_example_posts(request: Request):
+    require_admin(request)
+    return {"posts": [admin_example_post_to_dict(row) for row in list_all_example_posts()]}
+
+
+@app.post("/admin/example-posts")
+def admin_create_example_post(
+    request: Request,
+    business_category: str = Form(...),
+    platform: str = Form(...),
+    caption: str = Form(...),
+    image: UploadFile | None = File(None),
+):
+    admin = require_admin(request)
+    image_url = upload_example_image(image, admin["id"])
+    row = create_example_post(None, business_category, platform, caption, image_url, admin["id"])
+    return example_post_to_dict(row)
+
+
+@app.delete("/admin/example-posts/{post_id}")
+def admin_delete_example_post(post_id: int, request: Request):
+    require_admin(request)
+    deleted = delete_example_post(post_id, None)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Example post not found")
+    return {"ok": True}
+
+
+@app.post("/admin/example-posts/{post_id}/promote")
+def admin_promote_example_post(post_id: int, request: Request):
+    require_admin(request)
+    row = promote_example_post_to_global(post_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Example post not found or already global")
+    return example_post_to_dict(row)
 
 
 @app.get("/admin/events")
