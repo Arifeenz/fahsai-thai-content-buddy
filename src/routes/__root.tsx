@@ -11,7 +11,10 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { captureError, initSentry } from "../lib/sentry";
 import { Toaster } from "sonner";
+
+initSentry();
 
 function NotFoundComponent() {
   return (
@@ -33,6 +36,7 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   const router = useRouter();
   useEffect(() => {
     reportLovableError(error, { boundary: "tanstack_root_error_component" });
+    captureError(error);
   }, [error]);
 
   return (

@@ -7,6 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 import bcrypt
 import jwt
 import resend
+import sentry_sdk
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -84,6 +85,10 @@ RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
 RESEND_FROM_EMAIL = os.environ.get("RESEND_FROM_EMAIL", "onboarding@resend.dev")
 if RESEND_API_KEY:
     resend.api_key = RESEND_API_KEY
+
+SENTRY_DSN = os.environ.get("SENTRY_DSN")
+if SENTRY_DSN:
+    sentry_sdk.init(dsn=SENTRY_DSN, traces_sample_rate=0)
 
 SESSION_COOKIE = "fahsai_session"
 SESSION_TTL = timedelta(days=7)
@@ -678,6 +683,7 @@ def generate_content(body: GenerateRequest, request: Request):
         completion_tokens = response.usage.completion_tokens if response.usage else None
     except Exception as exc:
         print(f"[generate:openai_error] {type(exc).__name__}: {exc}")
+        sentry_sdk.capture_exception(exc)
         raise HTTPException(
             status_code=502, detail="สร้างคอนเทนต์ไม่สำเร็จ ลองใหม่อีกครั้งนะคะ"
         )

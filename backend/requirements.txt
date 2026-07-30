@@ -8,3 +8,4 @@ bcrypt
 slowapi
 resend
 psycopg[binary]
+sentry-sdk[fastapi]
