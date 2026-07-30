@@ -23,6 +23,7 @@ from db import (
     create_content_item,
     create_email_user,
     create_event,
+    create_generation_log,
     create_prompt_template,
     delete_event,
     delete_prompt_template,
@@ -37,6 +38,7 @@ from db import (
     list_all_users,
     list_content_for_user,
     list_events_for_user,
+    list_generation_logs,
     list_prompt_templates,
     list_security_events,
     log_security_event,
@@ -625,6 +627,7 @@ def generate_content(body: GenerateRequest, request: Request):
                 detail="ยังไม่มี prompt template สำหรับแพลตฟอร์มนี้ — ให้แอดมินเพิ่มก่อนนะคะ",
             )
         chosen = random.choice(templates)
+        create_generation_log(user["id"], body.platform, body.tone, body.prompt, chosen["template_text"])
         return {"caption": chosen["template_text"]}
 
     dna = get_brand_dna(user["id"])
@@ -668,6 +671,7 @@ def generate_content(body: GenerateRequest, request: Request):
             status_code=502, detail="สร้างคอนเทนต์ไม่สำเร็จ ลองใหม่อีกครั้งนะคะ"
         )
 
+    create_generation_log(user["id"], body.platform, body.tone, body.prompt, caption)
     return {"caption": caption}
 
 
@@ -694,6 +698,26 @@ def admin_security_events(request: Request):
             }
         )
     return {"events": events}
+
+
+@app.get("/admin/generation-log")
+def admin_generation_log(request: Request):
+    require_admin(request)
+    logs = []
+    for row in list_generation_logs():
+        logs.append(
+            {
+                "id": row["id"],
+                "user_name": row["user_name"],
+                "user_email": row["user_email"],
+                "platform": row["platform"],
+                "tone": row["tone"],
+                "prompt": row["prompt"],
+                "caption": row["caption"],
+                "created_at": to_utc_iso(row["created_at"]),
+            }
+        )
+    return {"logs": logs}
 
 
 @app.get("/admin/users")

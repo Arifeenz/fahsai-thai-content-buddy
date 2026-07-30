@@ -97,6 +97,20 @@ def init_db() -> None:
         """
     )
 
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS generation_log (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            platform TEXT NOT NULL,
+            tone TEXT,
+            prompt TEXT NOT NULL,
+            caption TEXT NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
     event_count = conn.execute("SELECT COUNT(*) AS n FROM events").fetchone()["n"]
     if event_count == 0:
         conn.cursor().executemany(
@@ -356,6 +370,37 @@ def list_security_events(limit: int = 50) -> list[dict]:
         LEFT JOIN users
             ON security_events.identifier = 'user:' || users.id::text
         ORDER BY security_events.created_at DESC
+        LIMIT %s
+        """,
+        (limit,),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def create_generation_log(
+    user_id: int, platform: str, tone: str | None, prompt: str, caption: str
+) -> None:
+    conn = get_connection()
+    conn.execute(
+        "INSERT INTO generation_log (user_id, platform, tone, prompt, caption) VALUES (%s, %s, %s, %s, %s)",
+        (user_id, platform, tone, prompt, caption),
+    )
+    conn.commit()
+    conn.close()
+
+
+def list_generation_logs(limit: int = 100) -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT
+            generation_log.*,
+            users.name AS user_name,
+            users.email AS user_email
+        FROM generation_log
+        LEFT JOIN users ON users.id = generation_log.user_id
+        ORDER BY generation_log.created_at DESC
         LIMIT %s
         """,
         (limit,),

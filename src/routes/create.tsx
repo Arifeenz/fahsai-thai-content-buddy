@@ -60,13 +60,13 @@ function CreateContent() {
   async function approve() {
     if (!caption.trim()) return;
     setApproved(true);
-    await api.saveContent({ platform, preview: caption.slice(0, 80), status: "approved" });
+    await api.saveContent({ platform, preview: caption, status: "approved" });
     toast.success("อนุมัติแล้วค่ะ พร้อมคัดลอกไปโพสต์ได้เลย ✓");
   }
 
   async function copy() {
     await navigator.clipboard.writeText(caption);
-    await api.saveContent({ platform, preview: caption.slice(0, 80), status: "posted" });
+    await api.saveContent({ platform, preview: caption, status: "posted" });
     toast.success("คัดลอกแล้วค่ะ ไปวางในแอปของคุณได้เลย 🎉");
   }
 

@@ -92,6 +92,16 @@ export interface SecurityEvent {
   user_email: string | null;
   created_at: string;
 }
+export interface GenerationLogEntry {
+  id: number;
+  user_name: string | null;
+  user_email: string | null;
+  platform: Platform;
+  tone: Tone | null;
+  prompt: string;
+  caption: string;
+  created_at: string;
+}
 
 export const api = {
   async login(email: string, password: string): Promise<{ user: AuthUser }> {
@@ -198,6 +208,10 @@ export const api = {
   async adminListSecurityEvents(): Promise<SecurityEvent[]> {
     const { events } = await request<{ events: SecurityEvent[] }>("/admin/security-events");
     return events;
+  },
+  async adminListGenerationLogs(): Promise<GenerationLogEntry[]> {
+    const { logs } = await request<{ logs: GenerationLogEntry[] }>("/admin/generation-log");
+    return logs;
   },
   async adminListUsers(): Promise<AdminUser[]> {
     const { users } = await request<{ users: AdminUser[] }>("/admin/users");

@@ -22,6 +22,7 @@ import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminContentRouteImport } from './routes/admin.content'
 import { Route as AdminEventsRouteImport } from './routes/admin.events'
+import { Route as AdminGenerationsRouteImport } from './routes/admin.generations'
 import { Route as AdminSecurityRouteImport } from './routes/admin.security'
 import { Route as AdminTemplatesRouteImport } from './routes/admin.templates'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
@@ -91,6 +92,11 @@ const AdminEventsRoute = AdminEventsRouteImport.update({
   path: '/events',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminGenerationsRoute = AdminGenerationsRouteImport.update({
+  id: '/generations',
+  path: '/generations',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminSecurityRoute = AdminSecurityRouteImport.update({
   id: '/security',
   path: '/security',
@@ -120,6 +126,7 @@ export interface FileRoutesByFullPath {
   '/verify-email': typeof VerifyEmailRoute
   '/admin/content': typeof AdminContentRoute
   '/admin/events': typeof AdminEventsRoute
+  '/admin/generations': typeof AdminGenerationsRoute
   '/admin/security': typeof AdminSecurityRoute
   '/admin/templates': typeof AdminTemplatesRoute
   '/admin/users': typeof AdminUsersRoute
@@ -137,6 +144,7 @@ export interface FileRoutesByTo {
   '/verify-email': typeof VerifyEmailRoute
   '/admin/content': typeof AdminContentRoute
   '/admin/events': typeof AdminEventsRoute
+  '/admin/generations': typeof AdminGenerationsRoute
   '/admin/security': typeof AdminSecurityRoute
   '/admin/templates': typeof AdminTemplatesRoute
   '/admin/users': typeof AdminUsersRoute
@@ -156,6 +164,7 @@ export interface FileRoutesById {
   '/verify-email': typeof VerifyEmailRoute
   '/admin/content': typeof AdminContentRoute
   '/admin/events': typeof AdminEventsRoute
+  '/admin/generations': typeof AdminGenerationsRoute
   '/admin/security': typeof AdminSecurityRoute
   '/admin/templates': typeof AdminTemplatesRoute
   '/admin/users': typeof AdminUsersRoute
@@ -176,6 +185,7 @@ export interface FileRouteTypes {
     | '/verify-email'
     | '/admin/content'
     | '/admin/events'
+    | '/admin/generations'
     | '/admin/security'
     | '/admin/templates'
     | '/admin/users'
@@ -193,6 +203,7 @@ export interface FileRouteTypes {
     | '/verify-email'
     | '/admin/content'
     | '/admin/events'
+    | '/admin/generations'
     | '/admin/security'
     | '/admin/templates'
     | '/admin/users'
@@ -211,6 +222,7 @@ export interface FileRouteTypes {
     | '/verify-email'
     | '/admin/content'
     | '/admin/events'
+    | '/admin/generations'
     | '/admin/security'
     | '/admin/templates'
     | '/admin/users'
@@ -323,6 +335,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminEventsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/generations': {
+      id: '/admin/generations'
+      path: '/generations'
+      fullPath: '/admin/generations'
+      preLoaderRoute: typeof AdminGenerationsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/security': {
       id: '/admin/security'
       path: '/security'
@@ -350,6 +369,7 @@ declare module '@tanstack/react-router' {
 interface AdminRouteChildren {
   AdminContentRoute: typeof AdminContentRoute
   AdminEventsRoute: typeof AdminEventsRoute
+  AdminGenerationsRoute: typeof AdminGenerationsRoute
   AdminSecurityRoute: typeof AdminSecurityRoute
   AdminTemplatesRoute: typeof AdminTemplatesRoute
   AdminUsersRoute: typeof AdminUsersRoute
@@ -359,6 +379,7 @@ interface AdminRouteChildren {
 const AdminRouteChildren: AdminRouteChildren = {
   AdminContentRoute: AdminContentRoute,
   AdminEventsRoute: AdminEventsRoute,
+  AdminGenerationsRoute: AdminGenerationsRoute,
   AdminSecurityRoute: AdminSecurityRoute,
   AdminTemplatesRoute: AdminTemplatesRoute,
   AdminUsersRoute: AdminUsersRoute,

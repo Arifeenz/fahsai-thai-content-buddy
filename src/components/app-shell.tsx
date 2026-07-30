@@ -13,6 +13,7 @@ import {
   CalendarDays,
   ShieldAlert,
   MailWarning,
+  History,
 } from "lucide-react";
 import { toast } from "sonner";
 import logo from "@/assets/fahsai-logo.png";
@@ -40,6 +41,7 @@ const adminNavItems = [
   { to: "/admin/users", label: "ผู้ใช้งาน", icon: Users },
   { to: "/admin/content", label: "คอนเทนต์ทั้งหมด", icon: FileText },
   { to: "/admin/templates", label: "Prompt Templates", icon: MessageSquareText },
+  { to: "/admin/generations", label: "ประวัติการสร้าง", icon: History },
   { to: "/admin/events", label: "วันสำคัญ", icon: CalendarDays },
   { to: "/admin/security", label: "ความปลอดภัย", icon: ShieldAlert },
   { to: "/settings", label: "ตั้งค่า", icon: Settings },
@@ -166,7 +168,13 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div
           className={
             "mx-auto grid max-w-md " +
-            (items.length > 6 ? "grid-cols-7" : items.length > 5 ? "grid-cols-6" : "grid-cols-5")
+            (items.length > 7
+              ? "grid-cols-8"
+              : items.length > 6
+                ? "grid-cols-7"
+                : items.length > 5
+                  ? "grid-cols-6"
+                  : "grid-cols-5")
           }
         >
           {items.map(({ to, label, icon: Icon }) => {
