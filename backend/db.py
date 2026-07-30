@@ -8,6 +8,10 @@ def get_connection() -> psycopg.Connection:
     return psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row)
 
 
+def _add_column_if_missing(conn: psycopg.Connection, table: str, column_ddl: str) -> None:
+    conn.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column_ddl}")
+
+
 def init_db() -> None:
     conn = get_connection()
     conn.execute(
@@ -110,6 +114,9 @@ def init_db() -> None:
         )
         """
     )
+    _add_column_if_missing(conn, "generation_log", "prompt_tokens INTEGER")
+    _add_column_if_missing(conn, "generation_log", "completion_tokens INTEGER")
+    _add_column_if_missing(conn, "generation_log", "estimated_cost_usd DOUBLE PRECISION")
 
     event_count = conn.execute("SELECT COUNT(*) AS n FROM events").fetchone()["n"]
     if event_count == 0:
@@ -338,6 +345,13 @@ def get_admin_stats() -> dict:
     security_events_week = conn.execute(
         "SELECT COUNT(*) AS n FROM security_events WHERE created_at >= NOW() - INTERVAL '7 days'"
     ).fetchone()["n"]
+    openai_spend_this_month = conn.execute(
+        """
+        SELECT COALESCE(SUM(estimated_cost_usd), 0) AS spend
+        FROM generation_log
+        WHERE created_at >= date_trunc('month', NOW())
+        """
+    ).fetchone()["spend"]
     conn.close()
     return {
         "total_users": total_users,
@@ -345,6 +359,7 @@ def get_admin_stats() -> dict:
         "new_users_week": new_users_week,
         "new_content_week": new_content_week,
         "security_events_week": security_events_week,
+        "openai_spend_this_month": float(openai_spend_this_month),
     }
 
 
@@ -379,15 +394,39 @@ def list_security_events(limit: int = 50) -> list[dict]:
 
 
 def create_generation_log(
-    user_id: int, platform: str, tone: str | None, prompt: str, caption: str
+    user_id: int,
+    platform: str,
+    tone: str | None,
+    prompt: str,
+    caption: str,
+    prompt_tokens: int | None = None,
+    completion_tokens: int | None = None,
+    estimated_cost_usd: float = 0,
 ) -> None:
     conn = get_connection()
     conn.execute(
-        "INSERT INTO generation_log (user_id, platform, tone, prompt, caption) VALUES (%s, %s, %s, %s, %s)",
-        (user_id, platform, tone, prompt, caption),
+        """
+        INSERT INTO generation_log
+            (user_id, platform, tone, prompt, caption, prompt_tokens, completion_tokens, estimated_cost_usd)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """,
+        (user_id, platform, tone, prompt, caption, prompt_tokens, completion_tokens, estimated_cost_usd),
     )
     conn.commit()
     conn.close()
+
+
+def get_monthly_openai_spend() -> float:
+    conn = get_connection()
+    row = conn.execute(
+        """
+        SELECT COALESCE(SUM(estimated_cost_usd), 0) AS spend
+        FROM generation_log
+        WHERE created_at >= date_trunc('month', NOW())
+        """
+    ).fetchone()
+    conn.close()
+    return float(row["spend"])
 
 
 def list_generation_logs(limit: int = 100) -> list[dict]:

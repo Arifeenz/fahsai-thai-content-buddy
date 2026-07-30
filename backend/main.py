@@ -30,6 +30,7 @@ from db import (
     get_admin_stats,
     get_all_events,
     get_brand_dna,
+    get_monthly_openai_spend,
     get_user_by_email,
     get_user_by_id,
     get_user_by_reset_token,
@@ -74,6 +75,10 @@ OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 # If unset, /generate falls back to randomly picking an admin-authored template
 # instead of calling the OpenAI API — lets the app run before a key is configured.
 openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+OPENAI_MONTHLY_BUDGET_USD = float(os.environ.get("OPENAI_MONTHLY_BUDGET_USD", "5"))
+# gpt-4o-mini pricing per 1M tokens — update if the model or OpenAI's pricing changes.
+OPENAI_INPUT_PRICE_PER_1M = 0.15
+OPENAI_OUTPUT_PRICE_PER_1M = 0.60
 
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
 RESEND_FROM_EMAIL = os.environ.get("RESEND_FROM_EMAIL", "onboarding@resend.dev")
@@ -618,9 +623,13 @@ def generate_content(body: GenerateRequest, request: Request):
     user = require_user(request)
     templates = list_prompt_templates(business_category=user["business_category"], platform=body.platform)
 
-    if openai_client is None:
-        # No API key configured yet — keep the app usable with the old
+    budget_exceeded = openai_client is not None and get_monthly_openai_spend() >= OPENAI_MONTHLY_BUDGET_USD
+    if openai_client is None or budget_exceeded:
+        # No API key configured, or this month's estimated OpenAI spend hit
+        # the budget cap — keep the app usable with the old
         # random-pick-from-templates behavior instead of a real LLM.
+        if budget_exceeded:
+            log_security_event("openai_budget_exceeded", f"user:{user['id']}", "/generate")
         if not templates:
             raise HTTPException(
                 status_code=404,
@@ -665,20 +674,37 @@ def generate_content(body: GenerateRequest, request: Request):
             timeout=20,
         )
         caption = response.choices[0].message.content
+        prompt_tokens = response.usage.prompt_tokens if response.usage else None
+        completion_tokens = response.usage.completion_tokens if response.usage else None
     except Exception as exc:
         print(f"[generate:openai_error] {type(exc).__name__}: {exc}")
         raise HTTPException(
             status_code=502, detail="สร้างคอนเทนต์ไม่สำเร็จ ลองใหม่อีกครั้งนะคะ"
         )
 
-    create_generation_log(user["id"], body.platform, body.tone, body.prompt, caption)
+    estimated_cost_usd = 0.0
+    if prompt_tokens is not None and completion_tokens is not None:
+        estimated_cost_usd = (prompt_tokens / 1_000_000) * OPENAI_INPUT_PRICE_PER_1M + (
+            completion_tokens / 1_000_000
+        ) * OPENAI_OUTPUT_PRICE_PER_1M
+
+    create_generation_log(
+        user["id"],
+        body.platform,
+        body.tone,
+        body.prompt,
+        caption,
+        prompt_tokens,
+        completion_tokens,
+        estimated_cost_usd,
+    )
     return {"caption": caption}
 
 
 @app.get("/admin/stats")
 def admin_stats(request: Request):
     require_admin(request)
-    return get_admin_stats()
+    return {**get_admin_stats(), "openai_monthly_budget_usd": OPENAI_MONTHLY_BUDGET_USD}
 
 
 @app.get("/admin/security-events")

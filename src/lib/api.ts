@@ -202,6 +202,8 @@ export const api = {
     new_users_week: number;
     new_content_week: number;
     security_events_week: number;
+    openai_spend_this_month: number;
+    openai_monthly_budget_usd: number;
   }> {
     return request("/admin/stats");
   },

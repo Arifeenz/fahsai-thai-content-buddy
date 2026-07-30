@@ -10,6 +10,8 @@ import {
   CalendarDays,
   TrendingUp,
   ShieldAlert,
+  History,
+  DollarSign,
   type LucideIcon,
 } from "lucide-react";
 
@@ -54,6 +56,7 @@ const quickLinks = [
   { to: "/admin/users", label: "ผู้ใช้งาน", icon: Users },
   { to: "/admin/content", label: "คอนเทนต์ทั้งหมด", icon: FileText },
   { to: "/admin/templates", label: "Prompt Templates", icon: MessageSquareText },
+  { to: "/admin/generations", label: "ประวัติการสร้าง", icon: History },
   { to: "/admin/events", label: "วันสำคัญ", icon: CalendarDays },
   { to: "/admin/security", label: "ความปลอดภัย", icon: ShieldAlert },
 ] as const;
@@ -80,7 +83,7 @@ function AdminOverviewPage() {
       <div className="p-6 md:p-8">
         <PageHeader title="ภาพรวมระบบ" subtitle="สรุปผู้ใช้และคอนเทนต์ทั้งหมดในระบบ" />
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <StatCard
             label="ผู้ใช้งานทั้งหมด"
             value={String(stats?.total_users ?? "—")}
@@ -105,6 +108,15 @@ function AdminOverviewPage() {
             label="เหตุการณ์น่าสงสัย (7 วัน)"
             value={String(stats?.security_events_week ?? "—")}
             icon={ShieldAlert}
+          />
+          <StatCard
+            label="ค่าใช้จ่าย OpenAI เดือนนี้ (ประมาณ)"
+            value={
+              stats
+                ? `$${stats.openai_spend_this_month.toFixed(2)} / $${stats.openai_monthly_budget_usd}`
+                : "—"
+            }
+            icon={DollarSign}
           />
         </div>
 
