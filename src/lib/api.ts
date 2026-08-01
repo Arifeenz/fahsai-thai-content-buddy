@@ -198,6 +198,9 @@ export const api = {
       body: JSON.stringify({ prompt: input.prompt, platform: input.platform, tone: input.tone }),
     });
   },
+  async generateFromImage(formData: FormData): Promise<{ caption: string; image_url: string }> {
+    return requestForm("/generate-from-image", formData);
+  },
 
   async listContent(): Promise<ContentItem[]> {
     const { items } = await request<{ items: ContentItem[] }>("/content");

@@ -858,6 +858,87 @@ def generate_content(body: GenerateRequest, request: Request):
     return {"caption": caption}
 
 
+@app.post("/generate-from-image")
+@limiter.limit("15/hour")
+def generate_from_image(
+    request: Request,
+    platform: str = Form(...),
+    tone: str | None = Form(None),
+    context: str = Form(""),
+    image: UploadFile = File(...),
+):
+    user = require_user(request)
+    image_url = upload_example_image(image, user["id"])
+
+    budget_exceeded = openai_client is not None and get_monthly_openai_spend() >= OPENAI_MONTHLY_BUDGET_USD
+    if openai_client is None or budget_exceeded:
+        # Unlike /generate, there's no sensible template fallback here — a
+        # caption has to describe the actual uploaded photo, so a random
+        # generic template would be misleading rather than merely bland.
+        if budget_exceeded:
+            log_security_event("openai_budget_exceeded", f"user:{user['id']}", "/generate-from-image")
+        raise HTTPException(
+            status_code=503,
+            detail="ฟีเจอร์เขียนจากรูปภาพต้องใช้ AI ช่วย ตอนนี้ยังไม่พร้อมใช้งาน ลองใหม่ภายหลังนะคะ",
+        )
+
+    dna = get_brand_dna(user["id"])
+    platform_label = PLATFORM_LABELS.get(platform, platform)
+    tone_label = TONE_LABELS.get(tone or "", tone or "เป็นกันเอง")
+    context_line = f"\nบริบทเพิ่มเติมจากร้าน: {context}" if context.strip() else ""
+
+    system_prompt = f"""คุณคือ FAHSAI ผู้ช่วยเขียนโพสต์โซเชียลมีเดียให้ร้าน SME ไทย เขียนเป็นภาษาไทยเท่านั้น
+
+ข้อมูลร้าน:
+- ประวัติร้าน: {dna["history"] or "ไม่ระบุ"}
+- เมนู/สินค้าเด่น: {dna["menu"] or "ไม่ระบุ"}
+- จุดขาย (USP): {dna["usp"] or "ไม่ระบุ"}
+- บุคลิกแบรนด์: {dna["tone"] or "ไม่ระบุ"}
+
+ลูกค้าแนบรูปภาพมาให้ ดูรูปนี้แล้วเขียนแคปชั่นโปรโมตสิ่งที่เห็นในรูป ให้เหมาะกับร้าน{context_line}
+
+โพสต์นี้จะลงแพลตฟอร์ม {platform_label} ด้วยโทน "{tone_label}" ให้ความยาวและสไตล์เหมาะกับแพลตฟอร์มนั้น (Facebook เขียนได้ยาวหน่อย, LINE OA กระชับเป็นกันเอง, Instagram ใช้แฮชแท็กได้)
+
+ตอบกลับด้วยข้อความโพสต์เท่านั้น ไม่ต้องมีคำอธิบายอื่น"""
+
+    try:
+        response = openai_client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": context or "เขียนแคปชั่นให้เหมาะกับรูปนี้"},
+                        {"type": "image_url", "image_url": {"url": image_url, "detail": "low"}},
+                    ],
+                },
+            ],
+            max_tokens=500,
+            timeout=20,
+        )
+        caption = response.choices[0].message.content
+        prompt_tokens = response.usage.prompt_tokens if response.usage else None
+        completion_tokens = response.usage.completion_tokens if response.usage else None
+    except Exception as exc:
+        print(f"[generate_from_image:openai_error] {type(exc).__name__}: {exc}")
+        sentry_sdk.capture_exception(exc)
+        raise HTTPException(
+            status_code=502, detail="สร้างคอนเทนต์ไม่สำเร็จ ลองใหม่อีกครั้งนะคะ"
+        )
+
+    estimated_cost_usd = 0.0
+    if prompt_tokens is not None and completion_tokens is not None:
+        estimated_cost_usd = (prompt_tokens / 1_000_000) * OPENAI_INPUT_PRICE_PER_1M + (
+            completion_tokens / 1_000_000
+        ) * OPENAI_OUTPUT_PRICE_PER_1M
+
+    create_generation_log(
+        user["id"], platform, tone, context, caption, prompt_tokens, completion_tokens, estimated_cost_usd
+    )
+    return {"caption": caption, "image_url": image_url}
+
+
 @app.get("/admin/stats")
 def admin_stats(request: Request):
     require_admin(request)

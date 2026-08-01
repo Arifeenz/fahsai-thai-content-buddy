@@ -1,10 +1,19 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { api, type Platform, type Tone, platformLabel } from "@/lib/api";
 import { AppShell, PageHeader } from "@/components/app-shell";
 import { useRequireAuth } from "@/lib/auth-guard";
-import { Sparkles, Check, RefreshCw, Copy, Facebook, Instagram, MessageCircle } from "lucide-react";
+import {
+  Sparkles,
+  Check,
+  RefreshCw,
+  Copy,
+  Facebook,
+  Instagram,
+  MessageCircle,
+  ImagePlus,
+} from "lucide-react";
 
 export const Route = createFileRoute("/create")({
   head: () => ({
@@ -30,22 +39,42 @@ const tones: { key: Tone; label: string }[] = [
   { key: "promo", label: "โปรโมชั่น" },
 ];
 
+type Mode = "idea" | "photo";
+
 function CreateContent() {
   const { ready } = useRequireAuth();
+  const [mode, setMode] = useState<Mode>("idea");
   const [prompt, setPrompt] = useState("โปรโมชั่นหน้าร้อนสำหรับเมนูกาแฟส้ม");
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoContext, setPhotoContext] = useState("");
+  const photoInputRef = useRef<HTMLInputElement>(null);
   const [platform, setPlatform] = useState<Platform>("facebook");
   const [tone, setTone] = useState<Tone>("friendly");
   const [loading, setLoading] = useState(false);
   const [caption, setCaption] = useState<string>("");
+  const [resultImageUrl, setResultImageUrl] = useState<string | null>(null);
   const [approved, setApproved] = useState(false);
 
   async function generate() {
+    if (mode === "photo" && !photoFile) return;
     setLoading(true);
     setApproved(false);
     const t = toast.loading("กำลังสร้างโพสต์ให้อยู่ค่ะ...");
     try {
-      const res = await api.generate({ businessId: "me", prompt, platform, tone });
-      setCaption(res.caption);
+      if (mode === "photo" && photoFile) {
+        const formData = new FormData();
+        formData.append("platform", platform);
+        formData.append("tone", tone);
+        formData.append("context", photoContext);
+        formData.append("image", photoFile);
+        const res = await api.generateFromImage(formData);
+        setCaption(res.caption);
+        setResultImageUrl(res.image_url);
+      } else {
+        const res = await api.generate({ businessId: "me", prompt, platform, tone });
+        setCaption(res.caption);
+        setResultImageUrl(null);
+      }
       toast.success("โพสต์ใหม่พร้อมแล้วค่ะ ลองดูได้เลย", { id: t });
     } catch {
       toast.error("สร้างไม่สำเร็จ ลองอีกครั้งนะคะ", {
@@ -88,14 +117,64 @@ function CreateContent() {
         <div className="grid gap-6 lg:grid-cols-2">
           {/* left: form */}
           <div className="glass-card rounded-2xl p-6">
-            <label className="mb-2 block text-sm font-semibold">อยากโพสต์อะไรวันนี้?</label>
-            <textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              rows={4}
-              placeholder="เช่น อยากได้โพสต์ชวนคนมาลองเมนูใหม่ กาแฟส้ม ช่วงบ่ายลด 20%"
-              className="w-full resize-none rounded-xl border border-border bg-input p-3 text-base outline-none placeholder:text-muted-foreground focus:border-teal"
-            />
+            <div className="mb-4 flex gap-2">
+              <button
+                onClick={() => setMode("idea")}
+                className={
+                  "rounded-full border px-4 py-1.5 text-sm transition " +
+                  (mode === "idea"
+                    ? "border-teal bg-teal/15 text-teal"
+                    : "border-border text-muted-foreground hover:text-foreground")
+                }
+              >
+                เขียนจากไอเดีย
+              </button>
+              <button
+                onClick={() => setMode("photo")}
+                className={
+                  "rounded-full border px-4 py-1.5 text-sm transition " +
+                  (mode === "photo"
+                    ? "border-teal bg-teal/15 text-teal"
+                    : "border-border text-muted-foreground hover:text-foreground")
+                }
+              >
+                เขียนจากรูปภาพ
+              </button>
+            </div>
+
+            {mode === "idea" ? (
+              <>
+                <label className="mb-2 block text-sm font-semibold">อยากโพสต์อะไรวันนี้?</label>
+                <textarea
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  rows={4}
+                  placeholder="เช่น อยากได้โพสต์ชวนคนมาลองเมนูใหม่ กาแฟส้ม ช่วงบ่ายลด 20%"
+                  className="w-full resize-none rounded-xl border border-border bg-input p-3 text-base outline-none placeholder:text-muted-foreground focus:border-teal"
+                />
+              </>
+            ) : (
+              <>
+                <label className="mb-2 block text-sm font-semibold">แนบรูปภาพที่จะโพสต์</label>
+                <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-input/40 px-4 py-6 text-sm text-muted-foreground hover:text-foreground">
+                  <ImagePlus className="h-5 w-5" />
+                  {photoFile ? photoFile.name : "แตะเพื่อเลือกรูปภาพ"}
+                  <input
+                    ref={photoInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)}
+                  />
+                </label>
+                <input
+                  value={photoContext}
+                  onChange={(e) => setPhotoContext(e.target.value)}
+                  placeholder="บริบทเพิ่มเติม (ถ้ามี) เช่น เน้นโปรโมชั่นลด 20%"
+                  className="mt-3 w-full rounded-xl border border-border bg-input p-3 text-sm outline-none placeholder:text-muted-foreground focus:border-teal"
+                />
+              </>
+            )}
 
             <div className="mt-5">
               <div className="mb-2 text-sm font-semibold">แพลตฟอร์ม</div>
@@ -140,7 +219,7 @@ function CreateContent() {
 
             <button
               onClick={generate}
-              disabled={loading}
+              disabled={loading || (mode === "photo" && !photoFile)}
               className="btn-gold mt-6 inline-flex w-full items-center justify-center gap-2 rounded-full px-6 py-3 text-base disabled:opacity-60"
             >
               <Sparkles className="h-5 w-5" />
@@ -166,6 +245,13 @@ function CreateContent() {
               </div>
             ) : caption ? (
               <>
+                {resultImageUrl && (
+                  <img
+                    src={resultImageUrl}
+                    alt=""
+                    className="mb-3 h-32 w-full rounded-xl object-cover"
+                  />
+                )}
                 <textarea
                   value={caption}
                   onChange={(e) => {
