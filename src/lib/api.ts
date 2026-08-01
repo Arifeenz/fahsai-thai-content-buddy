@@ -3,7 +3,7 @@ export type Tone = "friendly" | "professional" | "playful" | "promo";
 export type ContentStatus = "draft" | "approved" | "posted";
 export type DnaDocType = "history" | "menu" | "usp" | "tone";
 export type Role = "admin" | "user";
-export type BusinessCategory = "food_beverage" | "online_shop";
+export type BusinessCategory = "food_beverage" | "online_shop" | "fortune_telling";
 
 export interface GenerateInput {
   businessId: string;
@@ -336,4 +336,5 @@ export const statusLabel: Record<ContentStatus, string> = {
 export const businessCategoryLabel: Record<BusinessCategory, string> = {
   food_beverage: "ร้านอาหาร/เครื่องดื่ม",
   online_shop: "ขายของออนไลน์",
+  fortune_telling: "ดูดวง",
 };
