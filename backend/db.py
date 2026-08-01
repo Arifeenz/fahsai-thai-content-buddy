@@ -5,7 +5,17 @@ from psycopg.rows import dict_row
 
 
 def get_connection() -> psycopg.Connection:
-    return psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row)
+    # prepare_threshold=None disables psycopg's server-side statement
+    # caching. Supabase's connection string here is the transaction-mode
+    # pooler (port 6543), which recycles the underlying backend connection
+    # between clients — a cached prepared statement name from one psycopg
+    # connection can collide with another's, raising
+    # `DuplicatePreparedStatement`. Since every call here opens and closes
+    # its own connection anyway, the caching this disables was never
+    # providing real benefit.
+    return psycopg.connect(
+        os.environ["DATABASE_URL"], row_factory=dict_row, prepare_threshold=None
+    )
 
 
 def _add_column_if_missing(conn: psycopg.Connection, table: str, column_ddl: str) -> None:
