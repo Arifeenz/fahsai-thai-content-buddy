@@ -78,9 +78,15 @@ function LoginPage() {
     // tries. Rendering the real button is the only fully reliable option.
     function renderButton() {
       const container = googleButtonRef.current;
-      if (!container) return;
+      // window.google can be missing here even after the script "loaded" —
+      // ad-blockers/privacy extensions and some corporate/campus network
+      // filters let the <script> request complete without ever actually
+      // running Google's code, so `!` (compile-time only) isn't a real
+      // guard. A user in that situation just won't see the Google button;
+      // email login still works instead of the whole page crashing.
+      if (!container || !window.google?.accounts?.id) return;
       container.innerHTML = "";
-      window.google!.accounts.id.renderButton(container, {
+      window.google.accounts.id.renderButton(container, {
         type: "standard",
         theme: "outline",
         size: "large",
@@ -91,7 +97,13 @@ function LoginPage() {
     }
 
     function init() {
-      window.google!.accounts.id.initialize({
+      if (!window.google?.accounts?.id) {
+        console.warn(
+          "[Google Sign-In] window.google unavailable after script load — likely blocked by a browser extension or network filter.",
+        );
+        return;
+      }
+      window.google.accounts.id.initialize({
         client_id: GOOGLE_CLIENT_ID!,
         callback: handleCredentialResponse,
       });
