@@ -1,8 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { api, platformLabel, statusLabel, type DnaDocType } from "@/lib/api";
+import {
+  api,
+  platformLabel,
+  statusLabel,
+  type ContentFeedback,
+  type ContentItem,
+  type DnaDocType,
+} from "@/lib/api";
 import { AppShell, PageHeader, useCurrentUser } from "@/components/app-shell";
 import { useRequireAuth } from "@/lib/auth-guard";
 import {
@@ -16,6 +23,9 @@ import {
   CalendarDays,
   Trash2,
   Plus,
+  ThumbsUp,
+  ThumbsDown,
+  Meh,
   type LucideIcon,
 } from "lucide-react";
 
@@ -215,6 +225,12 @@ function Dashboard() {
 
   const dnaFilledCount = dna ? DNA_KEYS.filter((k) => dna[k]?.trim()).length : null;
 
+  const feedbackStats = useMemo(() => {
+    const rated = items.filter((it) => it.feedback);
+    const good = rated.filter((it) => it.feedback === "good").length;
+    return { ratedCount: rated.length, goodRate: rated.length ? good / rated.length : 0 };
+  }, [items]);
+
   const daysSinceLastPostText =
     stats?.daysSinceLastPost == null
       ? "ยังไม่เคยโพสต์เลยค่ะ"
@@ -242,7 +258,7 @@ function Dashboard() {
           }
         />
 
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <StatCard
             label="โพสต์ใหม่สัปดาห์นี้"
             value={String(stats?.newPosts ?? "—")}
@@ -268,6 +284,17 @@ function Dashboard() {
             value={stats?.daysSinceLastPost == null ? "—" : String(stats.daysSinceLastPost)}
             hint={stats ? daysSinceLastPostText : undefined}
             icon={CalendarClock}
+            accent="success"
+          />
+          <StatCard
+            label="ผลตอบรับดี"
+            value={feedbackStats.ratedCount === 0 ? "—" : `${Math.round(feedbackStats.goodRate * 100)}%`}
+            hint={
+              feedbackStats.ratedCount === 0
+                ? "ให้ฟีดแบ็คโพสต์ที่โพสต์แล้ว เพื่อดูภาพรวมตรงนี้ค่ะ"
+                : `จาก ${feedbackStats.ratedCount} โพสต์ที่ให้ฟีดแบ็ค`
+            }
+            icon={ThumbsUp}
             accent="success"
           />
         </div>
@@ -316,6 +343,9 @@ function Dashboard() {
                       <span className="text-[11px] text-muted-foreground">{it.createdAt}</span>
                     </div>
                     <div className="truncate text-sm">{it.preview}</div>
+                    <div className="mt-1.5">
+                      <ContentFeedbackControl item={it} />
+                    </div>
                   </div>
                   <StatusBadge status={it.status} />
                 </li>
@@ -377,5 +407,46 @@ export function StatusBadge({ status }: { status: "draft" | "approved" | "posted
     <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${styles[status]}`}>
       {statusLabel[status]}
     </span>
+  );
+}
+
+export const feedbackOptions: { key: ContentFeedback; icon: LucideIcon; activeClass: string }[] = [
+  { key: "good", icon: ThumbsUp, activeClass: "text-success" },
+  { key: "neutral", icon: Meh, activeClass: "text-gold" },
+  { key: "bad", icon: ThumbsDown, activeClass: "text-destructive" },
+];
+
+export function ContentFeedbackControl({ item }: { item: ContentItem }) {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: (feedback: ContentFeedback) => api.setContentFeedback(item.id, feedback),
+    onSuccess: () => {
+      if (!item.feedback) {
+        toast.success("บันทึกฟีดแบ็คแล้วค่ะ ขอบคุณค่ะ ข้อมูลนี้ช่วยให้เห็นภาพรวมผลงานร้านคุณได้ ✨");
+      }
+      queryClient.invalidateQueries({ queryKey: ["content"] });
+    },
+  });
+
+  if (item.status !== "posted") return null;
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-[11px] text-muted-foreground">ผลตอบรับ:</span>
+      {feedbackOptions.map(({ key, icon: Icon, activeClass }) => (
+        <button
+          key={key}
+          onClick={() => mutation.mutate(key)}
+          className={
+            "rounded-full p-1.5 transition " +
+            (item.feedback === key
+              ? `bg-white/5 ${activeClass}`
+              : "text-muted-foreground hover:text-foreground")
+          }
+        >
+          <Icon className="h-3.5 w-3.5" />
+        </button>
+      ))}
+    </div>
   );
 }

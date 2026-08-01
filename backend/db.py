@@ -117,6 +117,7 @@ def init_db() -> None:
     _add_column_if_missing(conn, "generation_log", "prompt_tokens INTEGER")
     _add_column_if_missing(conn, "generation_log", "completion_tokens INTEGER")
     _add_column_if_missing(conn, "generation_log", "estimated_cost_usd DOUBLE PRECISION")
+    _add_column_if_missing(conn, "content_items", "feedback TEXT")
 
     conn.execute(
         """
@@ -468,6 +469,17 @@ def create_content_item(user_id: int, platform: str, preview: str, status: str) 
     row = conn.execute(
         "INSERT INTO content_items (user_id, platform, preview, status) VALUES (%s, %s, %s, %s) RETURNING *",
         (user_id, platform, preview, status),
+    ).fetchone()
+    conn.commit()
+    conn.close()
+    return row
+
+
+def set_content_feedback(content_id: int, user_id: int, feedback: str) -> dict | None:
+    conn = get_connection()
+    row = conn.execute(
+        "UPDATE content_items SET feedback = %s WHERE id = %s AND user_id = %s RETURNING *",
+        (feedback, content_id, user_id),
     ).fetchone()
     conn.commit()
     conn.close()

@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api, platformLabel, type ContentStatus, type Platform } from "@/lib/api";
 import { AppShell, PageHeader } from "@/components/app-shell";
 import { useRequireAuth } from "@/lib/auth-guard";
-import { StatusBadge } from "./dashboard";
+import { ContentFeedbackControl, StatusBadge } from "./dashboard";
 import { Search } from "lucide-react";
 
 export const Route = createFileRoute("/library")({
@@ -125,6 +125,9 @@ function Library() {
                   <span className="text-[11px] text-muted-foreground">{it.createdAt}</span>
                 </div>
                 <div className="line-clamp-2 text-sm leading-relaxed">{it.preview}</div>
+                <div className="mt-2">
+                  <ContentFeedbackControl item={it} />
+                </div>
               </div>
               <StatusBadge status={it.status} />
             </div>

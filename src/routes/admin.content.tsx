@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api, platformLabel } from "@/lib/api";
 import { AppShell, PageHeader } from "@/components/app-shell";
 import { useRequireAdmin } from "@/lib/admin-guard";
-import { StatusBadge } from "./dashboard";
+import { feedbackOptions, StatusBadge } from "./dashboard";
 
 export const Route = createFileRoute("/admin/content")({
   head: () => ({
@@ -54,7 +54,16 @@ function AdminContentPage() {
                 </div>
                 <div className="line-clamp-2 text-sm leading-relaxed">{it.preview}</div>
               </div>
-              <StatusBadge status={it.status} />
+              <div className="flex shrink-0 items-center gap-2">
+                {it.feedback &&
+                  (() => {
+                    const opt = feedbackOptions.find((o) => o.key === it.feedback);
+                    if (!opt) return null;
+                    const Icon = opt.icon;
+                    return <Icon className={`h-3.5 w-3.5 ${opt.activeClass}`} />;
+                  })()}
+                <StatusBadge status={it.status} />
+              </div>
             </div>
           ))}
           {items.length === 0 && (

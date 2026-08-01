@@ -4,6 +4,7 @@ import secrets
 import sys
 import uuid
 from datetime import date, datetime, timedelta, timezone
+from typing import Literal
 
 import bcrypt
 import jwt
@@ -54,6 +55,7 @@ from db import (
     log_security_event,
     promote_example_post_to_global,
     reset_password as db_reset_password,
+    set_content_feedback,
     set_reset_token,
     set_verification_token,
     touch_last_login,
@@ -258,6 +260,10 @@ class ContentItemCreate(BaseModel):
     status: str
 
 
+class ContentFeedbackUpdate(BaseModel):
+    feedback: Literal["good", "neutral", "bad"]
+
+
 class PromptTemplateWrite(BaseModel):
     business_category: str | None = None
     platform: str
@@ -363,6 +369,7 @@ def content_to_dict(row) -> dict:
         "platform": row["platform"],
         "preview": row["preview"],
         "status": row["status"],
+        "feedback": row["feedback"],
         "createdAt": row["created_at"].date().isoformat() if row["created_at"] else None,
     }
 
@@ -577,6 +584,15 @@ def get_my_content(request: Request):
 def post_my_content(body: ContentItemCreate, request: Request):
     user = require_user(request)
     row = create_content_item(user["id"], body.platform, body.preview, body.status)
+    return content_to_dict(row)
+
+
+@app.patch("/content/{content_id}/feedback")
+def update_content_feedback(content_id: int, body: ContentFeedbackUpdate, request: Request):
+    user = require_user(request)
+    row = set_content_feedback(content_id, user["id"], body.feedback)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Content not found")
     return content_to_dict(row)
 
 

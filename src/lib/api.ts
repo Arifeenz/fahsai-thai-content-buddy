@@ -1,6 +1,7 @@
 export type Platform = "facebook" | "line" | "instagram";
 export type Tone = "friendly" | "professional" | "playful" | "promo";
 export type ContentStatus = "draft" | "approved" | "posted";
+export type ContentFeedback = "good" | "neutral" | "bad";
 export type DnaDocType = "history" | "menu" | "usp" | "tone";
 export type Role = "admin" | "user";
 export type BusinessCategory = "food_beverage" | "online_shop" | "fortune_telling";
@@ -16,6 +17,7 @@ export interface ContentItem {
   platform: Platform;
   preview: string;
   status: ContentStatus;
+  feedback: ContentFeedback | null;
   createdAt: string;
 }
 export interface AdminContentItem extends ContentItem {
@@ -201,8 +203,14 @@ export const api = {
     const { items } = await request<{ items: ContentItem[] }>("/content");
     return items;
   },
-  async saveContent(item: Omit<ContentItem, "id" | "createdAt">): Promise<ContentItem> {
+  async saveContent(item: Omit<ContentItem, "id" | "createdAt" | "feedback">): Promise<ContentItem> {
     return request("/content", { method: "POST", body: JSON.stringify(item) });
+  },
+  async setContentFeedback(id: string, feedback: ContentFeedback): Promise<ContentItem> {
+    return request(`/content/${id}/feedback`, {
+      method: "PATCH",
+      body: JSON.stringify({ feedback }),
+    });
   },
 
   async stats() {
