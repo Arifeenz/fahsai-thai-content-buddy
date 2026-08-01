@@ -6,9 +6,9 @@ import {
   api,
   platformLabel,
   businessCategoryLabel,
+  categoryDisplayLabel,
   type AdminExamplePost,
   type Platform,
-  type BusinessCategory,
 } from "@/lib/api";
 import { AppShell, PageHeader } from "@/components/app-shell";
 import { useRequireAdmin } from "@/lib/admin-guard";
@@ -28,7 +28,7 @@ const platforms: Platform[] = ["facebook", "line", "instagram"];
 
 const emptyForm = {
   id: null as number | null,
-  businessCategory: "food_beverage" as BusinessCategory,
+  businessCategory: "food_beverage" as string,
   platform: "facebook" as Platform,
   caption: "",
 };
@@ -48,7 +48,7 @@ function AdminExamplesPage() {
 
   const [search, setSearch] = useState("");
   const [filterPlatform, setFilterPlatform] = useState<Platform | "all">("all");
-  const [filterCategory, setFilterCategory] = useState<BusinessCategory | "all">("all");
+  const [filterCategory, setFilterCategory] = useState<string>("all");
   const [filterOwnership, setFilterOwnership] = useState<"all" | "global" | "personal">("all");
 
   const filtered = useMemo(
@@ -62,6 +62,14 @@ function AdminExamplesPage() {
           (search.trim() === "" || p.caption.toLowerCase().includes(search.toLowerCase())),
       ),
     [posts, search, filterPlatform, filterCategory, filterOwnership],
+  );
+
+  // Personal examples can carry a free-text category (see examples.tsx) —
+  // surface whatever categories actually show up in the data, official or
+  // not, so an emerging unofficial one is immediately filterable/countable.
+  const availableCategories = useMemo(
+    () => Array.from(new Set(posts.map((p) => p.business_category).filter((c): c is string => !!c))),
+    [posts],
   );
 
   function refresh() {
@@ -82,6 +90,9 @@ function AdminExamplesPage() {
       platform: post.platform,
       caption: post.caption,
     });
+    // A promoted personal post can carry a free-text category outside the
+    // 3 official options this <select> offers — the dropdown will just show
+    // blank in that edge case rather than silently picking the wrong one.
     setEditingImageUrl(post.image_url);
     setFile(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -140,9 +151,7 @@ function AdminExamplesPage() {
         <div className="glass-card mb-6 grid gap-3 rounded-2xl p-5 md:grid-cols-2">
           <select
             value={form.businessCategory}
-            onChange={(e) =>
-              setForm({ ...form, businessCategory: e.target.value as BusinessCategory })
-            }
+            onChange={(e) => setForm({ ...form, businessCategory: e.target.value })}
             className="rounded-full border border-border bg-input px-3 py-2 text-sm"
           >
             {Object.entries(businessCategoryLabel).map(([value, label]) => (
@@ -226,13 +235,13 @@ function AdminExamplesPage() {
           </select>
           <select
             value={filterCategory}
-            onChange={(e) => setFilterCategory(e.target.value as typeof filterCategory)}
+            onChange={(e) => setFilterCategory(e.target.value)}
             className="rounded-full border border-border bg-input px-3 py-2 text-sm"
           >
             <option value="all">ทุกประเภทธุรกิจ</option>
-            {Object.entries(businessCategoryLabel).map(([value, label]) => (
+            {availableCategories.map((value) => (
               <option key={value} value={value}>
-                {label}
+                {categoryDisplayLabel(value)}
               </option>
             ))}
           </select>
@@ -281,7 +290,7 @@ function AdminExamplesPage() {
                     {platformLabel[post.platform]}
                   </span>
                   <span className="rounded-full bg-white/5 px-2.5 py-0.5 text-[11px] text-muted-foreground">
-                    {post.business_category ? businessCategoryLabel[post.business_category] : "—"}
+                    {categoryDisplayLabel(post.business_category)}
                   </span>
                   {post.is_personal && (
                     <span className="text-[11px] text-muted-foreground">

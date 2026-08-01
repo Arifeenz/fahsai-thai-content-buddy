@@ -124,7 +124,9 @@ export interface GenerationLogEntry {
 export interface ExamplePost {
   id: number;
   is_personal: boolean;
-  business_category?: BusinessCategory;
+  // Free text on personal examples (see examples.tsx), so not always one of
+  // the official BusinessCategory values — display with a raw-string fallback.
+  business_category?: string;
   platform: Platform;
   caption: string;
   image_url: string | null;
@@ -338,3 +340,10 @@ export const businessCategoryLabel: Record<BusinessCategory, string> = {
   online_shop: "ขายของออนไลน์",
   fortune_telling: "ดูดวง",
 };
+
+// Personal example posts can carry a free-text category (see examples.tsx)
+// that isn't one of the official values above — fall back to showing it as-is.
+export function categoryDisplayLabel(category: string | undefined | null): string {
+  if (!category) return "—";
+  return (businessCategoryLabel as Record<string, string>)[category] ?? category;
+}

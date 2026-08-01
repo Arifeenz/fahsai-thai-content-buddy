@@ -2,8 +2,15 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { api, platformLabel, type Platform } from "@/lib/api";
-import { AppShell, PageHeader } from "@/components/app-shell";
+import {
+  api,
+  platformLabel,
+  businessCategoryLabel,
+  categoryDisplayLabel,
+  type Platform,
+  type BusinessCategory,
+} from "@/lib/api";
+import { AppShell, PageHeader, useCurrentUser } from "@/components/app-shell";
 import { useRequireAuth } from "@/lib/auth-guard";
 import { ImagePlus, Trash2, Facebook, Instagram, MessageCircle } from "lucide-react";
 
@@ -25,6 +32,7 @@ const platforms: { key: Platform; icon: any }[] = [
 
 function ExamplesPage() {
   const { ready } = useRequireAuth();
+  const user = useCurrentUser();
   const queryClient = useQueryClient();
   const { data: posts = [] } = useQuery({
     queryKey: ["my-example-posts"],
@@ -35,10 +43,17 @@ function ExamplesPage() {
   const [caption, setCaption] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [categoryOption, setCategoryOption] = useState<BusinessCategory | "other" | null>(null);
+  const [customCategory, setCustomCategory] = useState("");
+
+  const effectiveCategoryOption = categoryOption ?? user?.business_category ?? "food_beverage";
+  const resolvedCategory =
+    effectiveCategoryOption === "other" ? customCategory.trim() : effectiveCategoryOption;
 
   const createMutation = useMutation({
     mutationFn: async () => {
       const formData = new FormData();
+      formData.append("business_category", resolvedCategory);
       formData.append("platform", platform);
       formData.append("caption", caption);
       if (file) formData.append("image", file);
@@ -97,6 +112,28 @@ function ExamplesPage() {
               </button>
             ))}
           </div>
+          <div className="mb-3 flex flex-wrap gap-2">
+            <select
+              value={effectiveCategoryOption}
+              onChange={(e) => setCategoryOption(e.target.value as BusinessCategory | "other")}
+              className="rounded-full border border-border bg-input px-3 py-2 text-sm"
+            >
+              {Object.entries(businessCategoryLabel).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+              <option value="other">อื่นๆ (ระบุเอง)</option>
+            </select>
+            {effectiveCategoryOption === "other" && (
+              <input
+                value={customCategory}
+                onChange={(e) => setCustomCategory(e.target.value)}
+                placeholder="ระบุประเภทธุรกิจ เช่น ร้านเสริมสวย"
+                className="rounded-full border border-border bg-input px-4 py-2 text-sm outline-none placeholder:text-muted-foreground focus:border-teal"
+              />
+            )}
+          </div>
           <textarea
             value={caption}
             onChange={(e) => setCaption(e.target.value)}
@@ -118,7 +155,7 @@ function ExamplesPage() {
             </label>
             <button
               onClick={() => createMutation.mutate()}
-              disabled={!caption.trim() || createMutation.isPending}
+              disabled={!caption.trim() || !resolvedCategory || createMutation.isPending}
               className="btn-gold ml-auto rounded-full px-6 py-2 text-sm disabled:opacity-60"
             >
               เพิ่มตัวอย่าง
@@ -133,13 +170,16 @@ function ExamplesPage() {
                 <img src={post.image_url} alt="" className="h-40 w-full object-cover" />
               )}
               <div className="p-4">
-                <div className="mb-2 flex items-center justify-between">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
                   <span className="rounded-full bg-white/5 px-2.5 py-0.5 text-[11px] text-muted-foreground">
                     {platformLabel[post.platform]}
                   </span>
+                  <span className="rounded-full bg-white/5 px-2.5 py-0.5 text-[11px] text-muted-foreground">
+                    {categoryDisplayLabel(post.business_category)}
+                  </span>
                   <button
                     onClick={() => deleteMutation.mutate(post.id)}
-                    className="text-muted-foreground hover:text-destructive"
+                    className="ml-auto text-muted-foreground hover:text-destructive"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>

@@ -685,6 +685,7 @@ def list_my_example_posts(request: Request):
 @app.post("/example-posts")
 def create_my_example_post(
     request: Request,
+    business_category: str = Form(...),
     platform: str = Form(...),
     caption: str = Form(...),
     image: UploadFile | None = File(None),
@@ -692,7 +693,7 @@ def create_my_example_post(
     user = require_user(request)
     image_url = upload_example_image(image, user["id"])
     row = create_example_post(
-        user["id"], user["business_category"], platform, caption, image_url, user["id"]
+        user["id"], business_category, platform, caption, image_url, user["id"]
     )
     return example_post_to_dict(row)
 
