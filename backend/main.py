@@ -707,6 +707,30 @@ def delete_my_example_post(post_id: int, request: Request):
     return {"ok": True}
 
 
+@app.put("/example-posts/{post_id}")
+def update_my_example_post(
+    post_id: int,
+    request: Request,
+    business_category: str = Form(...),
+    platform: str = Form(...),
+    caption: str = Form(...),
+    image: UploadFile | None = File(None),
+):
+    user = require_user(request)
+    existing = get_example_post(post_id)
+    if existing is None or existing["user_id"] != user["id"]:
+        raise HTTPException(status_code=404, detail="Example post not found")
+    image_url = (
+        upload_example_image(image, user["id"])
+        if image is not None and image.filename
+        else existing["image_url"]
+    )
+    row = update_example_post(post_id, user["id"], business_category, platform, caption, image_url)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Example post not found")
+    return example_post_to_dict(row)
+
+
 PLATFORM_LABELS = {"facebook": "Facebook", "line": "LINE OA", "instagram": "Instagram"}
 TONE_LABELS = {
     "friendly": "เป็นกันเอง",
@@ -946,7 +970,7 @@ def admin_update_example_post(
         if image is not None and image.filename
         else existing["image_url"]
     )
-    row = update_example_post(post_id, business_category, platform, caption, image_url)
+    row = update_example_post(post_id, None, business_category, platform, caption, image_url)
     if row is None:
         raise HTTPException(status_code=404, detail="Example post not found")
     return example_post_to_dict(row)

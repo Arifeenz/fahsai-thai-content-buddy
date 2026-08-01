@@ -7,12 +7,13 @@ import {
   platformLabel,
   businessCategoryLabel,
   categoryDisplayLabel,
+  type ExamplePost,
   type Platform,
   type BusinessCategory,
 } from "@/lib/api";
 import { AppShell, PageHeader, useCurrentUser } from "@/components/app-shell";
 import { useRequireAuth } from "@/lib/auth-guard";
-import { ImagePlus, Trash2, Facebook, Instagram, MessageCircle } from "lucide-react";
+import { ImagePlus, Trash2, Pencil, Facebook, Instagram, MessageCircle } from "lucide-react";
 
 export const Route = createFileRoute("/examples")({
   head: () => ({
@@ -39,6 +40,8 @@ function ExamplesPage() {
     queryFn: () => api.listMyExamplePosts(),
   });
 
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingImageUrl, setEditingImageUrl] = useState<string | null>(null);
   const [platform, setPlatform] = useState<Platform>("facebook");
   const [caption, setCaption] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -50,23 +53,45 @@ function ExamplesPage() {
   const resolvedCategory =
     effectiveCategoryOption === "other" ? customCategory.trim() : effectiveCategoryOption;
 
-  const createMutation = useMutation({
+  function resetForm() {
+    setEditingId(null);
+    setEditingImageUrl(null);
+    setPlatform("facebook");
+    setCaption("");
+    setFile(null);
+    setCategoryOption(null);
+    setCustomCategory("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function edit(post: ExamplePost) {
+    setEditingId(post.id);
+    setEditingImageUrl(post.image_url);
+    setPlatform(post.platform);
+    setCaption(post.caption);
+    setFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    const isOfficial =
+      !!post.business_category && post.business_category in businessCategoryLabel;
+    setCategoryOption(isOfficial ? (post.business_category as BusinessCategory) : "other");
+    setCustomCategory(isOfficial ? "" : (post.business_category ?? ""));
+  }
+
+  const saveMutation = useMutation({
     mutationFn: async () => {
       const formData = new FormData();
       formData.append("business_category", resolvedCategory);
       formData.append("platform", platform);
       formData.append("caption", caption);
       if (file) formData.append("image", file);
-      return api.createExamplePost(formData);
+      return editingId ? api.updateExamplePost(editingId, formData) : api.createExamplePost(formData);
     },
     onSuccess: () => {
-      toast.success("เพิ่มตัวอย่างแล้วค่ะ ✨");
-      setCaption("");
-      setFile(null);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      toast.success(editingId ? "บันทึกแล้วค่ะ" : "เพิ่มตัวอย่างแล้วค่ะ ✨");
+      resetForm();
       queryClient.invalidateQueries({ queryKey: ["my-example-posts"] });
     },
-    onError: () => toast.error("เพิ่มตัวอย่างไม่สำเร็จ ลองใหม่อีกครั้งนะคะ"),
+    onError: () => toast.error("บันทึกไม่สำเร็จ ลองใหม่อีกครั้งนะคะ"),
   });
 
   const deleteMutation = useMutation({
@@ -142,9 +167,12 @@ function ExamplesPage() {
             className="w-full rounded-2xl border border-border bg-input px-4 py-3 text-sm outline-none placeholder:text-muted-foreground focus:border-teal"
           />
           <div className="mt-3 flex flex-wrap items-center gap-3">
+            {editingImageUrl && !file && (
+              <img src={editingImageUrl} alt="" className="h-9 w-9 rounded-lg object-cover" />
+            )}
             <label className="flex cursor-pointer items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-muted-foreground hover:text-foreground">
               <ImagePlus className="h-4 w-4" />
-              {file ? file.name : "แนบรูปภาพ (ถ้ามี)"}
+              {file ? file.name : editingImageUrl ? "เปลี่ยนรูปภาพ" : "แนบรูปภาพ (ถ้ามี)"}
               <input
                 ref={fileInputRef}
                 type="file"
@@ -153,13 +181,24 @@ function ExamplesPage() {
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               />
             </label>
-            <button
-              onClick={() => createMutation.mutate()}
-              disabled={!caption.trim() || !resolvedCategory || createMutation.isPending}
-              className="btn-gold ml-auto rounded-full px-6 py-2 text-sm disabled:opacity-60"
-            >
-              เพิ่มตัวอย่าง
-            </button>
+            <div className="ml-auto flex gap-2">
+              {editingId && (
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="rounded-full border border-border px-5 py-2 text-sm"
+                >
+                  ยกเลิก
+                </button>
+              )}
+              <button
+                onClick={() => saveMutation.mutate()}
+                disabled={!caption.trim() || !resolvedCategory || saveMutation.isPending}
+                className="btn-gold rounded-full px-6 py-2 text-sm disabled:opacity-60"
+              >
+                {editingId ? "บันทึกการแก้ไข" : "เพิ่มตัวอย่าง"}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -177,12 +216,20 @@ function ExamplesPage() {
                   <span className="rounded-full bg-white/5 px-2.5 py-0.5 text-[11px] text-muted-foreground">
                     {categoryDisplayLabel(post.business_category)}
                   </span>
-                  <button
-                    onClick={() => deleteMutation.mutate(post.id)}
-                    className="ml-auto text-muted-foreground hover:text-destructive"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  <div className="ml-auto flex shrink-0 gap-1">
+                    <button
+                      onClick={() => edit(post)}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => deleteMutation.mutate(post.id)}
+                      className="text-muted-foreground hover:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
                 <div className="line-clamp-3 text-sm leading-relaxed">{post.caption}</div>
               </div>

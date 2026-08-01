@@ -302,6 +302,9 @@ export const api = {
   async createExamplePost(formData: FormData): Promise<ExamplePost> {
     return requestForm("/example-posts", formData);
   },
+  async updateExamplePost(id: number, formData: FormData): Promise<ExamplePost> {
+    return requestForm(`/example-posts/${id}`, formData, "PUT");
+  },
   async deleteExamplePost(id: number): Promise<void> {
     await request(`/example-posts/${id}`, { method: "DELETE" });
   },

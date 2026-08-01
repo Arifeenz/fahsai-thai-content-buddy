@@ -661,21 +661,33 @@ def get_example_post(post_id: int) -> dict | None:
 
 def update_example_post(
     post_id: int,
+    owner_user_id: int | None,
     business_category: str | None,
     platform: str,
     caption: str,
     image_url: str | None,
 ) -> dict | None:
     conn = get_connection()
-    row = conn.execute(
-        """
-        UPDATE example_posts
-        SET business_category = %s, platform = %s, caption = %s, image_url = %s
-        WHERE id = %s AND user_id IS NULL
-        RETURNING *
-        """,
-        (business_category, platform, caption, image_url, post_id),
-    ).fetchone()
+    if owner_user_id is None:
+        row = conn.execute(
+            """
+            UPDATE example_posts
+            SET business_category = %s, platform = %s, caption = %s, image_url = %s
+            WHERE id = %s AND user_id IS NULL
+            RETURNING *
+            """,
+            (business_category, platform, caption, image_url, post_id),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            """
+            UPDATE example_posts
+            SET business_category = %s, platform = %s, caption = %s, image_url = %s
+            WHERE id = %s AND user_id = %s
+            RETURNING *
+            """,
+            (business_category, platform, caption, image_url, post_id, owner_user_id),
+        ).fetchone()
     conn.commit()
     conn.close()
     return row
