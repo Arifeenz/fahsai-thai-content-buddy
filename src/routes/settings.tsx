@@ -2,8 +2,14 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppShell, PageHeader, useCurrentUser } from "@/components/app-shell";
 import { useRequireAuth } from "@/lib/auth-guard";
-import { api, businessCategoryLabel, type BusinessCategory } from "@/lib/api";
-import { LogOut, User, Bell, Globe, Store } from "lucide-react";
+import {
+  api,
+  businessCategoryLabel,
+  exampleSelectionModeLabel,
+  type BusinessCategory,
+  type ExampleSelectionMode,
+} from "@/lib/api";
+import { LogOut, User, Bell, Globe, Store, Shuffle } from "lucide-react";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -45,6 +51,11 @@ function SettingsPage() {
 
   async function changeBusinessCategory(value: BusinessCategory) {
     await api.updateMe(value);
+    queryClient.invalidateQueries({ queryKey: ["me"] });
+  }
+
+  async function changeExampleSelectionMode(value: ExampleSelectionMode) {
+    await api.updateExampleSelectionMode(value);
     queryClient.invalidateQueries({ queryKey: ["me"] });
   }
 
@@ -91,6 +102,27 @@ function SettingsPage() {
                   เลือกประเภท
                 </option>
                 {Object.entries(businessCategoryLabel).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </Row>
+          )}
+          {user?.role !== "admin" && (
+            <Row
+              icon={Shuffle}
+              title="โหมดเลือกตัวอย่างประกอบ"
+              desc="วิธีเลือกตัวอย่างโพสต์ที่ AI ใช้เป็นแนวทางตอนสร้างคอนเทนต์"
+            >
+              <select
+                value={user?.example_selection_mode ?? "latest"}
+                onChange={(e) =>
+                  changeExampleSelectionMode(e.target.value as ExampleSelectionMode)
+                }
+                className="rounded-full border border-border bg-input px-3 py-1.5 text-sm"
+              >
+                {Object.entries(exampleSelectionModeLabel).map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}
                   </option>

@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 from openai import OpenAI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -57,12 +57,14 @@ from db import (
     promote_example_post_to_global,
     reset_password as db_reset_password,
     set_content_feedback,
+    set_example_post_rating,
     set_reset_token,
     set_verification_token,
     touch_last_login,
     update_business_category,
     update_event,
     update_example_post,
+    update_example_selection_mode,
     update_hide_global_events,
     update_prompt_template,
     upsert_brand_dna,
@@ -249,6 +251,14 @@ class CalendarPreferenceWrite(BaseModel):
     hide_global_events: bool
 
 
+class ExampleSelectionModeWrite(BaseModel):
+    example_selection_mode: Literal["latest", "rating", "random"]
+
+
+class ExamplePostRatingWrite(BaseModel):
+    rating: int = Field(ge=1, le=5)
+
+
 class GenerateRequest(BaseModel):
     prompt: str
     platform: str
@@ -349,6 +359,7 @@ def user_to_dict(row) -> dict:
         "last_login_at": to_utc_iso(row["last_login_at"]),
         "hide_global_events": bool(row["hide_global_events"]),
         "email_verified": bool(row["email_verified"]),
+        "example_selection_mode": row["example_selection_mode"],
     }
 
 
@@ -390,6 +401,7 @@ def example_post_to_dict(row) -> dict:
         "platform": row["platform"],
         "caption": row["caption"],
         "image_url": row["image_url"],
+        "rating": row["rating"],
         "created_at": to_utc_iso(row["created_at"]),
     }
 
@@ -514,6 +526,13 @@ def update_me(body: UpdateMeRequest, request: Request):
 def update_calendar_preference(body: CalendarPreferenceWrite, request: Request):
     user = require_user(request)
     updated = update_hide_global_events(user["id"], body.hide_global_events)
+    return {"user": user_to_dict(updated)}
+
+
+@app.patch("/me/example-selection-mode")
+def update_example_selection_mode_route(body: ExampleSelectionModeWrite, request: Request):
+    user = require_user(request)
+    updated = update_example_selection_mode(user["id"], body.example_selection_mode)
     return {"user": user_to_dict(updated)}
 
 
@@ -748,6 +767,15 @@ def update_my_example_post(
     return example_post_to_dict(row)
 
 
+@app.patch("/example-posts/{post_id}/rating")
+def rate_my_example_post(post_id: int, body: ExamplePostRatingWrite, request: Request):
+    user = require_user(request)
+    row = set_example_post_rating(post_id, user["id"], body.rating)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Example post not found")
+    return example_post_to_dict(row)
+
+
 PLATFORM_LABELS = {"facebook": "Facebook", "line": "LINE OA", "instagram": "Instagram"}
 TONE_LABELS = {
     "friendly": "เป็นกันเอง",
@@ -782,7 +810,7 @@ def generate_content(body: GenerateRequest, request: Request):
     dna = get_brand_dna(user["id"])
     style_examples = "\n---\n".join(t["template_text"] for t in templates[:3])
     example_post_rows = list_example_posts_for_generation(
-        user["id"], user["business_category"], body.platform
+        user["id"], user["business_category"], body.platform, user["example_selection_mode"]
     )
     if example_post_rows:
         post_captions = "\n---\n".join(p["caption"] for p in example_post_rows)
@@ -1074,6 +1102,15 @@ def admin_update_example_post(
         else existing["image_url"]
     )
     row = update_example_post(post_id, None, business_category, platform, caption, image_url)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Example post not found")
+    return example_post_to_dict(row)
+
+
+@app.patch("/admin/example-posts/{post_id}/rating")
+def admin_rate_example_post(post_id: int, body: ExamplePostRatingWrite, request: Request):
+    require_admin(request)
+    row = set_example_post_rating(post_id, None, body.rating)
     if row is None:
         raise HTTPException(status_code=404, detail="Example post not found")
     return example_post_to_dict(row)

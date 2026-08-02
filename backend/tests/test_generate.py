@@ -93,3 +93,48 @@ def test_generate_returns_caption_and_image_prompt_when_openai_available(client,
     body = res.json()
     assert body["caption"] == "แคปชั่นทดสอบ"
     assert body["image_prompt"] == "a bright orange iced coffee on a wooden table"
+
+
+def test_generate_rating_mode_prefers_higher_rated_examples(client, monkeypatch):
+    signup(client, "user@test.local")
+
+    examples = {}
+    for label, rating in [("low", 1), ("high", 5), ("mid", 3)]:
+        res = client.post(
+            "/example-posts",
+            data={
+                "business_category": "food_beverage",
+                "platform": "facebook",
+                "caption": f"ตัวอย่างเรตติ้ง {label}",
+            },
+        )
+        post_id = res.json()["id"]
+        client.patch(f"/example-posts/{post_id}/rating", json={"rating": rating})
+        examples[label] = post_id
+
+    res = client.patch("/me/example-selection-mode", json={"example_selection_mode": "rating"})
+    assert res.status_code == 200
+
+    fake_response = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(
+                    content=json.dumps({"caption": "แคปชั่นทดสอบ", "image_prompt": "test"})
+                )
+            )
+        ],
+        usage=SimpleNamespace(prompt_tokens=100, completion_tokens=50),
+    )
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = fake_response
+    monkeypatch.setattr(main, "openai_client", fake_client)
+
+    res = client.post(
+        "/generate", json={"prompt": "โปรโมชั่นหน้าร้อน", "platform": "facebook", "tone": "friendly"}
+    )
+    assert res.status_code == 200
+
+    system_prompt = fake_client.chat.completions.create.call_args.kwargs["messages"][0]["content"]
+    assert "ตัวอย่างเรตติ้ง high" in system_prompt
+    assert "ตัวอย่างเรตติ้ง mid" in system_prompt
+    assert "ตัวอย่างเรตติ้ง low" not in system_prompt

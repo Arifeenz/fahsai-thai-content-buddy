@@ -46,6 +46,9 @@ def init_db() -> None:
         )
         """
     )
+    _add_column_if_missing(
+        conn, "users", "example_selection_mode TEXT NOT NULL DEFAULT 'latest'"
+    )
 
     conn.execute(
         """
@@ -143,6 +146,7 @@ def init_db() -> None:
         )
         """
     )
+    _add_column_if_missing(conn, "example_posts", "rating INTEGER")
 
     event_count = conn.execute("SELECT COUNT(*) AS n FROM events").fetchone()["n"]
     if event_count == 0:
@@ -345,6 +349,17 @@ def update_hide_global_events(user_id: int, hide: bool) -> dict | None:
     row = conn.execute(
         "UPDATE users SET hide_global_events = %s WHERE id = %s RETURNING *",
         (hide, user_id),
+    ).fetchone()
+    conn.commit()
+    conn.close()
+    return row
+
+
+def update_example_selection_mode(user_id: int, mode: str) -> dict | None:
+    conn = get_connection()
+    row = conn.execute(
+        "UPDATE users SET example_selection_mode = %s WHERE id = %s RETURNING *",
+        (mode, user_id),
     ).fetchone()
     conn.commit()
     conn.close()
@@ -604,29 +619,38 @@ def create_example_post(
     return row
 
 
+_EXAMPLE_SELECTION_ORDER_BY = {
+    "latest": "created_at DESC",
+    "rating": "rating DESC NULLS LAST, created_at DESC",
+    "random": "RANDOM()",
+}
+
+
 def list_example_posts_for_generation(
     user_id: int,
     business_category: str | None,
     platform: str,
+    mode: str = "latest",
     personal_limit: int = 2,
     global_limit: int = 2,
 ) -> list[dict]:
+    order_by = _EXAMPLE_SELECTION_ORDER_BY.get(mode, _EXAMPLE_SELECTION_ORDER_BY["latest"])
     conn = get_connection()
     personal = conn.execute(
-        """
+        f"""
         SELECT * FROM example_posts
         WHERE user_id = %s AND platform = %s
-        ORDER BY created_at DESC
+        ORDER BY {order_by}
         LIMIT %s
         """,
         (user_id, platform, personal_limit),
     ).fetchall()
     global_rows = conn.execute(
-        """
+        f"""
         SELECT * FROM example_posts
         WHERE user_id IS NULL AND platform = %s
             AND (business_category = %s OR business_category IS NULL)
-        ORDER BY created_at DESC
+        ORDER BY {order_by}
         LIMIT %s
         """,
         (platform, business_category, global_limit),
@@ -709,6 +733,23 @@ def update_example_post(
             RETURNING *
             """,
             (business_category, platform, caption, image_url, post_id, owner_user_id),
+        ).fetchone()
+    conn.commit()
+    conn.close()
+    return row
+
+
+def set_example_post_rating(post_id: int, owner_user_id: int | None, rating: int) -> dict | None:
+    conn = get_connection()
+    if owner_user_id is None:
+        row = conn.execute(
+            "UPDATE example_posts SET rating = %s WHERE id = %s AND user_id IS NULL RETURNING *",
+            (rating, post_id),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "UPDATE example_posts SET rating = %s WHERE id = %s AND user_id = %s RETURNING *",
+            (rating, post_id, owner_user_id),
         ).fetchone()
     conn.commit()
     conn.close()

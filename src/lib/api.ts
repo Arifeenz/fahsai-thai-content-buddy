@@ -5,6 +5,7 @@ export type ContentFeedback = "good" | "neutral" | "bad";
 export type DnaDocType = "history" | "menu" | "usp" | "tone";
 export type Role = "admin" | "user";
 export type BusinessCategory = "food_beverage" | "online_shop" | "fortune_telling" | "streamer";
+export type ExampleSelectionMode = "latest" | "rating" | "random";
 
 export interface GenerateInput {
   businessId: string;
@@ -37,6 +38,7 @@ export interface AuthUser {
   last_login_at?: string;
   hide_global_events: boolean;
   email_verified: boolean;
+  example_selection_mode: ExampleSelectionMode;
 }
 export interface AdminUser {
   id: number;
@@ -132,6 +134,7 @@ export interface ExamplePost {
   platform: Platform;
   caption: string;
   image_url: string | null;
+  rating: number | null;
   created_at: string;
 }
 export interface AdminExamplePost extends ExamplePost {
@@ -164,6 +167,14 @@ export const api = {
     return request("/me/calendar-preference", {
       method: "PATCH",
       body: JSON.stringify({ hide_global_events }),
+    });
+  },
+  async updateExampleSelectionMode(
+    example_selection_mode: ExampleSelectionMode,
+  ): Promise<{ user: AuthUser }> {
+    return request("/me/example-selection-mode", {
+      method: "PATCH",
+      body: JSON.stringify({ example_selection_mode }),
     });
   },
   async logout() {
@@ -319,6 +330,18 @@ export const api = {
   async deleteExamplePost(id: number): Promise<void> {
     await request(`/example-posts/${id}`, { method: "DELETE" });
   },
+  async rateExamplePost(id: number, rating: number): Promise<ExamplePost> {
+    return request(`/example-posts/${id}/rating`, {
+      method: "PATCH",
+      body: JSON.stringify({ rating }),
+    });
+  },
+  async adminRateExamplePost(id: number, rating: number): Promise<ExamplePost> {
+    return request(`/admin/example-posts/${id}/rating`, {
+      method: "PATCH",
+      body: JSON.stringify({ rating }),
+    });
+  },
   async adminListExamplePosts(): Promise<AdminExamplePost[]> {
     const { posts } = await request<{ posts: AdminExamplePost[] }>("/admin/example-posts");
     return posts;
@@ -354,6 +377,12 @@ export const businessCategoryLabel: Record<BusinessCategory, string> = {
   online_shop: "ขายของออนไลน์",
   fortune_telling: "ดูดวง",
   streamer: "สตรีมเมอร์/เกมเมอร์",
+};
+
+export const exampleSelectionModeLabel: Record<ExampleSelectionMode, string> = {
+  latest: "ล่าสุด",
+  rating: "ตามคะแนน",
+  random: "สุ่ม",
 };
 
 // Personal example posts can carry a free-text category (see examples.tsx)

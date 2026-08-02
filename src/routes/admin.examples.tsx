@@ -12,6 +12,7 @@ import {
 } from "@/lib/api";
 import { AppShell, PageHeader } from "@/components/app-shell";
 import { useRequireAdmin } from "@/lib/admin-guard";
+import { StarRating } from "@/components/star-rating";
 import { ImagePlus, Trash2, ArrowUpCircle, Pencil, Search } from "lucide-react";
 
 export const Route = createFileRoute("/admin/examples")({
@@ -127,6 +128,12 @@ function AdminExamplesPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.adminDeleteExamplePost(id),
+    onSuccess: refresh,
+  });
+
+  const rateMutation = useMutation({
+    mutationFn: ({ id, rating }: { id: number; rating: number }) =>
+      api.adminRateExamplePost(id, rating),
     onSuccess: refresh,
   });
 
@@ -299,6 +306,14 @@ function AdminExamplesPage() {
                   )}
                 </div>
                 <div className="line-clamp-2 text-sm leading-relaxed">{post.caption}</div>
+                {!post.is_personal && (
+                  <div className="mt-2">
+                    <StarRating
+                      value={post.rating}
+                      onChange={(rating) => rateMutation.mutate({ id: post.id, rating })}
+                    />
+                  </div>
+                )}
               </div>
               <div className="flex shrink-0 gap-1">
                 {post.is_personal ? (

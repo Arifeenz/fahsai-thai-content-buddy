@@ -13,6 +13,7 @@ import {
 } from "@/lib/api";
 import { AppShell, PageHeader, useCurrentUser } from "@/components/app-shell";
 import { useRequireAuth } from "@/lib/auth-guard";
+import { StarRating } from "@/components/star-rating";
 import { ImagePlus, Trash2, Pencil, Facebook, Instagram, MessageCircle } from "lucide-react";
 
 export const Route = createFileRoute("/examples")({
@@ -96,6 +97,13 @@ function ExamplesPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.deleteExamplePost(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["my-example-posts"] });
+    },
+  });
+
+  const rateMutation = useMutation({
+    mutationFn: ({ id, rating }: { id: number; rating: number }) => api.rateExamplePost(id, rating),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["my-example-posts"] });
     },
@@ -232,6 +240,12 @@ function ExamplesPage() {
                   </div>
                 </div>
                 <div className="line-clamp-3 text-sm leading-relaxed">{post.caption}</div>
+                <div className="mt-2">
+                  <StarRating
+                    value={post.rating}
+                    onChange={(rating) => rateMutation.mutate({ id: post.id, rating })}
+                  />
+                </div>
               </div>
             </div>
           ))}
