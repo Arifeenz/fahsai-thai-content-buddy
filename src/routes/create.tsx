@@ -305,7 +305,33 @@ function CreateContent() {
                         <Copy className="h-4 w-4" /> คัดลอก prompt
                       </button>
                       <span className="text-xs text-muted-foreground">
-                        เอาไปวางใน AI สร้างภาพที่ถนัดได้เลย เช่น ChatGPT, Bing Image Creator, Gemini
+                        เอาไปวางใน AI สร้างภาพที่ถนัดได้เลย เช่น{" "}
+                        <a
+                          href="https://chatgpt.com/"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-teal underline hover:text-teal/80"
+                        >
+                          ChatGPT
+                        </a>
+                        ,{" "}
+                        <a
+                          href="https://www.bing.com/images/create"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-teal underline hover:text-teal/80"
+                        >
+                          Bing Image Creator
+                        </a>
+                        ,{" "}
+                        <a
+                          href="https://gemini.google.com/"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-teal underline hover:text-teal/80"
+                        >
+                          Gemini
+                        </a>
                       </span>
                     </div>
                   </div>
