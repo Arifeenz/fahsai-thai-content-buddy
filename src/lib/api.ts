@@ -192,7 +192,7 @@ export const api = {
     return request("/brand-dna", { method: "PUT", body: JSON.stringify(docs) });
   },
 
-  async generate(input: GenerateInput): Promise<{ caption: string }> {
+  async generate(input: GenerateInput): Promise<{ caption: string; image_prompt: string | null }> {
     return request("/generate", {
       method: "POST",
       body: JSON.stringify({ prompt: input.prompt, platform: input.platform, tone: input.tone }),

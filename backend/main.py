@@ -1,3 +1,4 @@
+import json
 import os
 import random
 import secrets
@@ -776,7 +777,7 @@ def generate_content(body: GenerateRequest, request: Request):
             )
         chosen = random.choice(templates)
         create_generation_log(user["id"], body.platform, body.tone, body.prompt, chosen["template_text"])
-        return {"caption": chosen["template_text"]}
+        return {"caption": chosen["template_text"], "image_prompt": None}
 
     dna = get_brand_dna(user["id"])
     style_examples = "\n---\n".join(t["template_text"] for t in templates[:3])
@@ -810,7 +811,9 @@ def generate_content(body: GenerateRequest, request: Request):
 
 {"มีรูปตัวอย่างโพสต์แนบมาด้วย ลองดูสไตล์ภาพ สี และบรรยากาศ ใช้เป็นแนวทางแต่งข้อความให้เข้ากัน" if any(p["image_url"] for p in example_post_rows) else ""}
 
-ตอบกลับด้วยข้อความโพสต์เท่านั้น ไม่ต้องมีคำอธิบายอื่น"""
+นอกจากข้อความโพสต์ ให้คิด prompt สั้นๆ เป็นภาษาอังกฤษสำหรับเอาไปใช้กับ AI สร้างภาพ (เช่น DALL-E, Midjourney) ที่เหมาะกับโพสต์นี้ด้วย
+
+ตอบกลับเป็น JSON เท่านั้น รูปแบบ: {{"caption": "ข้อความโพสต์ภาษาไทย", "image_prompt": "English prompt for AI image generation"}}"""
 
     user_content: list[dict] = [{"type": "text", "text": body.prompt}]
     for p in example_post_rows:
@@ -828,8 +831,11 @@ def generate_content(body: GenerateRequest, request: Request):
             ],
             max_tokens=500,
             timeout=20,
+            response_format={"type": "json_object"},
         )
-        caption = response.choices[0].message.content
+        parsed = json.loads(response.choices[0].message.content)
+        caption = parsed["caption"]
+        image_prompt = parsed.get("image_prompt")
         prompt_tokens = response.usage.prompt_tokens if response.usage else None
         completion_tokens = response.usage.completion_tokens if response.usage else None
     except Exception as exc:
@@ -855,7 +861,7 @@ def generate_content(body: GenerateRequest, request: Request):
         completion_tokens,
         estimated_cost_usd,
     )
-    return {"caption": caption}
+    return {"caption": caption, "image_prompt": image_prompt}
 
 
 @app.post("/generate-from-image")

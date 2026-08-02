@@ -53,6 +53,7 @@ function CreateContent() {
   const [loading, setLoading] = useState(false);
   const [caption, setCaption] = useState<string>("");
   const [resultImageUrl, setResultImageUrl] = useState<string | null>(null);
+  const [imagePrompt, setImagePrompt] = useState<string | null>(null);
   const [approved, setApproved] = useState(false);
 
   async function generate() {
@@ -70,10 +71,12 @@ function CreateContent() {
         const res = await api.generateFromImage(formData);
         setCaption(res.caption);
         setResultImageUrl(res.image_url);
+        setImagePrompt(null);
       } else {
         const res = await api.generate({ businessId: "me", prompt, platform, tone });
         setCaption(res.caption);
         setResultImageUrl(null);
+        setImagePrompt(res.image_prompt);
       }
       toast.success("โพสต์ใหม่พร้อมแล้วค่ะ ลองดูได้เลย", { id: t });
     } catch {
@@ -284,6 +287,29 @@ function CreateContent() {
                     </button>
                   )}
                 </div>
+
+                {imagePrompt && (
+                  <div className="mt-5 rounded-xl border border-dashed border-border bg-input/40 p-4">
+                    <div className="mb-2 text-sm font-semibold">
+                      Prompt สำหรับสร้างรูปภาพ (ถ้าต้องการ)
+                    </div>
+                    <p className="text-sm leading-relaxed text-muted-foreground">{imagePrompt}</p>
+                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                      <button
+                        onClick={async () => {
+                          await navigator.clipboard.writeText(imagePrompt);
+                          toast.success("คัดลอก prompt แล้วค่ะ");
+                        }}
+                        className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm hover:bg-white/5"
+                      >
+                        <Copy className="h-4 w-4" /> คัดลอก prompt
+                      </button>
+                      <span className="text-xs text-muted-foreground">
+                        เอาไปวางใน AI สร้างภาพที่ถนัดได้เลย เช่น ChatGPT, Bing Image Creator, Gemini
+                      </span>
+                    </div>
+                  </div>
+                )}
               </>
             ) : (
               <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-dashed border-border text-center">
