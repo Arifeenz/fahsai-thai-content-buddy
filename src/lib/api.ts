@@ -4,7 +4,7 @@ export type ContentStatus = "draft" | "approved" | "posted";
 export type ContentFeedback = "good" | "neutral" | "bad";
 export type DnaDocType = "history" | "menu" | "usp" | "tone";
 export type Role = "admin" | "user";
-export type BusinessCategory = "food_beverage" | "online_shop" | "fortune_telling";
+export type BusinessCategory = "food_beverage" | "online_shop" | "fortune_telling" | "streamer";
 
 export interface GenerateInput {
   businessId: string;
@@ -353,6 +353,7 @@ export const businessCategoryLabel: Record<BusinessCategory, string> = {
   food_beverage: "ร้านอาหาร/เครื่องดื่ม",
   online_shop: "ขายของออนไลน์",
   fortune_telling: "ดูดวง",
+  streamer: "สตรีมเมอร์/เกมเมอร์",
 };
 
 // Personal example posts can carry a free-text category (see examples.tsx)
