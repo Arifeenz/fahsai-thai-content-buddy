@@ -1,9 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { api, type DnaDocType } from "@/lib/api";
 import { AppShell, PageHeader } from "@/components/app-shell";
 import { useRequireAuth } from "@/lib/auth-guard";
-import { Dna, BookOpen, Coffee, Sparkles, MessageCircle, Wand2, Check } from "lucide-react";
+import {
+  Dna,
+  BookOpen,
+  Coffee,
+  Sparkles,
+  MessageCircle,
+  Wand2,
+  Check,
+  Loader2,
+  AlertTriangle,
+} from "lucide-react";
 
 export const Route = createFileRoute("/brand-dna")({
   head: () => ({
@@ -80,6 +91,9 @@ const personalityOptions = [
 
 const emptyValues: Record<DnaDocType, string> = { history: "", menu: "", usp: "", tone: "" };
 const AUTOSAVE_DELAY = 800;
+const MIN_FREE_TEXT_LENGTH = 20;
+
+type EntryMode = "fields" | "single";
 
 function BrandDna() {
   const { ready } = useRequireAuth();
@@ -90,6 +104,11 @@ function BrandDna() {
     usp: false,
     tone: false,
   });
+  const [entryMode, setEntryMode] = useState<EntryMode>("fields");
+  const [freeText, setFreeText] = useState("");
+  const [drafting, setDrafting] = useState(false);
+  const [missingFields, setMissingFields] = useState<DnaDocType[] | null>(null);
+  const [pendingDraft, setPendingDraft] = useState<Record<DnaDocType, string> | null>(null);
   const valuesRef = useRef(values);
   const timers = useRef<Partial<Record<DnaDocType, ReturnType<typeof setTimeout>>>>({});
 
@@ -136,6 +155,51 @@ function BrandDna() {
     updateField("tone", sentence);
   }
 
+  async function applyDraft(draft: Record<DnaDocType, string>) {
+    const merged = { ...valuesRef.current };
+    (Object.keys(draft) as DnaDocType[]).forEach((key) => {
+      if (draft[key]) merged[key] = draft[key];
+    });
+    valuesRef.current = merged;
+    setValues(merged);
+    await api.saveDna(merged);
+    setSavedFields({
+      history: !!merged.history,
+      menu: !!merged.menu,
+      usp: !!merged.usp,
+      tone: !!merged.tone,
+    });
+    setEntryMode("fields");
+    setMissingFields(null);
+    setPendingDraft(null);
+    setFreeText("");
+  }
+
+  async function handleDraft() {
+    if (freeText.trim().length < MIN_FREE_TEXT_LENGTH || drafting) return;
+    setDrafting(true);
+    setMissingFields(null);
+    setPendingDraft(null);
+    try {
+      const { missing_fields, ...draft } = await api.draftDna(freeText);
+      if (missing_fields.length === 0) {
+        await applyDraft(draft);
+        toast.success("จัดข้อมูลครบ 4 หมวดแล้วค่ะ ลองตรวจสอบอีกครั้งได้เลย");
+      } else {
+        setMissingFields(missing_fields);
+        setPendingDraft(draft);
+      }
+    } catch (err) {
+      toast.error(
+        err instanceof Error && err.message
+          ? err.message
+          : "จัดข้อมูลไม่สำเร็จ ลองใหม่อีกครั้งนะคะ",
+      );
+    } finally {
+      setDrafting(false);
+    }
+  }
+
   if (!ready) {
     return (
       <AppShell>
@@ -179,69 +243,162 @@ function BrandDna() {
           </div>
         </div>
 
-        <div className="grid gap-5 md:grid-cols-2">
-          {sections.map(({ key, title, hint, icon: Icon, placeholder, example }) => (
-            <div key={key} className="glass-card rounded-2xl p-5">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="grid h-10 w-10 place-items-center rounded-lg bg-white/5 text-teal">
-                    <Icon className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <div className="font-bold">{title}</div>
-                    <div className="text-xs text-muted-foreground">{hint}</div>
-                  </div>
-                </div>
-                {savedFields[key] && values[key] && (
-                  <span className="flex shrink-0 items-center gap-1 text-xs text-success">
-                    <Check className="h-3.5 w-3.5" /> บันทึกแล้ว
-                  </span>
+        <div className="mb-6 flex gap-2">
+          <button
+            type="button"
+            onClick={() => setEntryMode("fields")}
+            className={
+              "rounded-full border px-4 py-1.5 text-sm transition " +
+              (entryMode === "fields"
+                ? "border-teal bg-teal/15 text-teal"
+                : "border-border text-muted-foreground hover:text-foreground")
+            }
+          >
+            กรอกทีละช่อง
+          </button>
+          <button
+            type="button"
+            onClick={() => setEntryMode("single")}
+            className={
+              "rounded-full border px-4 py-1.5 text-sm transition " +
+              (entryMode === "single"
+                ? "border-teal bg-teal/15 text-teal"
+                : "border-border text-muted-foreground hover:text-foreground")
+            }
+          >
+            เล่าให้ฟังช่องเดียว
+          </button>
+        </div>
+
+        {entryMode === "single" && (
+          <div className="glass-card mb-6 rounded-2xl p-5">
+            <div className="mb-2 font-bold">เล่าเรื่องร้านให้ FAHSAI ฟังหน่อยค่ะ</div>
+            <div className="mb-3 text-sm text-muted-foreground">
+              พิมพ์คร่าวๆ ก็ได้ค่ะ ที่มาร้าน เมนู/สินค้าเด่น จุดขาย และบุคลิกร้านเป็นยังไง แล้ว
+              FAHSAI จะช่วยแยกใส่ 4 หัวข้อให้เอง
+            </div>
+            <textarea
+              value={freeText}
+              onChange={(e) => setFreeText(e.target.value)}
+              rows={6}
+              placeholder="เช่น ร้านกาแฟเปิดที่ยะลามา 3 ปี เน้นเมล็ดกาแฟจากไร่ภาคใต้ เมนูเด่นคือกาแฟส้มกับลาเต้เย็น อยากให้เขียนโพสต์แบบเป็นกันเองอบอุ่นเหมือนคุยกับเพื่อน..."
+              className="w-full resize-none rounded-xl border border-border bg-input p-3 text-base outline-none placeholder:text-muted-foreground focus:border-teal"
+            />
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={handleDraft}
+                disabled={freeText.trim().length < MIN_FREE_TEXT_LENGTH || drafting}
+                className="btn-gold inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm disabled:opacity-60"
+              >
+                {drafting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Wand2 className="h-4 w-4" />
                 )}
-              </div>
-
-              {key === "tone" && (
-                <div className="mb-3 grid grid-cols-2 gap-1.5">
-                  {personalityOptions.map((opt) => {
-                    const active = values.tone === opt.sentence;
-                    return (
-                      <button
-                        key={opt.label}
-                        type="button"
-                        onClick={() => selectPersonality(opt.sentence)}
-                        className={
-                          "rounded-xl border px-3 py-2 text-left text-xs font-medium transition " +
-                          (active
-                            ? "border-teal bg-teal/15 text-teal"
-                            : "border-border text-muted-foreground hover:border-teal hover:text-teal")
-                        }
-                      >
-                        {opt.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              <textarea
-                value={values[key]}
-                onChange={(e) => updateField(key, e.target.value)}
-                placeholder={placeholder}
-                rows={5}
-                className="w-full resize-none rounded-xl border border-border bg-input p-3 text-base outline-none placeholder:text-muted-foreground focus:border-teal"
-              />
-
-              {key !== "tone" && !values[key] && (
-                <button
-                  type="button"
-                  onClick={() => updateField(key, example)}
-                  className="mt-2 inline-flex items-center gap-1.5 text-xs text-teal hover:underline"
-                >
-                  <Wand2 className="h-3.5 w-3.5" /> ลองตัวอย่าง
-                </button>
+                {drafting ? "กำลังจัดข้อมูลให้อยู่ค่ะ..." : "ให้ AI ช่วยจัดให้ครบ 4 หมวด"}
+              </button>
+              {freeText.trim().length > 0 && freeText.trim().length < MIN_FREE_TEXT_LENGTH && (
+                <span className="text-xs text-muted-foreground">
+                  เล่าเพิ่มอีกนิดนะคะ (อย่างน้อย {MIN_FREE_TEXT_LENGTH} ตัวอักษร)
+                </span>
               )}
             </div>
-          ))}
-        </div>
+
+            {missingFields && missingFields.length > 0 && (
+              <div className="mt-4 rounded-xl border border-dashed border-gold/50 bg-gold/10 p-4">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-gold" />
+                  <div className="text-sm">
+                    <div className="font-semibold text-gold">
+                      AI ยังไม่มั่นใจเรื่อง:{" "}
+                      {missingFields
+                        .map((key) => sections.find((s) => s.key === key)?.title ?? key)
+                        .join(", ")}
+                    </div>
+                    <div className="mt-1 text-muted-foreground">
+                      ลองเล่าเพิ่มอีกนิดในช่องด้านบนแล้วกดอีกครั้ง
+                      หรือใช้เท่าที่มีไปก่อนแล้วไปเติมทีละช่องทีหลังก็ได้ค่ะ
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => pendingDraft && applyDraft(pendingDraft)}
+                      className="mt-2 text-sm text-teal underline underline-offset-4 hover:text-teal/80"
+                    >
+                      ใช้เท่าที่มีไปก่อน
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {entryMode === "fields" && (
+          <div className="grid gap-5 md:grid-cols-2">
+            {sections.map(({ key, title, hint, icon: Icon, placeholder, example }) => (
+              <div key={key} className="glass-card rounded-2xl p-5">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="grid h-10 w-10 place-items-center rounded-lg bg-white/5 text-teal">
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <div className="font-bold">{title}</div>
+                      <div className="text-xs text-muted-foreground">{hint}</div>
+                    </div>
+                  </div>
+                  {savedFields[key] && values[key] && (
+                    <span className="flex shrink-0 items-center gap-1 text-xs text-success">
+                      <Check className="h-3.5 w-3.5" /> บันทึกแล้ว
+                    </span>
+                  )}
+                </div>
+
+                {key === "tone" && (
+                  <div className="mb-3 grid grid-cols-2 gap-1.5">
+                    {personalityOptions.map((opt) => {
+                      const active = values.tone === opt.sentence;
+                      return (
+                        <button
+                          key={opt.label}
+                          type="button"
+                          onClick={() => selectPersonality(opt.sentence)}
+                          className={
+                            "rounded-xl border px-3 py-2 text-left text-xs font-medium transition " +
+                            (active
+                              ? "border-teal bg-teal/15 text-teal"
+                              : "border-border text-muted-foreground hover:border-teal hover:text-teal")
+                          }
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <textarea
+                  value={values[key]}
+                  onChange={(e) => updateField(key, e.target.value)}
+                  placeholder={placeholder}
+                  rows={5}
+                  className="w-full resize-none rounded-xl border border-border bg-input p-3 text-base outline-none placeholder:text-muted-foreground focus:border-teal"
+                />
+
+                {key !== "tone" && !values[key] && (
+                  <button
+                    type="button"
+                    onClick={() => updateField(key, example)}
+                    className="mt-2 inline-flex items-center gap-1.5 text-xs text-teal hover:underline"
+                  >
+                    <Wand2 className="h-3.5 w-3.5" /> ลองตัวอย่าง
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </AppShell>
   );

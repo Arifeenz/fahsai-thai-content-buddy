@@ -16,6 +16,7 @@ import { Route as CreateRouteImport } from './routes/create'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as ExamplesRouteImport } from './routes/examples'
 import { Route as LibraryRouteImport } from './routes/library'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
@@ -25,6 +26,7 @@ import { Route as AdminContentRouteImport } from './routes/admin.content'
 import { Route as AdminEventsRouteImport } from './routes/admin.events'
 import { Route as AdminExamplesRouteImport } from './routes/admin.examples'
 import { Route as AdminGenerationsRouteImport } from './routes/admin.generations'
+import { Route as AdminKpiRouteImport } from './routes/admin.kpi'
 import { Route as AdminSecurityRouteImport } from './routes/admin.security'
 import { Route as AdminTemplatesRouteImport } from './routes/admin.templates'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
@@ -62,6 +64,11 @@ const ExamplesRoute = ExamplesRouteImport.update({
 const LibraryRoute = LibraryRouteImport.update({
   id: '/library',
   path: '/library',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
@@ -109,6 +116,11 @@ const AdminGenerationsRoute = AdminGenerationsRouteImport.update({
   path: '/generations',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminKpiRoute = AdminKpiRouteImport.update({
+  id: '/kpi',
+  path: '/kpi',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminSecurityRoute = AdminSecurityRouteImport.update({
   id: '/security',
   path: '/security',
@@ -133,6 +145,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRoute
   '/examples': typeof ExamplesRoute
   '/library': typeof LibraryRoute
+  '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -141,6 +154,7 @@ export interface FileRoutesByFullPath {
   '/admin/events': typeof AdminEventsRoute
   '/admin/examples': typeof AdminExamplesRoute
   '/admin/generations': typeof AdminGenerationsRoute
+  '/admin/kpi': typeof AdminKpiRoute
   '/admin/security': typeof AdminSecurityRoute
   '/admin/templates': typeof AdminTemplatesRoute
   '/admin/users': typeof AdminUsersRoute
@@ -153,6 +167,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof DashboardRoute
   '/examples': typeof ExamplesRoute
   '/library': typeof LibraryRoute
+  '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -161,6 +176,7 @@ export interface FileRoutesByTo {
   '/admin/events': typeof AdminEventsRoute
   '/admin/examples': typeof AdminExamplesRoute
   '/admin/generations': typeof AdminGenerationsRoute
+  '/admin/kpi': typeof AdminKpiRoute
   '/admin/security': typeof AdminSecurityRoute
   '/admin/templates': typeof AdminTemplatesRoute
   '/admin/users': typeof AdminUsersRoute
@@ -175,6 +191,7 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRoute
   '/examples': typeof ExamplesRoute
   '/library': typeof LibraryRoute
+  '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -183,6 +200,7 @@ export interface FileRoutesById {
   '/admin/events': typeof AdminEventsRoute
   '/admin/examples': typeof AdminExamplesRoute
   '/admin/generations': typeof AdminGenerationsRoute
+  '/admin/kpi': typeof AdminKpiRoute
   '/admin/security': typeof AdminSecurityRoute
   '/admin/templates': typeof AdminTemplatesRoute
   '/admin/users': typeof AdminUsersRoute
@@ -198,6 +216,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/examples'
     | '/library'
+    | '/login'
     | '/reset-password'
     | '/settings'
     | '/sitemap.xml'
@@ -206,6 +225,7 @@ export interface FileRouteTypes {
     | '/admin/events'
     | '/admin/examples'
     | '/admin/generations'
+    | '/admin/kpi'
     | '/admin/security'
     | '/admin/templates'
     | '/admin/users'
@@ -218,6 +238,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/examples'
     | '/library'
+    | '/login'
     | '/reset-password'
     | '/settings'
     | '/sitemap.xml'
@@ -226,6 +247,7 @@ export interface FileRouteTypes {
     | '/admin/events'
     | '/admin/examples'
     | '/admin/generations'
+    | '/admin/kpi'
     | '/admin/security'
     | '/admin/templates'
     | '/admin/users'
@@ -239,6 +261,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/examples'
     | '/library'
+    | '/login'
     | '/reset-password'
     | '/settings'
     | '/sitemap.xml'
@@ -247,6 +270,7 @@ export interface FileRouteTypes {
     | '/admin/events'
     | '/admin/examples'
     | '/admin/generations'
+    | '/admin/kpi'
     | '/admin/security'
     | '/admin/templates'
     | '/admin/users'
@@ -261,6 +285,7 @@ export interface RootRouteChildren {
   DashboardRoute: typeof DashboardRoute
   ExamplesRoute: typeof ExamplesRoute
   LibraryRoute: typeof LibraryRoute
+  LoginRoute: typeof LoginRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SettingsRoute: typeof SettingsRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
@@ -316,6 +341,13 @@ declare module '@tanstack/react-router' {
       path: '/library'
       fullPath: '/library'
       preLoaderRoute: typeof LibraryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reset-password': {
@@ -381,6 +413,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminGenerationsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/kpi': {
+      id: '/admin/kpi'
+      path: '/kpi'
+      fullPath: '/admin/kpi'
+      preLoaderRoute: typeof AdminKpiRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/security': {
       id: '/admin/security'
       path: '/security'
@@ -410,6 +449,7 @@ interface AdminRouteChildren {
   AdminEventsRoute: typeof AdminEventsRoute
   AdminExamplesRoute: typeof AdminExamplesRoute
   AdminGenerationsRoute: typeof AdminGenerationsRoute
+  AdminKpiRoute: typeof AdminKpiRoute
   AdminSecurityRoute: typeof AdminSecurityRoute
   AdminTemplatesRoute: typeof AdminTemplatesRoute
   AdminUsersRoute: typeof AdminUsersRoute
@@ -421,6 +461,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminEventsRoute: AdminEventsRoute,
   AdminExamplesRoute: AdminExamplesRoute,
   AdminGenerationsRoute: AdminGenerationsRoute,
+  AdminKpiRoute: AdminKpiRoute,
   AdminSecurityRoute: AdminSecurityRoute,
   AdminTemplatesRoute: AdminTemplatesRoute,
   AdminUsersRoute: AdminUsersRoute,
@@ -437,6 +478,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardRoute: DashboardRoute,
   ExamplesRoute: ExamplesRoute,
   LibraryRoute: LibraryRoute,
+  LoginRoute: LoginRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SettingsRoute: SettingsRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,

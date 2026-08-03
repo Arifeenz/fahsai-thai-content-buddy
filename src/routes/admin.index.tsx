@@ -12,6 +12,7 @@ import {
   ShieldAlert,
   History,
   DollarSign,
+  LineChart,
   type LucideIcon,
 } from "lucide-react";
 
@@ -57,6 +58,7 @@ const quickLinks = [
   { to: "/admin/content", label: "คอนเทนต์ทั้งหมด", icon: FileText },
   { to: "/admin/templates", label: "Prompt Templates", icon: MessageSquareText },
   { to: "/admin/generations", label: "ประวัติการสร้าง", icon: History },
+  { to: "/admin/kpi", label: "KPI", icon: LineChart },
   { to: "/admin/events", label: "วันสำคัญ", icon: CalendarDays },
   { to: "/admin/security", label: "ความปลอดภัย", icon: ShieldAlert },
 ] as const;

@@ -66,7 +66,7 @@ function VerifyEmailPage() {
               เข้าสู่ระบบแล้วขอส่งลิงก์ใหม่อีกครั้งได้นะคะ
             </p>
             <Link
-              to="/"
+              to="/login"
               className="btn-gold mt-8 inline-block w-full rounded-full px-6 py-3.5 text-base"
             >
               กลับไปเข้าสู่ระบบ

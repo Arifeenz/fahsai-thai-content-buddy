@@ -9,6 +9,7 @@ import {
   type ContentFeedback,
   type ContentItem,
   type DnaDocType,
+  type Platform,
 } from "@/lib/api";
 import { AppShell, PageHeader, useCurrentUser } from "@/components/app-shell";
 import { useRequireAuth } from "@/lib/auth-guard";
@@ -26,6 +27,7 @@ import {
   ThumbsUp,
   ThumbsDown,
   Meh,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 
@@ -146,6 +148,116 @@ function EventsCalendarCard() {
           <Plus className="h-4 w-4" />
         </button>
       </form>
+    </div>
+  );
+}
+
+const NUDGE_DUE_DAYS = 7;
+const followerPlatforms: Platform[] = ["facebook", "line", "instagram"];
+
+function FollowerNudgeCard() {
+  const queryClient = useQueryClient();
+  const { data: snapshots = [] } = useQuery({
+    queryKey: ["follower-snapshots"],
+    queryFn: () => api.listFollowerSnapshots(),
+  });
+  const [platform, setPlatform] = useState<Platform>("facebook");
+  const [count, setCount] = useState("");
+  const [showForm, setShowForm] = useState(false);
+
+  const latest = snapshots[snapshots.length - 1] as (typeof snapshots)[number] | undefined;
+  const daysSinceLast = latest
+    ? Math.floor((Date.now() - new Date(latest.recorded_at).getTime()) / 86_400_000)
+    : null;
+  const isDue = daysSinceLast === null || daysSinceLast >= NUDGE_DUE_DAYS;
+
+  const mutation = useMutation({
+    mutationFn: () => api.createFollowerSnapshot(platform, Number(count)),
+    onSuccess: () => {
+      toast.success("บันทึกยอดผู้ติดตามแล้วค่ะ ขอบคุณที่ช่วยให้เราเห็นการเติบโตของร้านคุณ ✨");
+      setCount("");
+      setShowForm(false);
+      queryClient.invalidateQueries({ queryKey: ["follower-snapshots"] });
+    },
+    onError: () => toast.error("บันทึกไม่สำเร็จ ลองอีกครั้งนะคะ"),
+  });
+
+  if (latest && !isDue && !showForm) {
+    return (
+      <div className="glass-card mt-4 flex items-center justify-between gap-3 rounded-2xl p-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/5 text-teal">
+            <Users className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <div className="truncate text-sm font-bold">
+              {platformLabel[latest.platform]} มีผู้ติดตาม {latest.follower_count.toLocaleString()}{" "}
+              คน
+            </div>
+            <div className="text-xs text-muted-foreground">
+              อัพเดทล่าสุด {daysSinceLast} วันที่แล้ว
+            </div>
+          </div>
+        </div>
+        <button
+          onClick={() => setShowForm(true)}
+          className="shrink-0 text-xs text-teal hover:underline"
+        >
+          อัพเดทตอนนี้
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="glass-card mt-4 rounded-2xl p-4">
+      <div className="mb-3 flex items-center gap-3">
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-gold/30 to-teal/30 text-gold">
+          <Users className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-bold">ตอนนี้มีผู้ติดตามกี่คนแล้วคะ?</div>
+          <div className="text-xs text-muted-foreground">
+            ช่วยให้เราเห็นว่าร้านคุณโตขึ้นจริงไหมหลังใช้ FAHSAI (ยอดที่คุณแจ้งเอง ไม่บังคับค่ะ)
+          </div>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={platform}
+          onChange={(e) => setPlatform(e.target.value as Platform)}
+          className="rounded-full border border-border bg-input px-3 py-2 text-sm"
+        >
+          {followerPlatforms.map((p) => (
+            <option key={p} value={p}>
+              {platformLabel[p]}
+            </option>
+          ))}
+        </select>
+        <input
+          type="number"
+          min={0}
+          value={count}
+          onChange={(e) => setCount(e.target.value)}
+          placeholder="จำนวนผู้ติดตาม"
+          className="w-36 rounded-full border border-border bg-input px-4 py-2 text-sm outline-none placeholder:text-muted-foreground focus:border-teal"
+        />
+        <button
+          onClick={() => mutation.mutate()}
+          disabled={!count.trim() || mutation.isPending}
+          className="btn-gold rounded-full px-5 py-2 text-sm disabled:opacity-60"
+        >
+          บันทึก
+        </button>
+        {latest && (
+          <button
+            onClick={() => setShowForm(false)}
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            ปิด
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -288,7 +400,9 @@ function Dashboard() {
           />
           <StatCard
             label="ผลตอบรับดี"
-            value={feedbackStats.ratedCount === 0 ? "—" : `${Math.round(feedbackStats.goodRate * 100)}%`}
+            value={
+              feedbackStats.ratedCount === 0 ? "—" : `${Math.round(feedbackStats.goodRate * 100)}%`
+            }
             hint={
               feedbackStats.ratedCount === 0
                 ? "ให้ฟีดแบ็คโพสต์ที่โพสต์แล้ว เพื่อดูภาพรวมตรงนี้ค่ะ"
@@ -318,6 +432,8 @@ function Dashboard() {
             <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
           </Link>
         )}
+
+        <FollowerNudgeCard />
 
         <EventsCalendarCard />
 
@@ -422,7 +538,9 @@ export function ContentFeedbackControl({ item }: { item: ContentItem }) {
     mutationFn: (feedback: ContentFeedback) => api.setContentFeedback(item.id, feedback),
     onSuccess: () => {
       if (!item.feedback) {
-        toast.success("บันทึกฟีดแบ็คแล้วค่ะ ขอบคุณค่ะ ข้อมูลนี้ช่วยให้เห็นภาพรวมผลงานร้านคุณได้ ✨");
+        toast.success(
+          "บันทึกฟีดแบ็คแล้วค่ะ ขอบคุณค่ะ ข้อมูลนี้ช่วยให้เห็นภาพรวมผลงานร้านคุณได้ ✨",
+        );
       }
       queryClient.invalidateQueries({ queryKey: ["content"] });
     },

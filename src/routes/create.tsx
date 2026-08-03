@@ -13,6 +13,7 @@ import {
   Instagram,
   MessageCircle,
   ImagePlus,
+  X,
 } from "lucide-react";
 
 export const Route = createFileRoute("/create")({
@@ -39,44 +40,49 @@ const tones: { key: Tone; label: string }[] = [
   { key: "promo", label: "โปรโมชั่น" },
 ];
 
+const MAX_PHOTOS = 3;
+
 type Mode = "idea" | "photo";
 
 function CreateContent() {
   const { ready } = useRequireAuth();
   const [mode, setMode] = useState<Mode>("idea");
   const [prompt, setPrompt] = useState("โปรโมชั่นหน้าร้อนสำหรับเมนูกาแฟส้ม");
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
   const [photoContext, setPhotoContext] = useState("");
   const photoInputRef = useRef<HTMLInputElement>(null);
   const [platform, setPlatform] = useState<Platform>("facebook");
   const [tone, setTone] = useState<Tone>("friendly");
   const [loading, setLoading] = useState(false);
   const [caption, setCaption] = useState<string>("");
-  const [resultImageUrl, setResultImageUrl] = useState<string | null>(null);
+  const [resultImageUrls, setResultImageUrls] = useState<string[]>([]);
   const [imagePrompt, setImagePrompt] = useState<string | null>(null);
+  const [imagePromptTh, setImagePromptTh] = useState<string | null>(null);
   const [approved, setApproved] = useState(false);
 
   async function generate() {
-    if (mode === "photo" && !photoFile) return;
+    if (mode === "photo" && photoFiles.length === 0) return;
     setLoading(true);
     setApproved(false);
     const t = toast.loading("กำลังสร้างโพสต์ให้อยู่ค่ะ...");
     try {
-      if (mode === "photo" && photoFile) {
+      if (mode === "photo" && photoFiles.length > 0) {
         const formData = new FormData();
         formData.append("platform", platform);
         formData.append("tone", tone);
         formData.append("context", photoContext);
-        formData.append("image", photoFile);
+        photoFiles.forEach((file) => formData.append("images", file));
         const res = await api.generateFromImage(formData);
         setCaption(res.caption);
-        setResultImageUrl(res.image_url);
+        setResultImageUrls(res.image_urls);
         setImagePrompt(null);
+        setImagePromptTh(null);
       } else {
         const res = await api.generate({ businessId: "me", prompt, platform, tone });
         setCaption(res.caption);
-        setResultImageUrl(null);
+        setResultImageUrls([]);
         setImagePrompt(res.image_prompt);
+        setImagePromptTh(res.image_prompt_th);
       }
       toast.success("โพสต์ใหม่พร้อมแล้วค่ะ ลองดูได้เลย", { id: t });
     } catch {
@@ -92,13 +98,13 @@ function CreateContent() {
   async function approve() {
     if (!caption.trim()) return;
     setApproved(true);
-    await api.saveContent({ platform, preview: caption, status: "approved" });
+    await api.saveContent({ platform, preview: caption, status: "approved", mode });
     toast.success("อนุมัติแล้วค่ะ พร้อมคัดลอกไปโพสต์ได้เลย ✓");
   }
 
   async function copy() {
     await navigator.clipboard.writeText(caption);
-    await api.saveContent({ platform, preview: caption, status: "posted" });
+    await api.saveContent({ platform, preview: caption, status: "posted", mode });
     toast.success("คัดลอกแล้วค่ะ ไปวางในแอปของคุณได้เลย 🎉");
   }
 
@@ -158,18 +164,50 @@ function CreateContent() {
               </>
             ) : (
               <>
-                <label className="mb-2 block text-sm font-semibold">แนบรูปภาพที่จะโพสต์</label>
+                <label className="mb-2 block text-sm font-semibold">
+                  แนบรูปภาพที่จะโพสต์ (สูงสุด {MAX_PHOTOS} รูป)
+                </label>
                 <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-input/40 px-4 py-6 text-sm text-muted-foreground hover:text-foreground">
                   <ImagePlus className="h-5 w-5" />
-                  {photoFile ? photoFile.name : "แตะเพื่อเลือกรูปภาพ"}
+                  {photoFiles.length > 0
+                    ? `เลือกแล้ว ${photoFiles.length} รูป`
+                    : "แตะเพื่อเลือกรูปภาพ"}
                   <input
                     ref={photoInputRef}
                     type="file"
                     accept="image/*"
+                    multiple
                     className="hidden"
-                    onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)}
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files ?? []);
+                      if (files.length > MAX_PHOTOS) {
+                        toast.error(`แนบได้สูงสุด ${MAX_PHOTOS} รูปนะคะ`);
+                      }
+                      setPhotoFiles(files.slice(0, MAX_PHOTOS));
+                    }}
                   />
                 </label>
+                {photoFiles.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {photoFiles.map((file, i) => (
+                      <span
+                        key={`${file.name}-${i}`}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-border bg-input/40 px-3 py-1 text-xs text-muted-foreground"
+                      >
+                        {file.name}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setPhotoFiles((prev) => prev.filter((_, idx) => idx !== i))
+                          }
+                          className="hover:text-foreground"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <input
                   value={photoContext}
                   onChange={(e) => setPhotoContext(e.target.value)}
@@ -222,7 +260,7 @@ function CreateContent() {
 
             <button
               onClick={generate}
-              disabled={loading || (mode === "photo" && !photoFile)}
+              disabled={loading || (mode === "photo" && photoFiles.length === 0)}
               className="btn-gold mt-6 inline-flex w-full items-center justify-center gap-2 rounded-full px-6 py-3 text-base disabled:opacity-60"
             >
               <Sparkles className="h-5 w-5" />
@@ -248,12 +286,22 @@ function CreateContent() {
               </div>
             ) : caption ? (
               <>
-                {resultImageUrl && (
-                  <img
-                    src={resultImageUrl}
-                    alt=""
-                    className="mb-3 h-32 w-full rounded-xl object-cover"
-                  />
+                {resultImageUrls.length > 0 && (
+                  <div
+                    className={
+                      "mb-3 grid gap-2 " +
+                      (resultImageUrls.length === 1 ? "grid-cols-1" : "grid-cols-3")
+                    }
+                  >
+                    {resultImageUrls.map((url, i) => (
+                      <img
+                        key={url + i}
+                        src={url}
+                        alt=""
+                        className="h-32 w-full rounded-xl object-cover"
+                      />
+                    ))}
+                  </div>
                 )}
                 <textarea
                   value={caption}
@@ -291,9 +339,24 @@ function CreateContent() {
                 {imagePrompt && (
                   <div className="mt-5 rounded-xl border border-dashed border-border bg-input/40 p-4">
                     <div className="mb-2 text-sm font-semibold">
-                      Prompt สำหรับสร้างรูปภาพ (ถ้าต้องการ)
+                      Prompt สำหรับสร้างรูปภาพ (แก้ไขได้ก่อนคัดลอก)
                     </div>
-                    <p className="text-sm leading-relaxed text-muted-foreground">{imagePrompt}</p>
+                    <textarea
+                      value={imagePrompt}
+                      onChange={(e) => setImagePrompt(e.target.value)}
+                      rows={3}
+                      className="w-full resize-none rounded-lg border border-border bg-input p-3 text-sm leading-relaxed outline-none focus:border-teal"
+                    />
+                    {imagePromptTh && (
+                      <>
+                        <div className="mb-1 mt-3 text-xs font-semibold text-muted-foreground">
+                          คำแปลไทย (อ่านอย่างเดียว)
+                        </div>
+                        <p className="rounded-lg border border-border/50 bg-white/5 p-3 text-sm leading-relaxed text-muted-foreground">
+                          {imagePromptTh}
+                        </p>
+                      </>
+                    )}
                     <div className="mt-3 flex flex-wrap items-center gap-3">
                       <button
                         onClick={async () => {

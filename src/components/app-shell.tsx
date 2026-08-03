@@ -15,6 +15,7 @@ import {
   MailWarning,
   History,
   Images,
+  LineChart,
 } from "lucide-react";
 import { toast } from "sonner";
 import logo from "@/assets/fahsai-logo.png";
@@ -45,6 +46,7 @@ const adminNavItems = [
   { to: "/admin/templates", label: "Prompt Templates", icon: MessageSquareText },
   { to: "/admin/examples", label: "ตัวอย่างโพสต์", icon: Images },
   { to: "/admin/generations", label: "ประวัติการสร้าง", icon: History },
+  { to: "/admin/kpi", label: "KPI", icon: LineChart },
   { to: "/admin/events", label: "วันสำคัญ", icon: CalendarDays },
   { to: "/admin/security", label: "ความปลอดภัย", icon: ShieldAlert },
   { to: "/settings", label: "ตั้งค่า", icon: Settings },
@@ -78,7 +80,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   async function logout() {
     await api.logout();
-    navigate({ to: "/" });
+    navigate({ to: "/login" });
   }
 
   return (

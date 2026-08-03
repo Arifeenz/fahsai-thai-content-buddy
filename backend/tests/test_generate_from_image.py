@@ -12,13 +12,28 @@ def signup(client, email="user@test.local"):
 
 
 def fake_image_file():
-    return {"image": ("photo.jpg", io.BytesIO(b"fake-bytes"), "image/jpeg")}
+    return {"images": ("photo.jpg", io.BytesIO(b"fake-bytes"), "image/jpeg")}
 
 
 def test_missing_image_rejected(client):
     signup(client)
     res = client.post("/generate-from-image", data={"platform": "facebook", "tone": "friendly"})
     assert res.status_code == 422
+
+
+def test_more_than_max_images_rejected(client, monkeypatch):
+    signup(client)
+    monkeypatch.setattr(main, "upload_example_image", lambda file, owner_id: "https://fake/photo.jpg")
+
+    files = [
+        ("images", (f"photo{i}.jpg", io.BytesIO(b"fake-bytes"), "image/jpeg")) for i in range(4)
+    ]
+    res = client.post(
+        "/generate-from-image",
+        data={"platform": "facebook", "tone": "friendly"},
+        files=files,
+    )
+    assert res.status_code == 400
 
 
 def test_returns_503_without_openai_configured(client, monkeypatch):
@@ -53,7 +68,7 @@ def test_returns_caption_and_image_url_when_openai_available(client, monkeypatch
     assert res.status_code == 200
     body = res.json()
     assert body["caption"] == "แคปชั่นทดสอบจากรูปภาพ"
-    assert body["image_url"] == "https://fake/photo.jpg"
+    assert body["image_urls"] == ["https://fake/photo.jpg"]
 
     logs = main.list_generation_logs()
     assert any(log["caption"] == "แคปชั่นทดสอบจากรูปภาพ" for log in logs)

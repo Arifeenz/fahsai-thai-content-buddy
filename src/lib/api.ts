@@ -5,7 +5,7 @@ export type ContentFeedback = "good" | "neutral" | "bad";
 export type DnaDocType = "history" | "menu" | "usp" | "tone";
 export type Role = "admin" | "user";
 export type BusinessCategory = "food_beverage" | "online_shop" | "fortune_telling" | "streamer";
-export type ExampleSelectionMode = "latest" | "rating" | "random";
+export type ExampleSelectionMode = "latest" | "rating" | "likes" | "random";
 
 export interface GenerateInput {
   businessId: string;
@@ -123,6 +123,7 @@ export interface GenerationLogEntry {
   tone: Tone | null;
   prompt: string;
   caption: string;
+  system_prompt: string | null;
   created_at: string;
 }
 export interface ExamplePost {
@@ -135,11 +136,42 @@ export interface ExamplePost {
   caption: string;
   image_url: string | null;
   rating: number | null;
+  like_count: number | null;
   created_at: string;
 }
 export interface AdminExamplePost extends ExamplePost {
   owner_name: string | null;
   owner_email: string | null;
+}
+export interface FollowerSnapshot {
+  id: number;
+  platform: Platform;
+  follower_count: number;
+  recorded_at: string;
+}
+export interface ApprovalByMode {
+  mode: string;
+  generations: number;
+  approved: number;
+}
+export interface FeedbackByMode {
+  mode: string;
+  good: number;
+  total_rated: number;
+}
+export interface DnaCompletenessRow {
+  filled_count: number;
+  user_count: number;
+  total_generations: number;
+  total_approved: number;
+}
+export interface AdminKpi {
+  approval_by_mode: ApprovalByMode[];
+  feedback_by_mode: FeedbackByMode[];
+  dna_completeness: DnaCompletenessRow[];
+  retained_users: number;
+  active_users: number;
+  avg_days_to_first_content: number | null;
 }
 
 export const api = {
@@ -202,14 +234,35 @@ export const api = {
   async saveDna(docs: Record<DnaDocType, string>): Promise<Record<DnaDocType, string>> {
     return request("/brand-dna", { method: "PUT", body: JSON.stringify(docs) });
   },
+  async draftDna(
+    text: string,
+  ): Promise<Record<DnaDocType, string> & { missing_fields: DnaDocType[] }> {
+    return request("/brand-dna/draft", { method: "POST", body: JSON.stringify({ text }) });
+  },
 
-  async generate(input: GenerateInput): Promise<{ caption: string; image_prompt: string | null }> {
+  async createFollowerSnapshot(
+    platform: Platform,
+    follower_count: number,
+  ): Promise<FollowerSnapshot> {
+    return request("/follower-snapshot", {
+      method: "POST",
+      body: JSON.stringify({ platform, follower_count }),
+    });
+  },
+  async listFollowerSnapshots(): Promise<FollowerSnapshot[]> {
+    const { snapshots } = await request<{ snapshots: FollowerSnapshot[] }>("/follower-snapshot");
+    return snapshots;
+  },
+
+  async generate(
+    input: GenerateInput,
+  ): Promise<{ caption: string; image_prompt: string | null; image_prompt_th: string | null }> {
     return request("/generate", {
       method: "POST",
       body: JSON.stringify({ prompt: input.prompt, platform: input.platform, tone: input.tone }),
     });
   },
-  async generateFromImage(formData: FormData): Promise<{ caption: string; image_url: string }> {
+  async generateFromImage(formData: FormData): Promise<{ caption: string; image_urls: string[] }> {
     return requestForm("/generate-from-image", formData);
   },
 
@@ -217,7 +270,9 @@ export const api = {
     const { items } = await request<{ items: ContentItem[] }>("/content");
     return items;
   },
-  async saveContent(item: Omit<ContentItem, "id" | "createdAt" | "feedback">): Promise<ContentItem> {
+  async saveContent(
+    item: Omit<ContentItem, "id" | "createdAt" | "feedback"> & { mode?: "idea" | "photo" },
+  ): Promise<ContentItem> {
     return request("/content", { method: "POST", body: JSON.stringify(item) });
   },
   async setContentFeedback(id: string, feedback: ContentFeedback): Promise<ContentItem> {
@@ -262,6 +317,9 @@ export const api = {
     openai_monthly_budget_usd: number;
   }> {
     return request("/admin/stats");
+  },
+  async adminGetKpi(): Promise<AdminKpi> {
+    return request("/admin/kpi");
   },
   async adminListSecurityEvents(): Promise<SecurityEvent[]> {
     const { events } = await request<{ events: SecurityEvent[] }>("/admin/security-events");
@@ -382,6 +440,7 @@ export const businessCategoryLabel: Record<BusinessCategory, string> = {
 export const exampleSelectionModeLabel: Record<ExampleSelectionMode, string> = {
   latest: "ล่าสุด",
   rating: "ตามคะแนน",
+  likes: "ตามยอดไลค์",
   random: "สุ่ม",
 };
 

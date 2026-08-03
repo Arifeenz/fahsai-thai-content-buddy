@@ -29,6 +29,7 @@ from db import (
     create_email_user,
     create_event,
     create_example_post,
+    create_follower_snapshot,
     create_generation_log,
     create_prompt_template,
     delete_event,
@@ -36,9 +37,14 @@ from db import (
     delete_prompt_template,
     get_admin_stats,
     get_all_events,
+    get_approval_rate_by_mode,
+    get_avg_days_to_first_content,
     get_brand_dna,
+    get_dna_completeness_correlation,
     get_example_post,
+    get_feedback_ratio_by_mode,
     get_monthly_openai_spend,
+    get_retention_stats,
     get_user_by_email,
     get_user_by_id,
     get_user_by_reset_token,
@@ -50,6 +56,7 @@ from db import (
     list_events_for_user,
     list_example_posts_for_generation,
     list_example_posts_for_user,
+    list_follower_snapshots_for_user,
     list_generation_logs,
     list_prompt_templates,
     list_security_events,
@@ -118,6 +125,7 @@ supabase_client = (
 )
 EXAMPLE_POSTS_BUCKET = "example-posts"
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
+MAX_GENERATE_IMAGES = 3
 
 SESSION_COOKIE = "fahsai_session"
 SESSION_TTL = timedelta(days=7)
@@ -252,7 +260,7 @@ class CalendarPreferenceWrite(BaseModel):
 
 
 class ExampleSelectionModeWrite(BaseModel):
-    example_selection_mode: Literal["latest", "rating", "random"]
+    example_selection_mode: Literal["latest", "rating", "likes", "random"]
 
 
 class ExamplePostRatingWrite(BaseModel):
@@ -269,6 +277,7 @@ class ContentItemCreate(BaseModel):
     platform: str
     preview: str
     status: str
+    mode: str | None = None
 
 
 class ContentFeedbackUpdate(BaseModel):
@@ -287,6 +296,15 @@ class BrandDnaWrite(BaseModel):
     menu: str = ""
     usp: str = ""
     tone: str = ""
+
+
+class BrandDnaDraftRequest(BaseModel):
+    text: str
+
+
+class FollowerSnapshotCreate(BaseModel):
+    platform: str
+    follower_count: int
 
 
 class EventCreate(BaseModel):
@@ -402,7 +420,17 @@ def example_post_to_dict(row) -> dict:
         "caption": row["caption"],
         "image_url": row["image_url"],
         "rating": row["rating"],
+        "like_count": row["like_count"],
         "created_at": to_utc_iso(row["created_at"]),
+    }
+
+
+def follower_snapshot_to_dict(row) -> dict:
+    return {
+        "id": row["id"],
+        "platform": row["platform"],
+        "follower_count": row["follower_count"],
+        "recorded_at": to_utc_iso(row["recorded_at"]),
     }
 
 
@@ -603,7 +631,7 @@ def get_my_content(request: Request):
 @app.post("/content")
 def post_my_content(body: ContentItemCreate, request: Request):
     user = require_user(request)
-    row = create_content_item(user["id"], body.platform, body.preview, body.status)
+    row = create_content_item(user["id"], body.platform, body.preview, body.status, body.mode)
     return content_to_dict(row)
 
 
@@ -660,6 +688,77 @@ def get_brand_dna_endpoint(request: Request):
 def put_brand_dna_endpoint(body: BrandDnaWrite, request: Request):
     user = require_user(request)
     return upsert_brand_dna(user["id"], body.model_dump())
+
+
+@app.post("/follower-snapshot")
+def create_my_follower_snapshot(body: FollowerSnapshotCreate, request: Request):
+    user = require_user(request)
+    row = create_follower_snapshot(user["id"], body.platform, body.follower_count)
+    return follower_snapshot_to_dict(row)
+
+
+@app.get("/follower-snapshot")
+def list_my_follower_snapshots(request: Request):
+    user = require_user(request)
+    return {
+        "snapshots": [
+            follower_snapshot_to_dict(row) for row in list_follower_snapshots_for_user(user["id"])
+        ]
+    }
+
+
+@app.post("/brand-dna/draft")
+@limiter.limit("15/hour")
+def draft_brand_dna(body: BrandDnaDraftRequest, request: Request):
+    user = require_user(request)
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="กรุณาเล่าเรื่องร้านก่อนนะคะ")
+
+    budget_exceeded = openai_client is not None and get_monthly_openai_spend() >= OPENAI_MONTHLY_BUDGET_USD
+    if openai_client is None or budget_exceeded:
+        if budget_exceeded:
+            log_security_event("openai_budget_exceeded", f"user:{user['id']}", "/brand-dna/draft")
+        raise HTTPException(
+            status_code=503,
+            detail="ระบบช่วยจัดข้อมูลไม่พร้อมใช้งานตอนนี้ กรอกทีละช่องแทนได้ค่ะ",
+        )
+
+    system_prompt = """คุณคือ FAHSAI ผู้ช่วยจัดระเบียบข้อมูลร้านให้เจ้าของร้าน SME ไทย
+อ่านข้อความที่ร้านเล่ามาให้ฟัง แล้วแยกใส่ 4 หมวดนี้ เขียนเป็นภาษาไทยเท่านั้น:
+- history: ประวัติร้าน ที่มาที่ไป
+- menu: เมนู/สินค้าเด่นที่อยากให้พูดถึงบ่อยๆ
+- usp: จุดขายที่ไม่เหมือนใคร (USP)
+- tone: บุคลิกแบรนด์ น้ำเสียงตอนเขียนโพสต์
+
+ถ้าข้อความที่ร้านเล่ามาไม่มีข้อมูลพอสำหรับหมวดไหน ให้ปล่อยหมวดนั้นเป็นข้อความว่าง "" แล้วใส่ชื่อหมวด (history/menu/usp/tone) ไว้ใน missing_fields ห้ามเดาหรือแต่งข้อมูลขึ้นเองเด็ดขาด
+
+ตอบกลับเป็น JSON เท่านั้น รูปแบบ: {"history": "...", "menu": "...", "usp": "...", "tone": "...", "missing_fields": ["menu"]}"""
+
+    try:
+        response = openai_client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": text},
+            ],
+            max_tokens=600,
+            timeout=20,
+            response_format={"type": "json_object"},
+        )
+        parsed = json.loads(response.choices[0].message.content)
+    except Exception as exc:
+        print(f"[brand_dna_draft:openai_error] {type(exc).__name__}: {exc}")
+        sentry_sdk.capture_exception(exc)
+        raise HTTPException(status_code=502, detail="จัดข้อมูลไม่สำเร็จ ลองใหม่อีกครั้งนะคะ")
+
+    return {
+        "history": parsed.get("history") or "",
+        "menu": parsed.get("menu") or "",
+        "usp": parsed.get("usp") or "",
+        "tone": parsed.get("tone") or "",
+        "missing_fields": parsed.get("missing_fields") or [],
+    }
 
 
 @app.get("/events/upcoming")
@@ -725,11 +824,12 @@ def create_my_example_post(
     platform: str = Form(...),
     caption: str = Form(...),
     image: UploadFile | None = File(None),
+    like_count: int | None = Form(None),
 ):
     user = require_user(request)
     image_url = upload_example_image(image, user["id"])
     row = create_example_post(
-        user["id"], business_category, platform, caption, image_url, user["id"]
+        user["id"], business_category, platform, caption, image_url, user["id"], like_count
     )
     return example_post_to_dict(row)
 
@@ -751,6 +851,7 @@ def update_my_example_post(
     platform: str = Form(...),
     caption: str = Form(...),
     image: UploadFile | None = File(None),
+    like_count: int | None = Form(None),
 ):
     user = require_user(request)
     existing = get_example_post(post_id)
@@ -761,7 +862,9 @@ def update_my_example_post(
         if image is not None and image.filename
         else existing["image_url"]
     )
-    row = update_example_post(post_id, user["id"], business_category, platform, caption, image_url)
+    row = update_example_post(
+        post_id, user["id"], business_category, platform, caption, image_url, like_count
+    )
     if row is None:
         raise HTTPException(status_code=404, detail="Example post not found")
     return example_post_to_dict(row)
@@ -782,6 +885,12 @@ TONE_LABELS = {
     "professional": "ทางการ",
     "playful": "สนุกสนาน",
     "promo": "โปรโมชั่น",
+}
+BUSINESS_CATEGORY_LABELS = {
+    "food_beverage": "ร้านอาหาร/เครื่องดื่ม",
+    "online_shop": "ขายของออนไลน์",
+    "fortune_telling": "ดูดวง",
+    "streamer": "สตรีมเมอร์/เกมเมอร์",
 }
 
 
@@ -804,8 +913,10 @@ def generate_content(body: GenerateRequest, request: Request):
                 detail="ยังไม่มี prompt template สำหรับแพลตฟอร์มนี้ — ให้แอดมินเพิ่มก่อนนะคะ",
             )
         chosen = random.choice(templates)
-        create_generation_log(user["id"], body.platform, body.tone, body.prompt, chosen["template_text"])
-        return {"caption": chosen["template_text"], "image_prompt": None}
+        create_generation_log(
+            user["id"], body.platform, body.tone, body.prompt, chosen["template_text"], mode="idea"
+        )
+        return {"caption": chosen["template_text"], "image_prompt": None, "image_prompt_th": None}
 
     dna = get_brand_dna(user["id"])
     style_examples = "\n---\n".join(t["template_text"] for t in templates[:3])
@@ -819,6 +930,9 @@ def generate_content(body: GenerateRequest, request: Request):
         )
     platform_label = PLATFORM_LABELS.get(body.platform, body.platform)
     tone_label = TONE_LABELS.get(body.tone or "", body.tone or "เป็นกันเอง")
+    category_label = BUSINESS_CATEGORY_LABELS.get(
+        user["business_category"], user["business_category"] or "ไม่ระบุ"
+    )
     examples_section = (
         f"ตัวอย่างโพสต์ที่ร้านเคยเขียน ใช้เป็นแนวทางโทนเสียงเท่านั้น ห้ามก็อปมาตรงๆ:\n{style_examples}"
         if style_examples
@@ -828,6 +942,7 @@ def generate_content(body: GenerateRequest, request: Request):
     system_prompt = f"""คุณคือ FAHSAI ผู้ช่วยเขียนโพสต์โซเชียลมีเดียให้ร้าน SME ไทย เขียนเป็นภาษาไทยเท่านั้น
 
 ข้อมูลร้าน:
+- ประเภทร้าน: {category_label}
 - ประวัติร้าน: {dna["history"] or "ไม่ระบุ"}
 - เมนู/สินค้าเด่น: {dna["menu"] or "ไม่ระบุ"}
 - จุดขาย (USP): {dna["usp"] or "ไม่ระบุ"}
@@ -839,9 +954,9 @@ def generate_content(body: GenerateRequest, request: Request):
 
 {"มีรูปตัวอย่างโพสต์แนบมาด้วย ลองดูสไตล์ภาพ สี และบรรยากาศ ใช้เป็นแนวทางแต่งข้อความให้เข้ากัน" if any(p["image_url"] for p in example_post_rows) else ""}
 
-นอกจากข้อความโพสต์ ให้คิด prompt สั้นๆ เป็นภาษาอังกฤษสำหรับเอาไปใช้กับ AI สร้างภาพ (เช่น DALL-E, Midjourney) ที่เหมาะกับโพสต์นี้ด้วย
+นอกจากข้อความโพสต์ ให้คิด prompt สั้นๆ เป็นภาษาอังกฤษสำหรับเอาไปใช้กับ AI สร้างภาพ (เช่น DALL-E, Midjourney) ที่เหมาะกับโพสต์นี้ด้วย พร้อมแปล prompt นั้นเป็นภาษาไทยสั้นๆ ให้ร้านค้าอ่านเข้าใจง่ายว่าจะได้ภาพแบบไหน
 
-ตอบกลับเป็น JSON เท่านั้น รูปแบบ: {{"caption": "ข้อความโพสต์ภาษาไทย", "image_prompt": "English prompt for AI image generation"}}"""
+ตอบกลับเป็น JSON เท่านั้น รูปแบบ: {{"caption": "ข้อความโพสต์ภาษาไทย", "image_prompt": "English prompt for AI image generation", "image_prompt_th": "คำแปลไทยสั้นๆ ของ image_prompt"}}"""
 
     user_content: list[dict] = [{"type": "text", "text": body.prompt}]
     for p in example_post_rows:
@@ -864,6 +979,7 @@ def generate_content(body: GenerateRequest, request: Request):
         parsed = json.loads(response.choices[0].message.content)
         caption = parsed["caption"]
         image_prompt = parsed.get("image_prompt")
+        image_prompt_th = parsed.get("image_prompt_th")
         prompt_tokens = response.usage.prompt_tokens if response.usage else None
         completion_tokens = response.usage.completion_tokens if response.usage else None
     except Exception as exc:
@@ -888,8 +1004,10 @@ def generate_content(body: GenerateRequest, request: Request):
         prompt_tokens,
         completion_tokens,
         estimated_cost_usd,
+        system_prompt,
+        mode="idea",
     )
-    return {"caption": caption, "image_prompt": image_prompt}
+    return {"caption": caption, "image_prompt": image_prompt, "image_prompt_th": image_prompt_th}
 
 
 @app.post("/generate-from-image")
@@ -899,10 +1017,14 @@ def generate_from_image(
     platform: str = Form(...),
     tone: str | None = Form(None),
     context: str = Form(""),
-    image: UploadFile = File(...),
+    images: list[UploadFile] = File(...),
 ):
     user = require_user(request)
-    image_url = upload_example_image(image, user["id"])
+    if len(images) > MAX_GENERATE_IMAGES:
+        raise HTTPException(
+            status_code=400, detail=f"แนบได้สูงสุด {MAX_GENERATE_IMAGES} รูปนะคะ"
+        )
+    image_urls = [url for img in images if (url := upload_example_image(img, user["id"]))]
 
     budget_exceeded = openai_client is not None and get_monthly_openai_spend() >= OPENAI_MONTHLY_BUDGET_USD
     if openai_client is None or budget_exceeded:
@@ -919,34 +1041,38 @@ def generate_from_image(
     dna = get_brand_dna(user["id"])
     platform_label = PLATFORM_LABELS.get(platform, platform)
     tone_label = TONE_LABELS.get(tone or "", tone or "เป็นกันเอง")
+    category_label = BUSINESS_CATEGORY_LABELS.get(
+        user["business_category"], user["business_category"] or "ไม่ระบุ"
+    )
     context_line = f"\nบริบทเพิ่มเติมจากร้าน: {context}" if context.strip() else ""
 
     system_prompt = f"""คุณคือ FAHSAI ผู้ช่วยเขียนโพสต์โซเชียลมีเดียให้ร้าน SME ไทย เขียนเป็นภาษาไทยเท่านั้น
 
 ข้อมูลร้าน:
+- ประเภทร้าน: {category_label}
 - ประวัติร้าน: {dna["history"] or "ไม่ระบุ"}
 - เมนู/สินค้าเด่น: {dna["menu"] or "ไม่ระบุ"}
 - จุดขาย (USP): {dna["usp"] or "ไม่ระบุ"}
 - บุคลิกแบรนด์: {dna["tone"] or "ไม่ระบุ"}
 
-ลูกค้าแนบรูปภาพมาให้ ดูรูปนี้แล้วเขียนแคปชั่นโปรโมตสิ่งที่เห็นในรูป ให้เหมาะกับร้าน{context_line}
+ร้านแนบรูปภาพมาให้ {len(image_urls)} รูป ดูรูปเหล่านี้แล้วเขียนแคปชั่นโปรโมตสิ่งที่เห็น ให้เหมาะกับร้าน{context_line}
 
 โพสต์นี้จะลงแพลตฟอร์ม {platform_label} ด้วยโทน "{tone_label}" ให้ความยาวและสไตล์เหมาะกับแพลตฟอร์มนั้น (Facebook เขียนได้ยาวหน่อย, LINE OA กระชับเป็นกันเอง, Instagram ใช้แฮชแท็กได้)
 
 ตอบกลับด้วยข้อความโพสต์เท่านั้น ไม่ต้องมีคำอธิบายอื่น"""
+
+    user_content: list[dict] = [
+        {"type": "text", "text": context or "เขียนแคปชั่นให้เหมาะกับรูปที่แนบมา"}
+    ]
+    for url in image_urls:
+        user_content.append({"type": "image_url", "image_url": {"url": url, "detail": "low"}})
 
     try:
         response = openai_client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": context or "เขียนแคปชั่นให้เหมาะกับรูปนี้"},
-                        {"type": "image_url", "image_url": {"url": image_url, "detail": "low"}},
-                    ],
-                },
+                {"role": "user", "content": user_content},
             ],
             max_tokens=500,
             timeout=20,
@@ -968,18 +1094,44 @@ def generate_from_image(
         ) * OPENAI_OUTPUT_PRICE_PER_1M
 
     create_generation_log(
-        user["id"], platform, tone, context, caption, prompt_tokens, completion_tokens, estimated_cost_usd
+        user["id"],
+        platform,
+        tone,
+        context,
+        caption,
+        prompt_tokens,
+        completion_tokens,
+        estimated_cost_usd,
+        system_prompt,
+        mode="photo",
     )
-    return {"caption": caption, "image_url": image_url}
+    return {"caption": caption, "image_urls": image_urls}
 
 
 @app.get("/admin/stats")
+@limiter.limit("60/minute")
 def admin_stats(request: Request):
     require_admin(request)
     return {**get_admin_stats(), "openai_monthly_budget_usd": OPENAI_MONTHLY_BUDGET_USD}
 
 
+@app.get("/admin/kpi")
+@limiter.limit("60/minute")
+def admin_kpi(request: Request):
+    require_admin(request)
+    retention = get_retention_stats()
+    return {
+        "approval_by_mode": get_approval_rate_by_mode(),
+        "feedback_by_mode": get_feedback_ratio_by_mode(),
+        "dna_completeness": get_dna_completeness_correlation(),
+        "retained_users": retention["retained_users"],
+        "active_users": retention["active_users"],
+        "avg_days_to_first_content": get_avg_days_to_first_content(),
+    }
+
+
 @app.get("/admin/security-events")
+@limiter.limit("60/minute")
 def admin_security_events(request: Request):
     require_admin(request)
     events = []
@@ -999,6 +1151,7 @@ def admin_security_events(request: Request):
 
 
 @app.get("/admin/generation-log")
+@limiter.limit("60/minute")
 def admin_generation_log(request: Request):
     require_admin(request)
     logs = []
@@ -1012,6 +1165,7 @@ def admin_generation_log(request: Request):
                 "tone": row["tone"],
                 "prompt": row["prompt"],
                 "caption": row["caption"],
+                "system_prompt": row["system_prompt"],
                 "created_at": to_utc_iso(row["created_at"]),
             }
         )
@@ -1019,24 +1173,28 @@ def admin_generation_log(request: Request):
 
 
 @app.get("/admin/users")
+@limiter.limit("60/minute")
 def admin_list_users(request: Request):
     require_admin(request)
     return {"users": [admin_user_to_dict(row) for row in list_all_users()]}
 
 
 @app.get("/admin/content")
+@limiter.limit("60/minute")
 def admin_get_all_content(request: Request):
     require_admin(request)
     return {"items": [admin_content_to_dict(row) for row in list_all_content()]}
 
 
 @app.get("/admin/prompt-templates")
+@limiter.limit("60/minute")
 def admin_list_prompt_templates(request: Request):
     require_admin(request)
     return {"templates": [template_to_dict(row) for row in list_prompt_templates()]}
 
 
 @app.post("/admin/prompt-templates")
+@limiter.limit("60/minute")
 def admin_create_prompt_template(body: PromptTemplateWrite, request: Request):
     admin = require_admin(request)
     row = create_prompt_template(
@@ -1046,6 +1204,7 @@ def admin_create_prompt_template(body: PromptTemplateWrite, request: Request):
 
 
 @app.put("/admin/prompt-templates/{template_id}")
+@limiter.limit("60/minute")
 def admin_update_prompt_template(template_id: int, body: PromptTemplateWrite, request: Request):
     require_admin(request)
     row = update_prompt_template(
@@ -1057,6 +1216,7 @@ def admin_update_prompt_template(template_id: int, body: PromptTemplateWrite, re
 
 
 @app.delete("/admin/prompt-templates/{template_id}")
+@limiter.limit("60/minute")
 def admin_delete_prompt_template(template_id: int, request: Request):
     require_admin(request)
     delete_prompt_template(template_id)
@@ -1064,26 +1224,32 @@ def admin_delete_prompt_template(template_id: int, request: Request):
 
 
 @app.get("/admin/example-posts")
+@limiter.limit("60/minute")
 def admin_list_example_posts(request: Request):
     require_admin(request)
     return {"posts": [admin_example_post_to_dict(row) for row in list_all_example_posts()]}
 
 
 @app.post("/admin/example-posts")
+@limiter.limit("60/minute")
 def admin_create_example_post(
     request: Request,
     business_category: str = Form(...),
     platform: str = Form(...),
     caption: str = Form(...),
     image: UploadFile | None = File(None),
+    like_count: int | None = Form(None),
 ):
     admin = require_admin(request)
     image_url = upload_example_image(image, admin["id"])
-    row = create_example_post(None, business_category, platform, caption, image_url, admin["id"])
+    row = create_example_post(
+        None, business_category, platform, caption, image_url, admin["id"], like_count
+    )
     return example_post_to_dict(row)
 
 
 @app.put("/admin/example-posts/{post_id}")
+@limiter.limit("60/minute")
 def admin_update_example_post(
     post_id: int,
     request: Request,
@@ -1091,6 +1257,7 @@ def admin_update_example_post(
     platform: str = Form(...),
     caption: str = Form(...),
     image: UploadFile | None = File(None),
+    like_count: int | None = Form(None),
 ):
     admin = require_admin(request)
     existing = get_example_post(post_id)
@@ -1101,13 +1268,16 @@ def admin_update_example_post(
         if image is not None and image.filename
         else existing["image_url"]
     )
-    row = update_example_post(post_id, None, business_category, platform, caption, image_url)
+    row = update_example_post(
+        post_id, None, business_category, platform, caption, image_url, like_count
+    )
     if row is None:
         raise HTTPException(status_code=404, detail="Example post not found")
     return example_post_to_dict(row)
 
 
 @app.patch("/admin/example-posts/{post_id}/rating")
+@limiter.limit("60/minute")
 def admin_rate_example_post(post_id: int, body: ExamplePostRatingWrite, request: Request):
     require_admin(request)
     row = set_example_post_rating(post_id, None, body.rating)
@@ -1117,6 +1287,7 @@ def admin_rate_example_post(post_id: int, body: ExamplePostRatingWrite, request:
 
 
 @app.delete("/admin/example-posts/{post_id}")
+@limiter.limit("60/minute")
 def admin_delete_example_post(post_id: int, request: Request):
     require_admin(request)
     deleted = delete_example_post(post_id, None)
@@ -1126,6 +1297,7 @@ def admin_delete_example_post(post_id: int, request: Request):
 
 
 @app.post("/admin/example-posts/{post_id}/promote")
+@limiter.limit("60/minute")
 def admin_promote_example_post(post_id: int, request: Request):
     require_admin(request)
     row = promote_example_post_to_global(post_id)
@@ -1135,6 +1307,7 @@ def admin_promote_example_post(post_id: int, request: Request):
 
 
 @app.get("/admin/events")
+@limiter.limit("60/minute")
 def admin_list_events(request: Request):
     require_admin(request)
     today = datetime.now(timezone.utc).date()
@@ -1142,6 +1315,7 @@ def admin_list_events(request: Request):
 
 
 @app.post("/admin/events")
+@limiter.limit("60/minute")
 def admin_create_event(body: EventWrite, request: Request):
     require_admin(request)
     row = create_event(None, body.name, body.month, body.day, body.suggestion_text)
@@ -1149,6 +1323,7 @@ def admin_create_event(body: EventWrite, request: Request):
 
 
 @app.put("/admin/events/{event_id}")
+@limiter.limit("60/minute")
 def admin_update_event(event_id: int, body: EventWrite, request: Request):
     require_admin(request)
     row = update_event(event_id, body.name, body.month, body.day, body.suggestion_text)
@@ -1158,6 +1333,7 @@ def admin_update_event(event_id: int, body: EventWrite, request: Request):
 
 
 @app.delete("/admin/events/{event_id}")
+@limiter.limit("60/minute")
 def admin_delete_event(event_id: int, request: Request):
     require_admin(request)
     deleted = delete_event(event_id, None)

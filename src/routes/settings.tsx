@@ -46,7 +46,7 @@ function SettingsPage() {
 
   async function logout() {
     await api.logout();
-    navigate({ to: "/" });
+    navigate({ to: "/login" });
   }
 
   async function changeBusinessCategory(value: BusinessCategory) {
@@ -117,9 +117,7 @@ function SettingsPage() {
             >
               <select
                 value={user?.example_selection_mode ?? "latest"}
-                onChange={(e) =>
-                  changeExampleSelectionMode(e.target.value as ExampleSelectionMode)
-                }
+                onChange={(e) => changeExampleSelectionMode(e.target.value as ExampleSelectionMode)}
                 className="rounded-full border border-border bg-input px-3 py-1.5 text-sm"
               >
                 {Object.entries(exampleSelectionModeLabel).map(([value, label]) => (

@@ -1,386 +1,302 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import {
+  Sparkles,
+  ImagePlus,
+  Dna,
+  Facebook,
+  Instagram,
+  MessageCircle,
+  Coffee,
+  ShoppingBag,
+  Moon,
+  Gamepad2,
+  type LucideIcon,
+} from "lucide-react";
 import logo from "@/assets/fahsai-logo.png";
-
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
-
-interface GoogleIdentityServices {
-  accounts: {
-    id: {
-      initialize: (config: {
-        client_id: string;
-        callback: (response: { credential: string }) => void;
-      }) => void;
-      renderButton: (parent: HTMLElement, options: Record<string, string | number>) => void;
-    };
-  };
-}
-
-declare global {
-  interface Window {
-    google?: GoogleIdentityServices;
-  }
-}
+import { platformLabel, businessCategoryLabel, type Platform } from "@/lib/api";
+import {
+  Accordion,
+  AccordionItem,
+  AccordionTrigger,
+  AccordionContent,
+} from "@/components/ui/accordion";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "เข้าสู่ระบบ — FAHSAI" },
-      { name: "description", content: "เข้าสู่ระบบ FAHSAI ผู้ช่วยสร้างคอนเทนต์สำหรับร้านของคุณ" },
+      { title: "FAHSAI — ผู้ช่วยสร้างคอนเทนต์สำหรับร้านของคุณ" },
+      {
+        name: "description",
+        content:
+          "ให้ FAHSAI ช่วยเขียนโพสต์ Facebook, LINE OA และ Instagram ให้ร้านคุณ ด้วย AI ตรงสไตล์แบรนด์ทุกครั้ง",
+      },
       { property: "og:title", content: "FAHSAI — ผู้ช่วยสร้างคอนเทนต์สำหรับร้านของคุณ" },
-      { property: "og:description", content: "ให้ FAHSAI ช่วยปั้นแบรนด์ของคุณให้โดดเด่น" },
+      { property: "og:description", content: "AI ช่วยปั้นแบรนด์ของคุณให้โดดเด่น เริ่มใช้งานฟรี" },
+      { property: "og:type", content: "website" },
     ],
   }),
-  component: LoginPage,
+  component: LandingPage,
 });
 
-type Mode = "google" | "login" | "signup" | "forgot";
+const platformIcon: Record<Platform, LucideIcon> = {
+  facebook: Facebook,
+  line: MessageCircle,
+  instagram: Instagram,
+};
 
-function errorMessage(err: unknown, fallback: string): string {
-  return err instanceof Error && err.message ? err.message : fallback;
-}
+const mockPosts: { platform: Platform; caption: string }[] = [
+  {
+    platform: "facebook",
+    caption:
+      "ร้อนนี้แวะมาชิลกันได้เลยค่ะ ☕️ กาแฟส้มแก้วโปรด เปรี้ยวหวานกำลังดี พร้อมเสิร์ฟทุกวัน 9 โมงเช้า - 6 โมงเย็น มาชิมกันน้าา 🧡",
+  },
+  {
+    platform: "instagram",
+    caption: "เมนูใหม่มาแล้ว! 🍰 เค้กมะพร้าวโฮมเมด หอมมะพร้าวคั่วสดทุกคำ #ร้านกาแฟยะลา #เค้กโฮมเมด",
+  },
+  {
+    platform: "line",
+    caption:
+      "โปรโมชั่นบ่ายนี้ค่ะ 🎉 ลาเต้เย็นลด 20% เฉพาะ 14.00-16.00 น. วันนี้เท่านั้น อย่าลืมมาอุดหนุนกันนะคะ",
+  },
+];
 
-function LoginPage() {
-  const navigate = useNavigate();
-  const [mode, setMode] = useState<Mode>("google");
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [forgotSubmitted, setForgotSubmitted] = useState(false);
-  const googleButtonRef = useRef<HTMLDivElement>(null);
+const features: { icon: LucideIcon; title: string; desc: string }[] = [
+  {
+    icon: Sparkles,
+    title: "เขียนจากไอเดีย",
+    desc: "พิมพ์ไอเดียสั้นๆ ได้แคปชั่นพร้อมโพสต์ พร้อม prompt สำหรับสร้างรูปประกอบให้ด้วย",
+  },
+  {
+    icon: ImagePlus,
+    title: "เขียนจากรูปภาพ",
+    desc: "อัปโหลดรูปสินค้าที่ถ่ายไว้ ให้ AI ดูรูปแล้วแต่งแคปชั่นให้เลย",
+  },
+  {
+    icon: Dna,
+    title: "Brand DNA",
+    desc: "เล่าตัวตนร้านให้ AI รู้จักครั้งเดียว แล้วเขียนได้ตรงสไตล์ร้านคุณทุกโพสต์ต่อจากนี้",
+  },
+];
 
-  useEffect(() => {
-    if (!GOOGLE_CLIENT_ID) return;
+const segments: { icon: LucideIcon; label: string }[] = [
+  { icon: Coffee, label: businessCategoryLabel.food_beverage },
+  { icon: ShoppingBag, label: businessCategoryLabel.online_shop },
+  { icon: Moon, label: businessCategoryLabel.fortune_telling },
+  { icon: Gamepad2, label: businessCategoryLabel.streamer },
+];
 
-    async function handleCredentialResponse(response: { credential: string }) {
-      setLoading(true);
-      const t = toast.loading("กำลังเข้าสู่ระบบให้อยู่ค่ะ...");
-      try {
-        await api.loginWithGoogle(response.credential);
-        toast.success("ยินดีต้อนรับสู่ฟ้าใสค่ะ ✨", { id: t });
-        navigate({ to: "/dashboard" });
-      } catch {
-        toast.error("เข้าสู่ระบบไม่สำเร็จ ลองใหม่อีกครั้งนะคะ", { id: t });
-      } finally {
-        setLoading(false);
-      }
-    }
+const steps: { n: number; title: string; desc: string }[] = [
+  {
+    n: 1,
+    title: "ตั้ง Brand DNA",
+    desc: "เล่าเรื่องร้าน เมนูเด่น จุดขาย และบุคลิกแบรนด์ให้ AI รู้จักครั้งเดียว",
+  },
+  {
+    n: 2,
+    title: "สร้างคอนเทนต์",
+    desc: "พิมพ์ไอเดียหรือแนบรูป ให้ AI เขียนโพสต์ให้ในไม่กี่วินาที",
+  },
+  {
+    n: 3,
+    title: "เก็บเข้าคลัง ให้ feedback",
+    desc: "อนุมัติ คัดลอกไปโพสต์ แล้วบอก AI ว่าโพสต์ไหนดี ครั้งหน้าเขียนแม่นขึ้นเรื่อยๆ",
+  },
+];
 
-    // Render Google's real button directly and visibly — earlier this
-    // rendered into a hidden container and forwarded a synthetic click to
-    // it, but Google's button lives in a cross-origin iframe (a synthetic
-    // .click() can never reach inside it), and `prompt()`/One Tap has its
-    // own exponential backoff that silently stops showing after a few
-    // tries. Rendering the real button is the only fully reliable option.
-    function renderButton() {
-      const container = googleButtonRef.current;
-      // window.google can be missing here even after the script "loaded" —
-      // ad-blockers/privacy extensions and some corporate/campus network
-      // filters let the <script> request complete without ever actually
-      // running Google's code, so `!` (compile-time only) isn't a real
-      // guard. A user in that situation just won't see the Google button;
-      // email login still works instead of the whole page crashing.
-      if (!container || !window.google?.accounts?.id) return;
-      container.innerHTML = "";
-      window.google.accounts.id.renderButton(container, {
-        type: "standard",
-        theme: "outline",
-        size: "large",
-        shape: "pill",
-        text: "signin_with",
-        width: container.offsetWidth || 300,
-      });
-    }
+const faqs: { q: string; a: string }[] = [
+  {
+    q: "ต้องเก่งเทคโนโลยีไหม?",
+    a: "ไม่ต้องเลยค่ะ พิมพ์ไอเดียสั้นๆ หรือแนบรูปสินค้า ที่เหลือให้ FAHSAI จัดการให้",
+  },
+  {
+    q: "ใช้ได้กับแพลตฟอร์มไหนบ้าง?",
+    a: "Facebook, LINE OA และ Instagram ค่ะ เลือกแพลตฟอร์มตอนสร้างคอนเทนต์ได้เลย",
+  },
+  {
+    q: "ราคาเท่าไหร่?",
+    a: "ตอนนี้เปิดให้ทดลองใช้งานฟรีค่ะ ถ้าสนใจใช้งานจริงจังหรืออยากคุยรายละเอียดเพิ่มเติม ทักมาคุยกันได้เลยที่ Facebook ด้านล่างค่ะ",
+  },
+  {
+    q: "ข้อมูลร้านปลอดภัยไหม?",
+    a: "ข้อมูลร้านของคุณถูกเก็บไว้เพื่อใช้ปรับแต่งการเขียนให้ตรงสไตล์ร้านเท่านั้น ไม่แชร์ให้บุคคลที่สาม",
+  },
+];
 
-    function init() {
-      if (!window.google?.accounts?.id) {
-        console.warn(
-          "[Google Sign-In] window.google unavailable after script load — likely blocked by a browser extension or network filter.",
-        );
-        return;
-      }
-      window.google.accounts.id.initialize({
-        client_id: GOOGLE_CLIENT_ID!,
-        callback: handleCredentialResponse,
-      });
-      renderButton();
-    }
-
-    if (window.google?.accounts?.id) {
-      init();
-    } else {
-      const script = document.createElement("script");
-      script.src = "https://accounts.google.com/gsi/client";
-      script.async = true;
-      script.defer = true;
-      script.onload = init;
-      document.head.appendChild(script);
-    }
-
-    window.addEventListener("resize", renderButton);
-    return () => window.removeEventListener("resize", renderButton);
-  }, [navigate]);
-
-  async function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    const t = toast.loading("กำลังเข้าสู่ระบบให้อยู่ค่ะ...");
-    try {
-      await api.login(email, password);
-      toast.success("ยินดีต้อนรับค่ะ ✨", { id: t });
-      navigate({ to: "/dashboard" });
-    } catch (err) {
-      toast.error(errorMessage(err, "เข้าสู่ระบบไม่สำเร็จ ลองใหม่อีกครั้งนะคะ"), { id: t });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleForgotPassword(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      await api.forgotPassword(email);
-    } catch {
-      // Ignore — always show the generic message below, even on error,
-      // so we never leak whether the email exists.
-    } finally {
-      setLoading(false);
-      setForgotSubmitted(true);
-    }
-  }
-
-  async function handleSignup(e: React.FormEvent) {
-    e.preventDefault();
-    if (password.length < 8) {
-      toast.error("รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร");
-      return;
-    }
-    if (password !== confirmPassword) {
-      toast.error("รหัสผ่านไม่ตรงกัน");
-      return;
-    }
-    setLoading(true);
-    const t = toast.loading("กำลังสมัครสมาชิกให้อยู่ค่ะ...");
-    try {
-      await api.signup(name, email, password);
-      toast.success("สมัครสมาชิกสำเร็จค่ะ ✨", { id: t });
-      navigate({ to: "/dashboard" });
-    } catch (err) {
-      toast.error(errorMessage(err, "สมัครสมาชิกไม่สำเร็จ ลองใหม่อีกครั้งนะคะ"), { id: t });
-    } finally {
-      setLoading(false);
-    }
-  }
-
+function LandingPage() {
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-12">
-      {/* ambient glows */}
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute left-1/4 top-1/3 h-96 w-96 -translate-x-1/2 rounded-full bg-gold/10 blur-3xl" />
-        <div className="absolute right-1/4 bottom-1/3 h-96 w-96 rounded-full bg-teal/15 blur-3xl" />
-      </div>
-
-      <div className="glass-card relative w-full max-w-md rounded-[2rem] px-8 py-12 text-center shadow-[0_20px_80px_oklch(0_0_0_/_50%)]">
-        <img
-          src={logo}
-          alt="FAHSAI"
-          className="mx-auto h-20 w-20 drop-shadow-[0_0_25px_oklch(0.82_0.13_85/40%)]"
-        />
-        <div className="mt-3 text-3xl font-extrabold tracking-[0.2em] text-foreground">FAHSAI</div>
-
-        <h1 className="mt-8 text-xl font-semibold leading-relaxed">
-          ให้ <span className="text-gold">FAHSAI</span>
-          <br />
-          ช่วยปั้นแบรนด์ของคุณ
-          <br />
-          ให้โดดเด่น
-        </h1>
-        <p className="mt-3 text-sm text-muted-foreground">ผู้ช่วยสร้างคอนเทนต์สำหรับร้านของคุณ</p>
-
-        {mode === "google" && (
-          <>
-            <div className="mt-8 flex w-full justify-center" ref={googleButtonRef} />
-            {loading && (
-              <p className="mt-3 text-sm text-muted-foreground">กำลังเข้าสู่ระบบให้อยู่ค่ะ...</p>
-            )}
-            <button
-              onClick={() => setMode("login")}
-              className="mt-4 text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
-            >
-              หรือเข้าสู่ระบบด้วยอีเมล
-            </button>
-          </>
-        )}
-
-        {mode === "login" && (
-          <form onSubmit={handleLogin} className="mt-8 space-y-3 text-left">
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="อีเมล"
-              className="w-full rounded-full border border-border bg-input px-5 py-3 text-base outline-none placeholder:text-muted-foreground focus:border-teal"
-            />
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="รหัสผ่าน"
-              className="w-full rounded-full border border-border bg-input px-5 py-3 text-base outline-none placeholder:text-muted-foreground focus:border-teal"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                setForgotSubmitted(false);
-                setMode("forgot");
-              }}
-              className="w-full text-right text-xs text-muted-foreground underline underline-offset-4"
-            >
-              ลืมรหัสผ่าน?
-            </button>
-            <button
-              disabled={loading}
-              className="btn-gold w-full rounded-full px-6 py-3.5 text-base disabled:opacity-60"
-            >
-              เข้าสู่ระบบ
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode("signup")}
-              className="w-full text-center text-sm text-muted-foreground underline underline-offset-4"
-            >
-              ยังไม่มีบัญชี? สมัครสมาชิก
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode("google")}
-              className="w-full text-center text-sm text-muted-foreground underline underline-offset-4"
-            >
-              กลับไปเข้าสู่ระบบด้วย Google
-            </button>
-          </form>
-        )}
-
-        {mode === "signup" && (
-          <form onSubmit={handleSignup} className="mt-8 space-y-3 text-left">
-            <input
-              type="text"
-              required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="ชื่อร้าน / ชื่อคุณ"
-              className="w-full rounded-full border border-border bg-input px-5 py-3 text-base outline-none placeholder:text-muted-foreground focus:border-teal"
-            />
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="อีเมล"
-              className="w-full rounded-full border border-border bg-input px-5 py-3 text-base outline-none placeholder:text-muted-foreground focus:border-teal"
-            />
-            <input
-              type="password"
-              required
-              minLength={8}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="รหัสผ่าน (อย่างน้อย 8 ตัวอักษร)"
-              className="w-full rounded-full border border-border bg-input px-5 py-3 text-base outline-none placeholder:text-muted-foreground focus:border-teal"
-            />
-            <input
-              type="password"
-              required
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="ยืนยันรหัสผ่าน"
-              className="w-full rounded-full border border-border bg-input px-5 py-3 text-base outline-none placeholder:text-muted-foreground focus:border-teal"
-            />
-            <button
-              disabled={loading}
-              className="btn-gold w-full rounded-full px-6 py-3.5 text-base disabled:opacity-60"
-            >
-              สมัครสมาชิก
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode("login")}
-              className="w-full text-center text-sm text-muted-foreground underline underline-offset-4"
-            >
-              มีบัญชีแล้ว? เข้าสู่ระบบ
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode("google")}
-              className="w-full text-center text-sm text-muted-foreground underline underline-offset-4"
-            >
-              กลับไปเข้าสู่ระบบด้วย Google
-            </button>
-          </form>
-        )}
-
-        {mode === "forgot" && (
-          <div className="mt-8 text-left">
-            {forgotSubmitted ? (
-              <p className="rounded-2xl bg-white/5 p-4 text-center text-sm text-muted-foreground">
-                ถ้ามีบัญชีนี้ในระบบ เราส่งลิงก์สำหรับตั้งรหัสผ่านใหม่ไปให้แล้วค่ะ
-              </p>
-            ) : (
-              <form onSubmit={handleForgotPassword} className="space-y-3">
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="อีเมล"
-                  className="w-full rounded-full border border-border bg-input px-5 py-3 text-base outline-none placeholder:text-muted-foreground focus:border-teal"
-                />
-                <button
-                  disabled={loading}
-                  className="btn-gold w-full rounded-full px-6 py-3.5 text-base disabled:opacity-60"
-                >
-                  ส่งลิงก์ตั้งรหัสผ่านใหม่
-                </button>
-              </form>
-            )}
-            <button
-              type="button"
-              onClick={() => setMode("login")}
-              className="mt-3 w-full text-center text-sm text-muted-foreground underline underline-offset-4"
-            >
-              กลับไปเข้าสู่ระบบ
-            </button>
+    <div className="min-h-screen">
+      <nav className="sticky top-0 z-10 border-b border-border/50 bg-background/80 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
+          <div className="flex items-center gap-2">
+            <img src={logo} alt="FAHSAI" className="h-8 w-8" />
+            <span className="text-lg font-extrabold tracking-wide">FAHSAI</span>
           </div>
-        )}
-
-        {mode === "google" && (
-          <p className="mt-6 text-sm text-muted-foreground">
-            ยังไม่มีบัญชี?{" "}
-            <button
-              onClick={() => setMode("signup")}
-              className="text-gold underline underline-offset-4"
-            >
-              สมัครสมาชิก
-            </button>
-          </p>
-        )}
-
-        <div className="mt-10 flex justify-center gap-6 text-xs text-muted-foreground">
-          <a href="#" className="underline underline-offset-4">
-            นโยบายความเป็นส่วนตัว
-          </a>
-          <a href="#" className="underline underline-offset-4">
-            ข้อกำหนดการใช้งาน
-          </a>
+          <Link to="/login" className="btn-gold rounded-full px-5 py-2 text-sm">
+            เข้าสู่ระบบ
+          </Link>
         </div>
-      </div>
+      </nav>
+
+      <section className="relative overflow-hidden px-4 py-20 text-center">
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute left-1/4 top-1/3 h-96 w-96 -translate-x-1/2 rounded-full bg-gold/10 blur-3xl" />
+          <div className="absolute right-1/4 bottom-1/3 h-96 w-96 rounded-full bg-teal/15 blur-3xl" />
+        </div>
+        <div className="relative mx-auto max-w-2xl">
+          <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-4 py-1.5 text-xs text-muted-foreground">
+            <Sparkles className="h-3.5 w-3.5 text-gold" /> ผู้ช่วยสร้างคอนเทนต์ด้วย AI
+          </div>
+          <h1 className="mt-6 text-3xl font-extrabold leading-tight md:text-5xl">
+            ไม่มีเวลาคิดแคปชั่น?
+            <br />
+            ให้ <span className="text-gold">FAHSAI</span> ช่วยปั้นแบรนด์ร้านคุณให้โดดเด่น
+          </h1>
+          <p className="mt-4 text-base text-muted-foreground md:text-lg">
+            พิมพ์ไอเดียสั้นๆ หรือแนบรูปสินค้า ให้ AI เขียนโพสต์ให้เสร็จในไม่กี่วินาที
+            ตรงสไตล์ร้านคุณทุกครั้ง
+          </p>
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+            <Link to="/login" className="btn-gold rounded-full px-8 py-3.5 text-base">
+              เริ่มใช้งานฟรี
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="px-4 py-16">
+        <div className="mx-auto max-w-6xl">
+          <div className="text-center">
+            <h2 className="text-2xl font-extrabold md:text-3xl">AI เขียนให้ได้ขนาดนี้</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              ตัวอย่างผลลัพธ์ (mockup) — หน้าตาจริงตอนใช้งานจะเป็นโพสต์ของร้านคุณเอง
+            </p>
+          </div>
+          <div className="mt-8 grid gap-5 md:grid-cols-3">
+            {mockPosts.map((post) => {
+              const Icon = platformIcon[post.platform];
+              return (
+                <div key={post.platform} className="glass-card overflow-hidden rounded-2xl">
+                  <div className="flex h-32 items-center justify-center bg-gradient-to-br from-teal/20 to-gold/20 text-muted-foreground">
+                    <ImagePlus className="h-8 w-8" />
+                  </div>
+                  <div className="p-4">
+                    <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-white/5 px-2.5 py-1 text-[11px] text-muted-foreground">
+                      <Icon className="h-3 w-3" /> {platformLabel[post.platform]}
+                    </div>
+                    <p className="text-sm leading-relaxed">{post.caption}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      <section className="px-4 py-16">
+        <div className="mx-auto max-w-6xl">
+          <div className="text-center">
+            <h2 className="text-2xl font-extrabold md:text-3xl">3 ตัวช่วยหลัก</h2>
+          </div>
+          <div className="mt-8 grid gap-5 md:grid-cols-3">
+            {features.map(({ icon: Icon, title, desc }) => (
+              <div key={title} className="glass-card rounded-2xl p-6">
+                <div className="grid h-12 w-12 place-items-center rounded-xl bg-gradient-to-br from-gold/30 to-teal/30 text-gold">
+                  <Icon className="h-6 w-6" />
+                </div>
+                <h3 className="mt-4 font-bold">{title}</h3>
+                <p className="mt-2 text-sm text-muted-foreground">{desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="px-4 py-16">
+        <div className="mx-auto max-w-6xl">
+          <div className="text-center">
+            <h2 className="text-2xl font-extrabold md:text-3xl">คุณคือร้านแบบไหน</h2>
+          </div>
+          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {segments.map(({ icon: Icon, label }) => (
+              <div
+                key={label}
+                className="glass-card flex flex-col items-center gap-3 rounded-2xl p-6 text-center"
+              >
+                <div className="grid h-12 w-12 place-items-center rounded-xl bg-white/5 text-teal">
+                  <Icon className="h-6 w-6" />
+                </div>
+                <div className="font-bold">{label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="px-4 py-16">
+        <div className="mx-auto max-w-4xl">
+          <div className="text-center">
+            <h2 className="text-2xl font-extrabold md:text-3xl">ใช้งานง่ายใน 3 ขั้นตอน</h2>
+          </div>
+          <div className="mt-8 grid gap-6 md:grid-cols-3">
+            {steps.map(({ n, title, desc }) => (
+              <div key={n} className="glass-card rounded-2xl p-6 text-center">
+                <div className="mx-auto grid h-10 w-10 place-items-center rounded-full bg-gold/15 font-bold text-gold">
+                  {n}
+                </div>
+                <h3 className="mt-4 font-bold">{title}</h3>
+                <p className="mt-2 text-sm text-muted-foreground">{desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="px-4 py-16">
+        <div className="mx-auto max-w-3xl">
+          <div className="text-center">
+            <h2 className="text-2xl font-extrabold md:text-3xl">คำถามที่พบบ่อย</h2>
+          </div>
+          <Accordion type="single" collapsible className="glass-card mt-8 rounded-2xl px-6">
+            {faqs.map(({ q, a }) => (
+              <AccordionItem key={q} value={q} className="border-border/50">
+                <AccordionTrigger>{q}</AccordionTrigger>
+                <AccordionContent className="text-muted-foreground">{a}</AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
+        </div>
+      </section>
+
+      <section className="px-4 py-16 text-center">
+        <div className="glass-card mx-auto max-w-2xl rounded-3xl p-10">
+          <h2 className="text-2xl font-extrabold md:text-3xl">
+            พร้อมให้ FAHSAI ช่วยร้านคุณหรือยัง?
+          </h2>
+          <p className="mt-3 text-sm text-muted-foreground">เริ่มใช้งานฟรี ไม่ต้องใช้บัตรเครดิต</p>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+            <Link to="/login" className="btn-gold rounded-full px-8 py-3.5 text-base">
+              เริ่มใช้งานฟรี
+            </Link>
+            <a
+              href="https://www.facebook.com/arifeen.charawae"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-full border border-border px-6 py-3.5 text-base hover:bg-white/5"
+            >
+              <Facebook className="h-4 w-4" /> คุยกับเราที่ Facebook
+            </a>
+          </div>
+          <div className="mt-8 flex justify-center gap-6 text-xs text-muted-foreground">
+            <a href="#" className="underline underline-offset-4">
+              นโยบายความเป็นส่วนตัว
+            </a>
+            <a href="#" className="underline underline-offset-4">
+              ข้อกำหนดการใช้งาน
+            </a>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

@@ -130,7 +130,10 @@ def init_db() -> None:
     _add_column_if_missing(conn, "generation_log", "prompt_tokens INTEGER")
     _add_column_if_missing(conn, "generation_log", "completion_tokens INTEGER")
     _add_column_if_missing(conn, "generation_log", "estimated_cost_usd DOUBLE PRECISION")
+    _add_column_if_missing(conn, "generation_log", "system_prompt TEXT")
+    _add_column_if_missing(conn, "generation_log", "mode TEXT")
     _add_column_if_missing(conn, "content_items", "feedback TEXT")
+    _add_column_if_missing(conn, "content_items", "mode TEXT")
 
     conn.execute(
         """
@@ -147,6 +150,19 @@ def init_db() -> None:
         """
     )
     _add_column_if_missing(conn, "example_posts", "rating INTEGER")
+    _add_column_if_missing(conn, "example_posts", "like_count INTEGER")
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS follower_snapshots (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            platform TEXT NOT NULL,
+            follower_count INTEGER NOT NULL,
+            recorded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
 
     event_count = conn.execute("SELECT COUNT(*) AS n FROM events").fetchone()["n"]
     if event_count == 0:
@@ -404,6 +420,136 @@ def get_admin_stats() -> dict:
     }
 
 
+def get_approval_rate_by_mode() -> list[dict]:
+    # "approved" = a content_item was ever saved for that generation mode
+    # (create.tsx only calls saveContent on approve/copy, not on every
+    # generate) -- generation_log and content_items aren't linked by a
+    # foreign key, so this compares aggregate counts per mode, not a true
+    # per-generation conversion rate.
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        WITH generations AS (
+            SELECT mode, COUNT(*) AS generations
+            FROM generation_log
+            WHERE mode IS NOT NULL
+            GROUP BY mode
+        ),
+        approved AS (
+            SELECT mode, COUNT(*) AS approved
+            FROM content_items
+            WHERE mode IS NOT NULL
+            GROUP BY mode
+        )
+        SELECT
+            COALESCE(g.mode, a.mode) AS mode,
+            COALESCE(g.generations, 0) AS generations,
+            COALESCE(a.approved, 0) AS approved
+        FROM generations g
+        FULL OUTER JOIN approved a ON a.mode = g.mode
+        ORDER BY mode
+        """
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def get_feedback_ratio_by_mode() -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT
+            mode,
+            COUNT(*) FILTER (WHERE feedback = 'good') AS good,
+            COUNT(*) FILTER (WHERE feedback IS NOT NULL) AS total_rated
+        FROM content_items
+        WHERE mode IS NOT NULL
+        GROUP BY mode
+        ORDER BY mode
+        """
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def get_dna_completeness_correlation() -> list[dict]:
+    # Buckets users by how many of their 4 brand_dna fields are non-empty,
+    # then compares generation/approval volume per bucket -- pre-aggregate
+    # each metric per user_id in its own CTE before joining, so joining
+    # users to both generation_log and content_items doesn't fan out and
+    # inflate counts.
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        WITH dna_completeness AS (
+            SELECT user_id, COUNT(*) FILTER (WHERE content <> '') AS filled_count
+            FROM brand_dna
+            GROUP BY user_id
+        ),
+        gen_counts AS (
+            SELECT user_id, COUNT(*) AS generations
+            FROM generation_log
+            GROUP BY user_id
+        ),
+        approved_counts AS (
+            SELECT user_id, COUNT(*) AS approved
+            FROM content_items
+            GROUP BY user_id
+        )
+        SELECT
+            COALESCE(d.filled_count, 0) AS filled_count,
+            COUNT(DISTINCT u.id) AS user_count,
+            COALESCE(SUM(g.generations), 0) AS total_generations,
+            COALESCE(SUM(a.approved), 0) AS total_approved
+        FROM users u
+        LEFT JOIN dna_completeness d ON d.user_id = u.id
+        LEFT JOIN gen_counts g ON g.user_id = u.id
+        LEFT JOIN approved_counts a ON a.user_id = u.id
+        GROUP BY COALESCE(d.filled_count, 0)
+        ORDER BY filled_count
+        """
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def get_retention_stats() -> dict:
+    conn = get_connection()
+    row = conn.execute(
+        """
+        WITH weeks_active AS (
+            SELECT user_id, COUNT(DISTINCT date_trunc('week', created_at)) AS distinct_weeks
+            FROM content_items
+            GROUP BY user_id
+        )
+        SELECT
+            COUNT(*) FILTER (WHERE distinct_weeks > 1) AS retained_users,
+            COUNT(*) AS active_users
+        FROM weeks_active
+        """
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def get_avg_days_to_first_content() -> float | None:
+    conn = get_connection()
+    row = conn.execute(
+        """
+        WITH first_content AS (
+            SELECT user_id, MIN(created_at) AS first_content_at
+            FROM content_items
+            GROUP BY user_id
+        )
+        SELECT AVG(EXTRACT(EPOCH FROM (fc.first_content_at - u.created_at)) / 86400) AS avg_days
+        FROM users u
+        JOIN first_content fc ON fc.user_id = u.id
+        """
+    ).fetchone()
+    conn.close()
+    return float(row["avg_days"]) if row["avg_days"] is not None else None
+
+
 def log_security_event(event_type: str, identifier: str, endpoint: str) -> None:
     conn = get_connection()
     conn.execute(
@@ -443,15 +589,28 @@ def create_generation_log(
     prompt_tokens: int | None = None,
     completion_tokens: int | None = None,
     estimated_cost_usd: float = 0,
+    system_prompt: str | None = None,
+    mode: str | None = None,
 ) -> None:
     conn = get_connection()
     conn.execute(
         """
         INSERT INTO generation_log
-            (user_id, platform, tone, prompt, caption, prompt_tokens, completion_tokens, estimated_cost_usd)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            (user_id, platform, tone, prompt, caption, prompt_tokens, completion_tokens, estimated_cost_usd, system_prompt, mode)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
-        (user_id, platform, tone, prompt, caption, prompt_tokens, completion_tokens, estimated_cost_usd),
+        (
+            user_id,
+            platform,
+            tone,
+            prompt,
+            caption,
+            prompt_tokens,
+            completion_tokens,
+            estimated_cost_usd,
+            system_prompt,
+            mode,
+        ),
     )
     conn.commit()
     conn.close()
@@ -489,11 +648,13 @@ def list_generation_logs(limit: int = 100) -> list[dict]:
     return rows
 
 
-def create_content_item(user_id: int, platform: str, preview: str, status: str) -> dict:
+def create_content_item(
+    user_id: int, platform: str, preview: str, status: str, mode: str | None = None
+) -> dict:
     conn = get_connection()
     row = conn.execute(
-        "INSERT INTO content_items (user_id, platform, preview, status) VALUES (%s, %s, %s, %s) RETURNING *",
-        (user_id, platform, preview, status),
+        "INSERT INTO content_items (user_id, platform, preview, status, mode) VALUES (%s, %s, %s, %s, %s) RETURNING *",
+        (user_id, platform, preview, status, mode),
     ).fetchone()
     conn.commit()
     conn.close()
@@ -604,15 +765,16 @@ def create_example_post(
     caption: str,
     image_url: str | None,
     created_by: int,
+    like_count: int | None = None,
 ) -> dict:
     conn = get_connection()
     row = conn.execute(
         """
-        INSERT INTO example_posts (user_id, business_category, platform, caption, image_url, created_by)
-        VALUES (%s, %s, %s, %s, %s, %s)
+        INSERT INTO example_posts (user_id, business_category, platform, caption, image_url, created_by, like_count)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         RETURNING *
         """,
-        (user_id, business_category, platform, caption, image_url, created_by),
+        (user_id, business_category, platform, caption, image_url, created_by, like_count),
     ).fetchone()
     conn.commit()
     conn.close()
@@ -622,6 +784,7 @@ def create_example_post(
 _EXAMPLE_SELECTION_ORDER_BY = {
     "latest": "created_at DESC",
     "rating": "rating DESC NULLS LAST, created_at DESC",
+    "likes": "like_count DESC NULLS LAST, created_at DESC",
     "random": "RANDOM()",
 }
 
@@ -712,27 +875,28 @@ def update_example_post(
     platform: str,
     caption: str,
     image_url: str | None,
+    like_count: int | None = None,
 ) -> dict | None:
     conn = get_connection()
     if owner_user_id is None:
         row = conn.execute(
             """
             UPDATE example_posts
-            SET business_category = %s, platform = %s, caption = %s, image_url = %s
+            SET business_category = %s, platform = %s, caption = %s, image_url = %s, like_count = %s
             WHERE id = %s AND user_id IS NULL
             RETURNING *
             """,
-            (business_category, platform, caption, image_url, post_id),
+            (business_category, platform, caption, image_url, like_count, post_id),
         ).fetchone()
     else:
         row = conn.execute(
             """
             UPDATE example_posts
-            SET business_category = %s, platform = %s, caption = %s, image_url = %s
+            SET business_category = %s, platform = %s, caption = %s, image_url = %s, like_count = %s
             WHERE id = %s AND user_id = %s
             RETURNING *
             """,
-            (business_category, platform, caption, image_url, post_id, owner_user_id),
+            (business_category, platform, caption, image_url, like_count, post_id, owner_user_id),
         ).fetchone()
     conn.commit()
     conn.close()
@@ -873,3 +1037,28 @@ def delete_event(event_id: int, owner_user_id: int | None) -> bool:
     deleted = cur.rowcount > 0
     conn.close()
     return deleted
+
+
+def create_follower_snapshot(user_id: int, platform: str, follower_count: int) -> dict:
+    conn = get_connection()
+    row = conn.execute(
+        """
+        INSERT INTO follower_snapshots (user_id, platform, follower_count)
+        VALUES (%s, %s, %s)
+        RETURNING *
+        """,
+        (user_id, platform, follower_count),
+    ).fetchone()
+    conn.commit()
+    conn.close()
+    return row
+
+
+def list_follower_snapshots_for_user(user_id: int) -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM follower_snapshots WHERE user_id = %s ORDER BY recorded_at ASC",
+        (user_id,),
+    ).fetchall()
+    conn.close()
+    return rows

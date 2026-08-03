@@ -41,7 +41,7 @@ function ResetPasswordPage() {
       await api.resetPassword(token, password);
       setDone(true);
       toast.success("ตั้งรหัสผ่านใหม่สำเร็จแล้วค่ะ ✨");
-      setTimeout(() => navigate({ to: "/" }), 1500);
+      setTimeout(() => navigate({ to: "/login" }), 1500);
     } catch (err) {
       toast.error(errorMessage(err, "ตั้งรหัสผ่านใหม่ไม่สำเร็จ ลองใหม่อีกครั้งนะคะ"));
     } finally {
@@ -68,7 +68,7 @@ function ResetPasswordPage() {
           <>
             <p className="mt-4 text-sm text-muted-foreground">ลิงก์ไม่ถูกต้องนะคะ</p>
             <Link
-              to="/"
+              to="/login"
               className="btn-gold mt-8 inline-block w-full rounded-full px-6 py-3.5 text-base"
             >
               กลับไปเข้าสู่ระบบ

@@ -14,7 +14,7 @@ import {
 import { AppShell, PageHeader, useCurrentUser } from "@/components/app-shell";
 import { useRequireAuth } from "@/lib/auth-guard";
 import { StarRating } from "@/components/star-rating";
-import { ImagePlus, Trash2, Pencil, Facebook, Instagram, MessageCircle } from "lucide-react";
+import { ImagePlus, Trash2, Pencil, Facebook, Instagram, MessageCircle, Heart } from "lucide-react";
 
 export const Route = createFileRoute("/examples")({
   head: () => ({
@@ -45,6 +45,7 @@ function ExamplesPage() {
   const [editingImageUrl, setEditingImageUrl] = useState<string | null>(null);
   const [platform, setPlatform] = useState<Platform>("facebook");
   const [caption, setCaption] = useState("");
+  const [likeCount, setLikeCount] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [categoryOption, setCategoryOption] = useState<BusinessCategory | "other" | null>(null);
@@ -59,6 +60,7 @@ function ExamplesPage() {
     setEditingImageUrl(null);
     setPlatform("facebook");
     setCaption("");
+    setLikeCount("");
     setFile(null);
     setCategoryOption(null);
     setCustomCategory("");
@@ -70,10 +72,10 @@ function ExamplesPage() {
     setEditingImageUrl(post.image_url);
     setPlatform(post.platform);
     setCaption(post.caption);
+    setLikeCount(post.like_count != null ? String(post.like_count) : "");
     setFile(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
-    const isOfficial =
-      !!post.business_category && post.business_category in businessCategoryLabel;
+    const isOfficial = !!post.business_category && post.business_category in businessCategoryLabel;
     setCategoryOption(isOfficial ? (post.business_category as BusinessCategory) : "other");
     setCustomCategory(isOfficial ? "" : (post.business_category ?? ""));
   }
@@ -84,8 +86,11 @@ function ExamplesPage() {
       formData.append("business_category", resolvedCategory);
       formData.append("platform", platform);
       formData.append("caption", caption);
+      if (likeCount.trim()) formData.append("like_count", likeCount.trim());
       if (file) formData.append("image", file);
-      return editingId ? api.updateExamplePost(editingId, formData) : api.createExamplePost(formData);
+      return editingId
+        ? api.updateExamplePost(editingId, formData)
+        : api.createExamplePost(formData);
     },
     onSuccess: () => {
       toast.success(editingId ? "บันทึกแล้วค่ะ" : "เพิ่มตัวอย่างแล้วค่ะ ✨");
@@ -104,7 +109,21 @@ function ExamplesPage() {
 
   const rateMutation = useMutation({
     mutationFn: ({ id, rating }: { id: number; rating: number }) => api.rateExamplePost(id, rating),
-    onSuccess: () => {
+    onMutate: async ({ id, rating }) => {
+      await queryClient.cancelQueries({ queryKey: ["my-example-posts"] });
+      const previous = queryClient.getQueryData<ExamplePost[]>(["my-example-posts"]);
+      queryClient.setQueryData<ExamplePost[]>(["my-example-posts"], (old) =>
+        old?.map((p) => (p.id === id ? { ...p, rating } : p)),
+      );
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["my-example-posts"], context.previous);
+      }
+      toast.error("ให้คะแนนไม่สำเร็จ ลองใหม่อีกครั้งนะคะ");
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["my-example-posts"] });
     },
   });
@@ -174,6 +193,14 @@ function ExamplesPage() {
             rows={3}
             className="w-full rounded-2xl border border-border bg-input px-4 py-3 text-sm outline-none placeholder:text-muted-foreground focus:border-teal"
           />
+          <input
+            type="number"
+            min={0}
+            value={likeCount}
+            onChange={(e) => setLikeCount(e.target.value)}
+            placeholder="ยอดไลค์ของโพสต์นี้ (ถ้าทราบ)"
+            className="mt-3 w-full rounded-full border border-border bg-input px-4 py-2 text-sm outline-none placeholder:text-muted-foreground focus:border-teal"
+          />
           <div className="mt-3 flex flex-wrap items-center gap-3">
             {editingImageUrl && !file && (
               <img src={editingImageUrl} alt="" className="h-9 w-9 rounded-lg object-cover" />
@@ -224,6 +251,12 @@ function ExamplesPage() {
                   <span className="rounded-full bg-white/5 px-2.5 py-0.5 text-[11px] text-muted-foreground">
                     {categoryDisplayLabel(post.business_category)}
                   </span>
+                  {post.like_count != null && (
+                    <span className="flex items-center gap-1 rounded-full bg-white/5 px-2.5 py-0.5 text-[11px] text-muted-foreground">
+                      <Heart className="h-3 w-3" />
+                      {post.like_count.toLocaleString()}
+                    </span>
+                  )}
                   <div className="ml-auto flex shrink-0 gap-1">
                     <button
                       onClick={() => edit(post)}

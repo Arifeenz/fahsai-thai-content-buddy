@@ -118,3 +118,47 @@ def test_rating_out_of_range_rejected(client):
 
     res = client.patch(f"/example-posts/{post_id}/rating", json={"rating": 6})
     assert res.status_code == 422
+
+
+def test_like_count_round_trips_through_create_and_update(client):
+    signup(client, "owner@test.local")
+    res = client.post(
+        "/example-posts",
+        data={
+            "business_category": "food_beverage",
+            "platform": "facebook",
+            "caption": "original",
+            "like_count": "42",
+        },
+    )
+    assert res.status_code == 200
+    post_id = res.json()["id"]
+    assert res.json()["like_count"] == 42
+
+    res = client.put(
+        f"/example-posts/{post_id}",
+        data={
+            "business_category": "food_beverage",
+            "platform": "facebook",
+            "caption": "edited",
+            "like_count": "100",
+        },
+    )
+    assert res.status_code == 200
+    assert res.json()["like_count"] == 100
+
+
+def test_like_count_omitted_defaults_to_null(client):
+    signup(client, "owner@test.local")
+    post_id = create_personal_example(client)
+    res = client.get("/example-posts")
+    assert res.status_code == 200
+    matched = next(p for p in res.json()["posts"] if p["id"] == post_id)
+    assert matched["like_count"] is None
+
+
+def test_example_posts_selection_mode_accepts_likes(client):
+    signup(client, "owner@test.local")
+    res = client.patch("/me/example-selection-mode", json={"example_selection_mode": "likes"})
+    assert res.status_code == 200
+    assert res.json()["user"]["example_selection_mode"] == "likes"
