@@ -13,6 +13,9 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import logo from "@/assets/fahsai-logo.png";
+import mockFoodBeverage from "@/assets/mockup-food-beverage.jpg";
+import mockFortuneTelling from "@/assets/mockup-fortune-telling.jpg";
+import mockStreamer from "@/assets/mockup-streamer.jpg";
 import { platformLabel, businessCategoryLabel, type Platform } from "@/lib/api";
 import {
   Accordion,
@@ -44,20 +47,24 @@ const platformIcon: Record<Platform, LucideIcon> = {
   instagram: Instagram,
 };
 
-const mockPosts: { platform: Platform; caption: string }[] = [
+const mockPosts: { platform: Platform; caption: string; image: string }[] = [
   {
     platform: "facebook",
     caption:
       "ร้อนนี้แวะมาชิลกันได้เลยค่ะ ☕️ กาแฟส้มแก้วโปรด เปรี้ยวหวานกำลังดี พร้อมเสิร์ฟทุกวัน 9 โมงเช้า - 6 โมงเย็น มาชิมกันน้าา 🧡",
+    image: mockFoodBeverage,
   },
   {
     platform: "instagram",
-    caption: "เมนูใหม่มาแล้ว! 🍰 เค้กมะพร้าวโฮมเมด หอมมะพร้าวคั่วสดทุกคำ #ร้านกาแฟยะลา #เค้กโฮมเมด",
+    caption:
+      "เปิดไพ่ประจำสัปดาห์นี้ค่ะ 🔮 ราศีไหนการเงินจะปัง ความรักจะมา เข้ามาเช็คดวงกันได้เลย ทักแชทมาคุยกันได้นะคะ ✨ #ดูดวง #ไพ่ยิปซี",
+    image: mockFortuneTelling,
   },
   {
     platform: "line",
     caption:
-      "โปรโมชั่นบ่ายนี้ค่ะ 🎉 ลาเต้เย็นลด 20% เฉพาะ 14.00-16.00 น. วันนี้เท่านั้น อย่าลืมมาอุดหนุนกันนะคะ",
+      "คืนนี้ไลฟ์ 3 ทุ่มนะครับ 🎮 มาลุ้นด้วยกันว่าจะผ่านด่านนี้ได้มั้ย มีแจกของรางวัลให้คนดูในไลฟ์ด้วย อย่าลืมกดติดตามกันไว้นะ",
+    image: mockStreamer,
   },
 ];
 
@@ -177,9 +184,7 @@ function LandingPage() {
               const Icon = platformIcon[post.platform];
               return (
                 <div key={post.platform} className="glass-card overflow-hidden rounded-2xl">
-                  <div className="flex h-32 items-center justify-center bg-gradient-to-br from-teal/20 to-gold/20 text-muted-foreground">
-                    <ImagePlus className="h-8 w-8" />
-                  </div>
+                  <img src={post.image} alt="" className="h-32 w-full object-cover" />
                   <div className="p-4">
                     <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-white/5 px-2.5 py-1 text-[11px] text-muted-foreground">
                       <Icon className="h-3 w-3" /> {platformLabel[post.platform]}
