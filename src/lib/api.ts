@@ -39,6 +39,7 @@ export interface AuthUser {
   hide_global_events: boolean;
   email_verified: boolean;
   example_selection_mode: ExampleSelectionMode;
+  has_password: boolean;
 }
 export interface AdminUser {
   id: number;
@@ -225,6 +226,12 @@ export const api = {
     await request("/auth/reset-password", {
       method: "POST",
       body: JSON.stringify({ token, new_password: newPassword }),
+    });
+  },
+  async changePassword(currentPassword: string | null, newPassword: string): Promise<void> {
+    await request("/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
     });
   },
 

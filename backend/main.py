@@ -251,6 +251,11 @@ class ResetPasswordRequest(BaseModel):
     new_password: str
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str | None = None
+    new_password: str
+
+
 class UpdateMeRequest(BaseModel):
     business_category: str
 
@@ -378,6 +383,7 @@ def user_to_dict(row) -> dict:
         "hide_global_events": bool(row["hide_global_events"]),
         "email_verified": bool(row["email_verified"]),
         "example_selection_mode": row["example_selection_mode"],
+        "has_password": row["password_hash"] is not None,
     }
 
 
@@ -617,6 +623,22 @@ def reset_password_endpoint(body: ResetPasswordRequest, request: Request):
         raise HTTPException(status_code=400, detail="ลิงก์รีเซ็ตไม่ถูกต้องหรือหมดอายุแล้วนะคะ")
     if len(body.new_password) < 8:
         raise HTTPException(status_code=400, detail="รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร")
+    password_hash = bcrypt.hashpw(body.new_password.encode(), bcrypt.gensalt()).decode()
+    db_reset_password(user["id"], password_hash)
+    return {"ok": True}
+
+
+@app.post("/auth/change-password")
+@limiter.limit("5/minute")
+def change_password(body: ChangePasswordRequest, request: Request):
+    user = require_user(request)
+    if len(body.new_password) < 8:
+        raise HTTPException(status_code=400, detail="รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร")
+    if user["password_hash"] is not None:
+        if not body.current_password or not bcrypt.checkpw(
+            body.current_password.encode(), user["password_hash"].encode()
+        ):
+            raise HTTPException(status_code=401, detail="รหัสผ่านปัจจุบันไม่ถูกต้อง")
     password_hash = bcrypt.hashpw(body.new_password.encode(), bcrypt.gensalt()).decode()
     db_reset_password(user["id"], password_hash)
     return {"ok": True}
