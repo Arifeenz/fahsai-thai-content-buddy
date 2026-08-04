@@ -142,6 +142,10 @@ function CreateContent() {
 
   async function generate() {
     if (mode === "photo" && photoFiles.length === 0) return;
+    if (mode === "idea" && !prompt.trim()) {
+      toast.error("พิมพ์อะไรสักหน่อยนะคะ อยากโพสต์เรื่องอะไรวันนี้");
+      return;
+    }
     setLoading(true);
     setApproved(false);
     const t = toast.loading("กำลังสร้างโพสต์ให้อยู่ค่ะ...");
@@ -391,7 +395,9 @@ function CreateContent() {
                 <div className="flex gap-2 text-sm">
                   <Info className="h-4 w-4 shrink-0 text-gold" />
                   <span>
-                    เพิ่มรายละเอียดหน่อยมั้ยคะ เช่น ชื่อเมนู ราคา จะได้โพสต์ตรงใจร้านมากขึ้น
+                    {prompt.trim().length === 0
+                      ? "พิมพ์อะไรสักหน่อยนะคะ อยากโพสต์เรื่องอะไรวันนี้"
+                      : "เพิ่มรายละเอียดหน่อยมั้ยคะ เช่น ชื่อเมนู ราคา จะได้โพสต์ตรงใจร้านมากขึ้น"}
                   </span>
                 </div>
                 <div className="mt-3 flex gap-2">
@@ -401,12 +407,14 @@ function CreateContent() {
                   >
                     เพิ่มรายละเอียด
                   </button>
-                  <button
-                    onClick={generateAnyway}
-                    className="btn-gold inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm"
-                  >
-                    <Sparkles className="h-4 w-4" /> สร้างเลย
-                  </button>
+                  {prompt.trim().length > 0 && (
+                    <button
+                      onClick={generateAnyway}
+                      className="btn-gold inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm"
+                    >
+                      <Sparkles className="h-4 w-4" /> สร้างเลย
+                    </button>
+                  )}
                 </div>
               </div>
             ) : (
