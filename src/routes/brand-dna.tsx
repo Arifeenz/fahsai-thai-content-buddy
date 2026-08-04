@@ -218,6 +218,40 @@ function BrandDna() {
           subtitle="ตัวตนของแบรนด์คุณ วิเคราะห์และปรุงแต่งโดย AI"
         />
 
+        <div
+          role="tablist"
+          className="mb-6 grid grid-cols-2 gap-1 rounded-2xl border border-border bg-input/40 p-1.5"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={entryMode === "fields"}
+            onClick={() => setEntryMode("fields")}
+            className={
+              "rounded-xl px-4 py-3 text-base font-semibold transition " +
+              (entryMode === "fields"
+                ? "bg-teal/15 text-teal shadow-sm"
+                : "text-muted-foreground hover:text-foreground")
+            }
+          >
+            กรอกทีละช่อง
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={entryMode === "single"}
+            onClick={() => setEntryMode("single")}
+            className={
+              "rounded-xl px-4 py-3 text-base font-semibold transition " +
+              (entryMode === "single"
+                ? "bg-teal/15 text-teal shadow-sm"
+                : "text-muted-foreground hover:text-foreground")
+            }
+          >
+            เล่าให้ฟังช่องเดียว
+          </button>
+        </div>
+
         <div className="glass-card mb-6 rounded-2xl p-5">
           <div className="flex items-center gap-4">
             <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-gold/30 to-teal/30 text-gold">
@@ -241,33 +275,6 @@ function BrandDna() {
               </div>
             </div>
           </div>
-        </div>
-
-        <div className="mb-6 flex gap-2">
-          <button
-            type="button"
-            onClick={() => setEntryMode("fields")}
-            className={
-              "rounded-full border px-4 py-1.5 text-sm transition " +
-              (entryMode === "fields"
-                ? "border-teal bg-teal/15 text-teal"
-                : "border-border text-muted-foreground hover:text-foreground")
-            }
-          >
-            กรอกทีละช่อง
-          </button>
-          <button
-            type="button"
-            onClick={() => setEntryMode("single")}
-            className={
-              "rounded-full border px-4 py-1.5 text-sm transition " +
-              (entryMode === "single"
-                ? "border-teal bg-teal/15 text-teal"
-                : "border-border text-muted-foreground hover:text-foreground")
-            }
-          >
-            เล่าให้ฟังช่องเดียว
-          </button>
         </div>
 
         {entryMode === "single" && (
