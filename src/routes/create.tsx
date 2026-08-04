@@ -1,8 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { api, type Platform, type Tone, platformLabel } from "@/lib/api";
-import { AppShell, PageHeader } from "@/components/app-shell";
+import {
+  api,
+  exampleSelectionModeLabel,
+  platformLabel,
+  type ExampleSelectionMode,
+  type Platform,
+  type Tone,
+} from "@/lib/api";
+import { AppShell, PageHeader, useCurrentUser } from "@/components/app-shell";
 import { useRequireAuth } from "@/lib/auth-guard";
 import {
   Sparkles,
@@ -46,6 +54,8 @@ type Mode = "idea" | "photo";
 
 function CreateContent() {
   const { ready } = useRequireAuth();
+  const user = useCurrentUser();
+  const queryClient = useQueryClient();
   const [mode, setMode] = useState<Mode>("idea");
   const [prompt, setPrompt] = useState("โปรโมชั่นหน้าร้อนสำหรับเมนูกาแฟส้ม");
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
@@ -93,6 +103,11 @@ function CreateContent() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function changeExampleSelectionMode(value: ExampleSelectionMode) {
+    await api.updateExampleSelectionMode(value);
+    queryClient.invalidateQueries({ queryKey: ["me"] });
   }
 
   async function approve() {
@@ -257,6 +272,25 @@ function CreateContent() {
                 ))}
               </div>
             </div>
+
+            {mode === "idea" && (
+              <div className="mt-5">
+                <div className="mb-2 text-sm font-semibold">ตัวอย่างที่ใช้อ้างอิง</div>
+                <select
+                  value={user?.example_selection_mode ?? "latest"}
+                  onChange={(e) =>
+                    changeExampleSelectionMode(e.target.value as ExampleSelectionMode)
+                  }
+                  className="w-full rounded-xl border border-border bg-input p-3 text-sm outline-none focus:border-teal"
+                >
+                  {Object.entries(exampleSelectionModeLabel).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <button
               onClick={generate}

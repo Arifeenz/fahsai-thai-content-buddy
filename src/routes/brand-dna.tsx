@@ -1,8 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { api, type DnaDocType } from "@/lib/api";
-import { AppShell, PageHeader } from "@/components/app-shell";
+import { api, businessCategoryLabel, type BusinessCategory, type DnaDocType } from "@/lib/api";
+import { AppShell, PageHeader, useCurrentUser } from "@/components/app-shell";
 import { useRequireAuth } from "@/lib/auth-guard";
 import {
   Dna,
@@ -14,6 +15,7 @@ import {
   Check,
   Loader2,
   AlertTriangle,
+  Store,
 } from "lucide-react";
 
 export const Route = createFileRoute("/brand-dna")({
@@ -97,6 +99,8 @@ type EntryMode = "fields" | "single";
 
 function BrandDna() {
   const { ready } = useRequireAuth();
+  const user = useCurrentUser();
+  const queryClient = useQueryClient();
   const [values, setValues] = useState<Record<DnaDocType, string>>(emptyValues);
   const [savedFields, setSavedFields] = useState<Record<DnaDocType, boolean>>({
     history: false,
@@ -153,6 +157,11 @@ function BrandDna() {
 
   function selectPersonality(sentence: string) {
     updateField("tone", sentence);
+  }
+
+  async function changeBusinessCategory(value: BusinessCategory) {
+    await api.updateMe(value);
+    queryClient.invalidateQueries({ queryKey: ["me"] });
   }
 
   async function applyDraft(draft: Record<DnaDocType, string>) {
@@ -217,6 +226,34 @@ function BrandDna() {
           title="อัตลักษณ์แบรนด์"
           subtitle="ตัวตนของแบรนด์คุณ วิเคราะห์และปรุงแต่งโดย AI"
         />
+
+        {user?.role !== "admin" && (
+          <div className="glass-card mb-6 flex items-center gap-4 rounded-2xl p-5">
+            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-white/5 text-teal">
+              <Store className="h-6 w-6" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="font-bold">ประเภทธุรกิจ</div>
+              <div className="text-sm text-muted-foreground">
+                ใช้เลือก prompt ที่เหมาะกับร้านคุณตอนสร้างคอนเทนต์
+              </div>
+            </div>
+            <select
+              value={user?.business_category ?? ""}
+              onChange={(e) => changeBusinessCategory(e.target.value as BusinessCategory)}
+              className="shrink-0 rounded-full border border-border bg-input px-3 py-1.5 text-sm"
+            >
+              <option value="" disabled>
+                เลือกประเภท
+              </option>
+              {Object.entries(businessCategoryLabel).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div
           role="tablist"

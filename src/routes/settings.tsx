@@ -1,15 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useQueryClient } from "@tanstack/react-query";
 import { AppShell, PageHeader, useCurrentUser } from "@/components/app-shell";
 import { useRequireAuth } from "@/lib/auth-guard";
-import {
-  api,
-  businessCategoryLabel,
-  exampleSelectionModeLabel,
-  type BusinessCategory,
-  type ExampleSelectionMode,
-} from "@/lib/api";
-import { LogOut, User, Bell, Globe, Store, Shuffle } from "lucide-react";
+import { api } from "@/lib/api";
+import { LogOut, User, Bell, Globe } from "lucide-react";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -42,21 +35,10 @@ function SettingsPage() {
   const { ready } = useRequireAuth();
   const user = useCurrentUser();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
 
   async function logout() {
     await api.logout();
     navigate({ to: "/login" });
-  }
-
-  async function changeBusinessCategory(value: BusinessCategory) {
-    await api.updateMe(value);
-    queryClient.invalidateQueries({ queryKey: ["me"] });
-  }
-
-  async function changeExampleSelectionMode(value: ExampleSelectionMode) {
-    await api.updateExampleSelectionMode(value);
-    queryClient.invalidateQueries({ queryKey: ["me"] });
   }
 
   const profileDesc = user
@@ -87,47 +69,6 @@ function SettingsPage() {
               ซิงค์จาก Google
             </span>
           </Row>
-          {user?.role !== "admin" && (
-            <Row
-              icon={Store}
-              title="ประเภทธุรกิจ"
-              desc="ใช้เลือก prompt ที่เหมาะกับร้านคุณตอนสร้างคอนเทนต์"
-            >
-              <select
-                value={user?.business_category ?? ""}
-                onChange={(e) => changeBusinessCategory(e.target.value as BusinessCategory)}
-                className="rounded-full border border-border bg-input px-3 py-1.5 text-sm"
-              >
-                <option value="" disabled>
-                  เลือกประเภท
-                </option>
-                {Object.entries(businessCategoryLabel).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </Row>
-          )}
-          {user?.role !== "admin" && (
-            <Row
-              icon={Shuffle}
-              title="โหมดเลือกตัวอย่างประกอบ"
-              desc="วิธีเลือกตัวอย่างโพสต์ที่ AI ใช้เป็นแนวทางตอนสร้างคอนเทนต์"
-            >
-              <select
-                value={user?.example_selection_mode ?? "latest"}
-                onChange={(e) => changeExampleSelectionMode(e.target.value as ExampleSelectionMode)}
-                className="rounded-full border border-border bg-input px-3 py-1.5 text-sm"
-              >
-                {Object.entries(exampleSelectionModeLabel).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </Row>
-          )}
           <Row icon={Bell} title="การแจ้งเตือน" desc="รับข่าวสาร โปรโมชั่น และเคล็ดลับจาก FAHSAI">
             <input
               type="checkbox"
