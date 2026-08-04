@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { AppShell, PageHeader, useCurrentUser } from "@/components/app-shell";
 import { useRequireAuth } from "@/lib/auth-guard";
 import { api } from "@/lib/api";
-import { LogOut, User, Bell, Globe, Lock } from "lucide-react";
+import { LogOut, User, Bell, Globe, Lock, LifeBuoy } from "lucide-react";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -145,6 +145,71 @@ function ChangePasswordRow({ hasPassword }: { hasPassword: boolean }) {
   );
 }
 
+function ReportIssueRow() {
+  const [open, setOpen] = useState(false);
+  const [message, setMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!message.trim()) {
+      toast.error("อธิบายปัญหาที่เจอหน่อยนะคะ");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await api.createSupportTicket(message.trim());
+      toast.success("ส่งเรื่องแล้วค่ะ ทีมงานจะรีบดูให้เร็วที่สุด");
+      setMessage("");
+      setOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "ส่งเรื่องไม่สำเร็จ ลองใหม่อีกครั้งนะคะ");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="glass-card rounded-2xl p-5">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 text-left"
+      >
+        <div className="grid h-10 w-10 place-items-center rounded-lg bg-white/5 text-teal">
+          <LifeBuoy className="h-5 w-5" />
+        </div>
+        <div className="min-w-0">
+          <div className="font-bold">แจ้งปัญหา</div>
+          <div className="text-sm text-muted-foreground">เจอปัญหาการใช้งาน แจ้งทีมงานได้ที่นี่</div>
+        </div>
+        <span className="shrink-0 rounded-full border border-border px-4 py-1.5 text-xs text-muted-foreground">
+          {open ? "ปิด" : "แจ้งปัญหา"}
+        </span>
+      </button>
+      {open && (
+        <form onSubmit={submit} className="mt-4 grid gap-3 border-t border-border pt-4">
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            rows={4}
+            placeholder="เล่าปัญหาที่เจอให้ฟังหน่อยค่ะ เช่น กดปุ่มนี้แล้วไม่มีอะไรเกิดขึ้น..."
+            className="rounded-xl border border-border bg-input px-4 py-2.5 text-sm outline-none focus:border-teal"
+            required
+          />
+          <button
+            type="submit"
+            disabled={submitting}
+            className="justify-self-start rounded-full bg-gradient-to-r from-teal to-gold px-5 py-2 text-sm font-bold text-primary-foreground disabled:opacity-60"
+          >
+            {submitting ? "กำลังส่ง..." : "ส่งเรื่อง"}
+          </button>
+        </form>
+      )}
+    </div>
+  );
+}
+
 function SettingsPage() {
   const { ready } = useRequireAuth();
   const user = useCurrentUser();
@@ -184,6 +249,7 @@ function SettingsPage() {
             </span>
           </Row>
           <ChangePasswordRow hasPassword={user?.has_password ?? false} />
+          <ReportIssueRow />
           <Row icon={Bell} title="การแจ้งเตือน" desc="รับข่าวสาร โปรโมชั่น และเคล็ดลับจาก FAHSAI">
             <input
               type="checkbox"

@@ -34,6 +34,7 @@ from db import (
     create_follower_snapshot,
     create_generation_log,
     create_prompt_template,
+    create_support_ticket,
     delete_event,
     delete_example_post,
     delete_prompt_template,
@@ -63,12 +64,14 @@ from db import (
     list_generation_logs,
     list_prompt_templates,
     list_security_events,
+    list_support_tickets,
     log_security_event,
     promote_example_post_to_global,
     reset_password as db_reset_password,
     set_content_feedback,
     set_example_post_rating,
     set_reset_token,
+    set_support_ticket_resolved,
     set_verification_token,
     touch_last_login,
     update_business_category,
@@ -358,6 +361,15 @@ class EventWrite(BaseModel):
     suggestion_text: str = ""
 
 
+class SupportTicketCreate(BaseModel):
+    message: str
+    user_agent: str | None = None
+
+
+class SupportTicketResolveUpdate(BaseModel):
+    resolved: bool
+
+
 def days_until_next(month: int, day: int, today: date) -> int:
     this_year = date(today.year, month, day)
     if this_year >= today:
@@ -470,6 +482,18 @@ def follower_snapshot_to_dict(row) -> dict:
         "platform": row["platform"],
         "follower_count": row["follower_count"],
         "recorded_at": to_utc_iso(row["recorded_at"]),
+    }
+
+
+def support_ticket_to_dict(row) -> dict:
+    return {
+        "id": row["id"],
+        "message": row["message"],
+        "user_agent": row["user_agent"],
+        "resolved": bool(row["resolved"]),
+        "created_at": to_utc_iso(row["created_at"]),
+        "user_name": row["user_name"] if "user_name" in row else None,
+        "user_email": row["user_email"] if "user_email" in row else None,
     }
 
 
@@ -760,6 +784,17 @@ def list_my_follower_snapshots(request: Request):
             follower_snapshot_to_dict(row) for row in list_follower_snapshots_for_user(user["id"])
         ]
     }
+
+
+@app.post("/support-tickets")
+@limiter.limit("10/hour")
+def create_my_support_ticket(body: SupportTicketCreate, request: Request):
+    user = require_user(request)
+    message = body.message.strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="กรุณาอธิบายปัญหาก่อนนะคะ")
+    row = create_support_ticket(user["id"], message, body.user_agent)
+    return support_ticket_to_dict(row)
 
 
 @app.post("/brand-dna/draft")
@@ -1324,6 +1359,33 @@ def admin_list_example_posts(
 def admin_list_example_post_categories(request: Request):
     require_admin(request)
     return {"categories": list_example_post_categories()}
+
+
+@app.get("/admin/support-tickets")
+@limiter.limit("60/minute")
+def admin_list_support_tickets(request: Request, page: int = 1, page_size: int = 20):
+    require_admin(request)
+    page = max(page, 1)
+    page_size = min(max(page_size, 1), 100)
+    rows, total = list_support_tickets(page, page_size)
+    return {
+        "tickets": [support_ticket_to_dict(row) for row in rows],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@app.patch("/admin/support-tickets/{ticket_id}/resolve")
+@limiter.limit("60/minute")
+def admin_resolve_support_ticket(
+    ticket_id: int, body: SupportTicketResolveUpdate, request: Request
+):
+    require_admin(request)
+    row = set_support_ticket_resolved(ticket_id, body.resolved)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    return support_ticket_to_dict(row)
 
 
 @app.post("/admin/example-posts")

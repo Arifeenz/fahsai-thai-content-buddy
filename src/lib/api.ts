@@ -156,6 +156,15 @@ export interface FollowerSnapshot {
   follower_count: number;
   recorded_at: string;
 }
+export interface SupportTicket {
+  id: number;
+  message: string;
+  user_agent: string | null;
+  resolved: boolean;
+  created_at: string;
+  user_name: string | null;
+  user_email: string | null;
+}
 export interface ApprovalByMode {
   mode: string;
   generations: number;
@@ -265,6 +274,12 @@ export const api = {
   async listFollowerSnapshots(): Promise<FollowerSnapshot[]> {
     const { snapshots } = await request<{ snapshots: FollowerSnapshot[] }>("/follower-snapshot");
     return snapshots;
+  },
+  async createSupportTicket(message: string): Promise<SupportTicket> {
+    return request("/support-tickets", {
+      method: "POST",
+      body: JSON.stringify({ message, user_agent: navigator.userAgent }),
+    });
   },
 
   async generate(
@@ -465,6 +480,26 @@ export const api = {
       "/admin/example-posts/categories",
     );
     return categories;
+  },
+  async adminListSupportTickets(page = 1, pageSize = 20): Promise<Paginated<SupportTicket>> {
+    const {
+      tickets,
+      total,
+      page: p,
+      page_size,
+    } = await request<{
+      tickets: SupportTicket[];
+      total: number;
+      page: number;
+      page_size: number;
+    }>(`/admin/support-tickets?page=${page}&page_size=${pageSize}`);
+    return { items: tickets, total, page: p, page_size };
+  },
+  async adminResolveSupportTicket(id: number, resolved: boolean): Promise<SupportTicket> {
+    return request(`/admin/support-tickets/${id}/resolve`, {
+      method: "PATCH",
+      body: JSON.stringify({ resolved }),
+    });
   },
   async adminCreateExamplePost(formData: FormData): Promise<ExamplePost> {
     return requestForm("/admin/example-posts", formData);

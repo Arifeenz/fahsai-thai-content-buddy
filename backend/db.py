@@ -164,6 +164,19 @@ def init_db() -> None:
         """
     )
 
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS support_tickets (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            message TEXT NOT NULL,
+            user_agent TEXT,
+            resolved BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
     event_count = conn.execute("SELECT COUNT(*) AS n FROM events").fetchone()["n"]
     if event_count == 0:
         conn.cursor().executemany(
@@ -1110,3 +1123,46 @@ def list_follower_snapshots_for_user(user_id: int) -> list[dict]:
     ).fetchall()
     conn.close()
     return rows
+
+
+def create_support_ticket(user_id: int, message: str, user_agent: str | None) -> dict:
+    conn = get_connection()
+    row = conn.execute(
+        """
+        INSERT INTO support_tickets (user_id, message, user_agent)
+        VALUES (%s, %s, %s)
+        RETURNING *
+        """,
+        (user_id, message, user_agent),
+    ).fetchone()
+    conn.commit()
+    conn.close()
+    return row
+
+
+def list_support_tickets(page: int = 1, page_size: int = 20) -> tuple[list[dict], int]:
+    conn = get_connection()
+    total = conn.execute("SELECT COUNT(*) AS n FROM support_tickets").fetchone()["n"]
+    rows = conn.execute(
+        """
+        SELECT support_tickets.*, users.name AS user_name, users.email AS user_email
+        FROM support_tickets
+        JOIN users ON users.id = support_tickets.user_id
+        ORDER BY support_tickets.resolved ASC, support_tickets.created_at DESC
+        LIMIT %s OFFSET %s
+        """,
+        (page_size, (page - 1) * page_size),
+    ).fetchall()
+    conn.close()
+    return rows, total
+
+
+def set_support_ticket_resolved(ticket_id: int, resolved: bool) -> dict | None:
+    conn = get_connection()
+    row = conn.execute(
+        "UPDATE support_tickets SET resolved = %s WHERE id = %s RETURNING *",
+        (resolved, ticket_id),
+    ).fetchone()
+    conn.commit()
+    conn.close()
+    return row

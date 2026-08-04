@@ -16,6 +16,7 @@ import {
   History,
   Images,
   LineChart,
+  LifeBuoy,
 } from "lucide-react";
 import { toast } from "sonner";
 import logo from "@/assets/fahsai-logo.png";
@@ -49,6 +50,7 @@ const adminNavItems = [
   { to: "/admin/kpi", label: "KPI", icon: LineChart },
   { to: "/admin/events", label: "วันสำคัญ", icon: CalendarDays },
   { to: "/admin/security", label: "ความปลอดภัย", icon: ShieldAlert },
+  { to: "/admin/support", label: "แจ้งปัญหา", icon: LifeBuoy },
   { to: "/settings", label: "ตั้งค่า", icon: Settings },
 ] as const;
 
