@@ -6,6 +6,7 @@ import {
   api,
   exampleSelectionModeLabel,
   platformLabel,
+  type BusinessCategory,
   type ExampleSelectionMode,
   type Platform,
   type Tone,
@@ -21,6 +22,7 @@ import {
   Instagram,
   MessageCircle,
   ImagePlus,
+  Info,
   X,
 } from "lucide-react";
 
@@ -51,13 +53,49 @@ const tones: { key: Tone; label: string }[] = [
 const MAX_PHOTOS = 3;
 
 type Mode = "idea" | "photo";
+type CategoryKey = BusinessCategory | "default";
+
+const categoryPlaceholder: Record<CategoryKey, string> = {
+  food_beverage: "เช่น โปรโมทเมนูใหม่ กาแฟส้ม ลด 20% ช่วงบ่าย",
+  online_shop: "เช่น สินค้ามาใหม่ กระเป๋าหนัง ลด 15% วันนี้วันเดียว",
+  fortune_telling: "เช่น ดวงรายสัปดาห์ราศีเมษ เปิดคิวดูดวงเสาร์-อาทิตย์นี้",
+  streamer: "เช่น ไลฟ์เกม Valorant คืนนี้ 3 ทุ่ม มีแจกของ",
+  default: "เช่น อยากได้โพสต์ชวนคนมาลองเมนูใหม่ กาแฟส้ม ช่วงบ่ายลด 20%",
+};
+
+const categoryChips: Record<CategoryKey, { label: string; insert: string }[]> = {
+  food_beverage: [
+    { label: "เมนู", insert: "เมนูที่จะโปรโมท: " },
+    { label: "ราคา/โปรโมชั่น", insert: "ราคา/โปรโมชั่น: " },
+    { label: "จุดเด่น", insert: "จุดเด่นของเมนูนี้: " },
+  ],
+  online_shop: [
+    { label: "สินค้า", insert: "สินค้าที่จะโปรโมท: " },
+    { label: "ราคา/ส่วนลด", insert: "ราคา/ส่วนลด: " },
+    { label: "ของจำกัด", insert: "จำนวนจำกัด/ใกล้หมด: " },
+  ],
+  fortune_telling: [
+    { label: "หัวข้อดวง", insert: "หัวข้อดวงที่จะพูดถึง: " },
+    { label: "บริการที่เปิดจอง", insert: "บริการที่เปิดรับ: " },
+    { label: "ช่วงเวลาว่าง", insert: "ช่วงเวลาที่เปิดคิว: " },
+  ],
+  streamer: [
+    { label: "คอนเทนต์/เกม", insert: "คอนเทนต์ที่จะสตรีม: " },
+    { label: "วันเวลาไลฟ์", insert: "วันเวลาไลฟ์: " },
+    { label: "กิจกรรมพิเศษ", insert: "กิจกรรมพิเศษ: " },
+  ],
+  default: [],
+};
+
+const SHORT_PROMPT_THRESHOLD = 15;
 
 function CreateContent() {
   const { ready } = useRequireAuth();
   const user = useCurrentUser();
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<Mode>("idea");
-  const [prompt, setPrompt] = useState("โปรโมชั่นหน้าร้อนสำหรับเมนูกาแฟส้ม");
+  const [prompt, setPrompt] = useState("");
+  const promptRef = useRef<HTMLTextAreaElement>(null);
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
   const [photoContext, setPhotoContext] = useState("");
   const photoInputRef = useRef<HTMLInputElement>(null);
@@ -69,6 +107,38 @@ function CreateContent() {
   const [imagePrompt, setImagePrompt] = useState<string | null>(null);
   const [imagePromptTh, setImagePromptTh] = useState<string | null>(null);
   const [approved, setApproved] = useState(false);
+  const [showShortPromptWarning, setShowShortPromptWarning] = useState(false);
+
+  const categoryKey: CategoryKey = user?.business_category ?? "default";
+
+  function insertChip(insert: string) {
+    setPrompt((prev) => (prev.trim() ? `${prev}\n${insert}` : insert));
+    requestAnimationFrame(() => {
+      const el = promptRef.current;
+      if (el) {
+        el.focus();
+        el.setSelectionRange(el.value.length, el.value.length);
+      }
+    });
+  }
+
+  function handleGenerateClick() {
+    if (mode === "idea" && prompt.trim().length < SHORT_PROMPT_THRESHOLD) {
+      setShowShortPromptWarning(true);
+      return;
+    }
+    generate();
+  }
+
+  function generateAnyway() {
+    setShowShortPromptWarning(false);
+    generate();
+  }
+
+  function dismissShortPromptWarning() {
+    setShowShortPromptWarning(false);
+    promptRef.current?.focus();
+  }
 
   async function generate() {
     if (mode === "photo" && photoFiles.length === 0) return;
@@ -143,7 +213,10 @@ function CreateContent() {
           <div className="glass-card rounded-2xl p-6">
             <div className="mb-4 flex gap-2">
               <button
-                onClick={() => setMode("idea")}
+                onClick={() => {
+                  setMode("idea");
+                  setShowShortPromptWarning(false);
+                }}
                 className={
                   "rounded-full border px-4 py-1.5 text-sm transition " +
                   (mode === "idea"
@@ -154,7 +227,10 @@ function CreateContent() {
                 เขียนจากไอเดีย
               </button>
               <button
-                onClick={() => setMode("photo")}
+                onClick={() => {
+                  setMode("photo");
+                  setShowShortPromptWarning(false);
+                }}
                 className={
                   "rounded-full border px-4 py-1.5 text-sm transition " +
                   (mode === "photo"
@@ -170,12 +246,30 @@ function CreateContent() {
               <>
                 <label className="mb-2 block text-sm font-semibold">อยากโพสต์อะไรวันนี้?</label>
                 <textarea
+                  ref={promptRef}
                   value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
+                  onChange={(e) => {
+                    setPrompt(e.target.value);
+                    setShowShortPromptWarning(false);
+                  }}
                   rows={4}
-                  placeholder="เช่น อยากได้โพสต์ชวนคนมาลองเมนูใหม่ กาแฟส้ม ช่วงบ่ายลด 20%"
+                  placeholder={categoryPlaceholder[categoryKey]}
                   className="w-full resize-none rounded-xl border border-border bg-input p-3 text-base outline-none placeholder:text-muted-foreground focus:border-teal"
                 />
+                {categoryChips[categoryKey].length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {categoryChips[categoryKey].map((chip) => (
+                      <button
+                        key={chip.label}
+                        type="button"
+                        onClick={() => insertChip(chip.insert)}
+                        className="rounded-full border border-dashed border-border px-3 py-1 text-xs text-muted-foreground hover:border-teal hover:text-teal"
+                      >
+                        + {chip.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </>
             ) : (
               <>
@@ -292,14 +386,39 @@ function CreateContent() {
               </div>
             )}
 
-            <button
-              onClick={generate}
-              disabled={loading || (mode === "photo" && photoFiles.length === 0)}
-              className="btn-gold mt-6 inline-flex w-full items-center justify-center gap-2 rounded-full px-6 py-3 text-base disabled:opacity-60"
-            >
-              <Sparkles className="h-5 w-5" />
-              {loading ? "กำลังสร้างโพสต์ให้อยู่ค่ะ..." : "ให้ FAHSAI ช่วยเขียน"}
-            </button>
+            {showShortPromptWarning ? (
+              <div className="mt-6 rounded-xl border border-dashed border-gold/50 bg-gold/10 p-4">
+                <div className="flex gap-2 text-sm">
+                  <Info className="h-4 w-4 shrink-0 text-gold" />
+                  <span>
+                    เพิ่มรายละเอียดหน่อยมั้ยคะ เช่น ชื่อเมนู ราคา จะได้โพสต์ตรงใจร้านมากขึ้น
+                  </span>
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    onClick={dismissShortPromptWarning}
+                    className="rounded-full border border-border px-4 py-1.5 text-sm hover:bg-white/5"
+                  >
+                    เพิ่มรายละเอียด
+                  </button>
+                  <button
+                    onClick={generateAnyway}
+                    className="btn-gold inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm"
+                  >
+                    <Sparkles className="h-4 w-4" /> สร้างเลย
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={handleGenerateClick}
+                disabled={loading || (mode === "photo" && photoFiles.length === 0)}
+                className="btn-gold mt-6 inline-flex w-full items-center justify-center gap-2 rounded-full px-6 py-3 text-base disabled:opacity-60"
+              >
+                <Sparkles className="h-5 w-5" />
+                {loading ? "กำลังสร้างโพสต์ให้อยู่ค่ะ..." : "ให้ FAHSAI ช่วยเขียน"}
+              </button>
+            )}
           </div>
 
           {/* right: result */}
