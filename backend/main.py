@@ -5,6 +5,7 @@ import secrets
 import sys
 import uuid
 from datetime import date, datetime, timedelta, timezone
+from io import BytesIO
 from typing import Literal
 
 import bcrypt
@@ -18,6 +19,7 @@ from fastapi.responses import JSONResponse
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 from openai import OpenAI
+from PIL import Image, ImageOps
 from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
@@ -54,6 +56,7 @@ from db import (
     list_all_users,
     list_content_for_user,
     list_events_for_user,
+    list_example_post_categories,
     list_example_posts_for_generation,
     list_example_posts_for_user,
     list_follower_snapshots_for_user,
@@ -125,12 +128,37 @@ supabase_client = (
 )
 EXAMPLE_POSTS_BUCKET = "example-posts"
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
+IMAGE_MAX_DIMENSION = 1920
+IMAGE_JPEG_QUALITY = 85
 MAX_GENERATE_IMAGES = 3
 
 SESSION_COOKIE = "fahsai_session"
 SESSION_TTL = timedelta(days=7)
 VERIFICATION_TOKEN_TTL = timedelta(hours=24)
 RESET_TOKEN_TTL = timedelta(hours=1)
+
+
+def resize_and_compress_image(contents: bytes) -> bytes | None:
+    # Downscales to a display-friendly cap and re-encodes as JPEG. The
+    # OpenAI vision calls that read these images already run at
+    # detail="low" (a fixed ~512px internal downsample), so this only
+    # affects storage size and how sharp the image looks in the UI.
+    try:
+        image = Image.open(BytesIO(contents))
+        image = ImageOps.exif_transpose(image) or image
+    except Exception:
+        return None
+    if image.mode in ("RGBA", "LA", "P"):
+        rgba = image.convert("RGBA")
+        flattened = Image.new("RGB", rgba.size, (255, 255, 255))
+        flattened.paste(rgba, mask=rgba.split()[-1])
+        image = flattened
+    else:
+        image = image.convert("RGB")
+    image.thumbnail((IMAGE_MAX_DIMENSION, IMAGE_MAX_DIMENSION), Image.LANCZOS)
+    buffer = BytesIO()
+    image.save(buffer, format="JPEG", quality=IMAGE_JPEG_QUALITY, optimize=True)
+    return buffer.getvalue()
 
 
 def upload_example_image(file: UploadFile | None, owner_id: int) -> str | None:
@@ -145,10 +173,15 @@ def upload_example_image(file: UploadFile | None, owner_id: int) -> str | None:
     contents = file.file.read()
     if len(contents) > MAX_IMAGE_BYTES:
         raise HTTPException(status_code=400, detail="ไฟล์รูปภาพใหญ่เกินไป (จำกัด 5MB นะคะ)")
-    ext = (file.filename.rsplit(".", 1)[-1] if "." in file.filename else "jpg").lower()
+    resized = resize_and_compress_image(contents)
+    if resized is not None:
+        contents, ext, content_type = resized, "jpg", "image/jpeg"
+    else:
+        ext = (file.filename.rsplit(".", 1)[-1] if "." in file.filename else "jpg").lower()
+        content_type = file.content_type
     path = f"{owner_id}/{uuid.uuid4()}.{ext}"
     supabase_client.storage.from_(EXAMPLE_POSTS_BUCKET).upload(
-        path, contents, {"content-type": file.content_type}
+        path, contents, {"content-type": content_type}
     )
     return supabase_client.storage.from_(EXAMPLE_POSTS_BUCKET).get_public_url(path)
 
@@ -1196,16 +1229,32 @@ def admin_generation_log(request: Request):
 
 @app.get("/admin/users")
 @limiter.limit("60/minute")
-def admin_list_users(request: Request):
+def admin_list_users(request: Request, page: int = 1, page_size: int = 20):
     require_admin(request)
-    return {"users": [admin_user_to_dict(row) for row in list_all_users()]}
+    page = max(page, 1)
+    page_size = min(max(page_size, 1), 100)
+    rows, total = list_all_users(page, page_size)
+    return {
+        "users": [admin_user_to_dict(row) for row in rows],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
 
 
 @app.get("/admin/content")
 @limiter.limit("60/minute")
-def admin_get_all_content(request: Request):
+def admin_get_all_content(request: Request, page: int = 1, page_size: int = 20):
     require_admin(request)
-    return {"items": [admin_content_to_dict(row) for row in list_all_content()]}
+    page = max(page, 1)
+    page_size = min(max(page_size, 1), 100)
+    rows, total = list_all_content(page, page_size)
+    return {
+        "items": [admin_content_to_dict(row) for row in rows],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
 
 
 @app.get("/admin/prompt-templates")
@@ -1247,9 +1296,34 @@ def admin_delete_prompt_template(template_id: int, request: Request):
 
 @app.get("/admin/example-posts")
 @limiter.limit("60/minute")
-def admin_list_example_posts(request: Request):
+def admin_list_example_posts(
+    request: Request,
+    page: int = 1,
+    page_size: int = 20,
+    search: str | None = None,
+    platform: str | None = None,
+    business_category: str | None = None,
+    ownership: str | None = None,
+):
     require_admin(request)
-    return {"posts": [admin_example_post_to_dict(row) for row in list_all_example_posts()]}
+    page = max(page, 1)
+    page_size = min(max(page_size, 1), 100)
+    rows, total = list_all_example_posts(
+        page, page_size, search, platform, business_category, ownership
+    )
+    return {
+        "posts": [admin_example_post_to_dict(row) for row in rows],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@app.get("/admin/example-posts/categories")
+@limiter.limit("60/minute")
+def admin_list_example_post_categories(request: Request):
+    require_admin(request)
+    return {"categories": list_example_post_categories()}
 
 
 @app.post("/admin/example-posts")

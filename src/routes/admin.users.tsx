@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { api, businessCategoryLabel } from "@/lib/api";
 import { AppShell, PageHeader } from "@/components/app-shell";
 import { useRequireAdmin } from "@/lib/admin-guard";
+import { Pagination } from "@/components/pagination";
 
 export const Route = createFileRoute("/admin/users")({
   head: () => ({
@@ -14,12 +16,18 @@ export const Route = createFileRoute("/admin/users")({
   component: AdminUsersPage,
 });
 
+const PAGE_SIZE = 20;
+
 function AdminUsersPage() {
   const { ready } = useRequireAdmin();
-  const { data: users = [] } = useQuery({
-    queryKey: ["admin", "users"],
-    queryFn: () => api.adminListUsers(),
+  const [page, setPage] = useState(1);
+  const { data } = useQuery({
+    queryKey: ["admin", "users", page],
+    queryFn: () => api.adminListUsers(page, PAGE_SIZE),
+    placeholderData: keepPreviousData,
   });
+  const users = data?.items ?? [];
+  const total = data?.total ?? 0;
 
   if (!ready) {
     return (
@@ -34,7 +42,7 @@ function AdminUsersPage() {
   return (
     <AppShell>
       <div className="p-6 md:p-8">
-        <PageHeader title="ผู้ใช้งาน" subtitle={`ผู้ใช้งานทั้งหมด (${users.length})`} />
+        <PageHeader title="ผู้ใช้งาน" subtitle={`ผู้ใช้งานทั้งหมด (${total})`} />
         <div className="glass-card overflow-x-auto rounded-2xl">
           <table className="w-full min-w-[640px] text-left text-sm">
             <thead>
@@ -86,6 +94,7 @@ function AdminUsersPage() {
             </tbody>
           </table>
         </div>
+        <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
       </div>
     </AppShell>
   );

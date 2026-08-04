@@ -58,6 +58,12 @@ export interface PromptTemplate {
   template_text: string;
   updated_at: string;
 }
+export interface Paginated<T> {
+  items: T[];
+  total: number;
+  page: number;
+  page_size: number;
+}
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
@@ -336,13 +342,33 @@ export const api = {
     const { logs } = await request<{ logs: GenerationLogEntry[] }>("/admin/generation-log");
     return logs;
   },
-  async adminListUsers(): Promise<AdminUser[]> {
-    const { users } = await request<{ users: AdminUser[] }>("/admin/users");
-    return users;
+  async adminListUsers(page = 1, pageSize = 20): Promise<Paginated<AdminUser>> {
+    const {
+      users,
+      total,
+      page: p,
+      page_size,
+    } = await request<{
+      users: AdminUser[];
+      total: number;
+      page: number;
+      page_size: number;
+    }>(`/admin/users?page=${page}&page_size=${pageSize}`);
+    return { items: users, total, page: p, page_size };
   },
-  async adminListContent(): Promise<AdminContentItem[]> {
-    const { items } = await request<{ items: AdminContentItem[] }>("/admin/content");
-    return items;
+  async adminListContent(page = 1, pageSize = 20): Promise<Paginated<AdminContentItem>> {
+    const {
+      items,
+      total,
+      page: p,
+      page_size,
+    } = await request<{
+      items: AdminContentItem[];
+      total: number;
+      page: number;
+      page_size: number;
+    }>(`/admin/content?page=${page}&page_size=${pageSize}`);
+    return { items, total, page: p, page_size };
   },
   async adminListPromptTemplates(): Promise<PromptTemplate[]> {
     const { templates } = await request<{ templates: PromptTemplate[] }>("/admin/prompt-templates");
@@ -407,9 +433,38 @@ export const api = {
       body: JSON.stringify({ rating }),
     });
   },
-  async adminListExamplePosts(): Promise<AdminExamplePost[]> {
-    const { posts } = await request<{ posts: AdminExamplePost[] }>("/admin/example-posts");
-    return posts;
+  async adminListExamplePosts(
+    params: {
+      page?: number;
+      pageSize?: number;
+      search?: string;
+      platform?: Platform | "all";
+      businessCategory?: string;
+      ownership?: "all" | "global" | "personal";
+    } = {},
+  ): Promise<Paginated<AdminExamplePost>> {
+    const qs = new URLSearchParams();
+    qs.set("page", String(params.page ?? 1));
+    qs.set("page_size", String(params.pageSize ?? 20));
+    if (params.search?.trim()) qs.set("search", params.search.trim());
+    if (params.platform && params.platform !== "all") qs.set("platform", params.platform);
+    if (params.businessCategory && params.businessCategory !== "all") {
+      qs.set("business_category", params.businessCategory);
+    }
+    if (params.ownership && params.ownership !== "all") qs.set("ownership", params.ownership);
+    const { posts, total, page, page_size } = await request<{
+      posts: AdminExamplePost[];
+      total: number;
+      page: number;
+      page_size: number;
+    }>(`/admin/example-posts?${qs.toString()}`);
+    return { items: posts, total, page, page_size };
+  },
+  async adminListExamplePostCategories(): Promise<string[]> {
+    const { categories } = await request<{ categories: string[] }>(
+      "/admin/example-posts/categories",
+    );
+    return categories;
   },
   async adminCreateExamplePost(formData: FormData): Promise<ExamplePost> {
     return requestForm("/admin/example-posts", formData);

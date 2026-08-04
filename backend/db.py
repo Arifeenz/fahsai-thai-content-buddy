@@ -382,11 +382,15 @@ def update_example_selection_mode(user_id: int, mode: str) -> dict | None:
     return row
 
 
-def list_all_users() -> list[dict]:
+def list_all_users(page: int = 1, page_size: int = 20) -> tuple[list[dict], int]:
     conn = get_connection()
-    rows = conn.execute("SELECT * FROM users ORDER BY created_at DESC").fetchall()
+    total = conn.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
+    rows = conn.execute(
+        "SELECT * FROM users ORDER BY created_at DESC LIMIT %s OFFSET %s",
+        (page_size, (page - 1) * page_size),
+    ).fetchall()
     conn.close()
-    return rows
+    return rows, total
 
 
 def get_admin_stats() -> dict:
@@ -681,18 +685,21 @@ def list_content_for_user(user_id: int) -> list[dict]:
     return rows
 
 
-def list_all_content() -> list[dict]:
+def list_all_content(page: int = 1, page_size: int = 20) -> tuple[list[dict], int]:
     conn = get_connection()
+    total = conn.execute("SELECT COUNT(*) AS n FROM content_items").fetchone()["n"]
     rows = conn.execute(
         """
         SELECT content_items.*, users.name AS owner_name, users.email AS owner_email
         FROM content_items
         JOIN users ON users.id = content_items.user_id
         ORDER BY content_items.created_at DESC
-        """
+        LIMIT %s OFFSET %s
+        """,
+        (page_size, (page - 1) * page_size),
     ).fetchall()
     conn.close()
-    return rows
+    return rows, total
 
 
 def list_prompt_templates(
@@ -831,18 +838,59 @@ def list_example_posts_for_user(user_id: int) -> list[dict]:
     return rows
 
 
-def list_all_example_posts() -> list[dict]:
+def list_all_example_posts(
+    page: int = 1,
+    page_size: int = 20,
+    search: str | None = None,
+    platform: str | None = None,
+    business_category: str | None = None,
+    ownership: str | None = None,
+) -> tuple[list[dict], int]:
     conn = get_connection()
+    where_sql = "WHERE 1=1"
+    params: list = []
+    if search:
+        where_sql += " AND example_posts.caption ILIKE %s"
+        params.append(f"%{search}%")
+    if platform:
+        where_sql += " AND example_posts.platform = %s"
+        params.append(platform)
+    if business_category:
+        where_sql += " AND example_posts.business_category = %s"
+        params.append(business_category)
+    if ownership == "global":
+        where_sql += " AND example_posts.user_id IS NULL"
+    elif ownership == "personal":
+        where_sql += " AND example_posts.user_id IS NOT NULL"
+    total = conn.execute(
+        f"SELECT COUNT(*) AS n FROM example_posts {where_sql}", params
+    ).fetchone()["n"]
     rows = conn.execute(
-        """
+        f"""
         SELECT example_posts.*, users.name AS owner_name, users.email AS owner_email
         FROM example_posts
         LEFT JOIN users ON users.id = example_posts.user_id
+        {where_sql}
         ORDER BY example_posts.created_at DESC
+        LIMIT %s OFFSET %s
+        """,
+        params + [page_size, (page - 1) * page_size],
+    ).fetchall()
+    conn.close()
+    return rows, total
+
+
+def list_example_post_categories() -> list[str]:
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT DISTINCT business_category FROM example_posts
+        WHERE business_category IS NOT NULL
+        ORDER BY business_category
         """
     ).fetchall()
     conn.close()
-    return rows
+    return [row["business_category"] for row in rows]
 
 
 def delete_example_post(post_id: int, owner_user_id: int | None) -> bool:

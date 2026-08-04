@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   api,
@@ -13,6 +13,7 @@ import {
 import { AppShell, PageHeader } from "@/components/app-shell";
 import { useRequireAdmin } from "@/lib/admin-guard";
 import { StarRating } from "@/components/star-rating";
+import { Pagination } from "@/components/pagination";
 import { ImagePlus, Trash2, ArrowUpCircle, Pencil, Search } from "lucide-react";
 
 export const Route = createFileRoute("/admin/examples")({
@@ -26,6 +27,7 @@ export const Route = createFileRoute("/admin/examples")({
 });
 
 const platforms: Platform[] = ["facebook", "line", "instagram"];
+const PAGE_SIZE = 20;
 
 const emptyForm = {
   id: null as number | null,
@@ -37,10 +39,6 @@ const emptyForm = {
 function AdminExamplesPage() {
   const { ready } = useRequireAdmin();
   const queryClient = useQueryClient();
-  const { data: posts = [] } = useQuery({
-    queryKey: ["admin", "example-posts"],
-    queryFn: () => api.adminListExamplePosts(),
-  });
 
   const [form, setForm] = useState(emptyForm);
   const [file, setFile] = useState<File | null>(null);
@@ -48,30 +46,51 @@ function AdminExamplesPage() {
   const [editingImageUrl, setEditingImageUrl] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filterPlatform, setFilterPlatform] = useState<Platform | "all">("all");
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [filterOwnership, setFilterOwnership] = useState<"all" | "global" | "personal">("all");
+  const [page, setPage] = useState(1);
 
-  const filtered = useMemo(
-    () =>
-      posts.filter(
-        (p) =>
-          (filterPlatform === "all" || p.platform === filterPlatform) &&
-          (filterCategory === "all" || p.business_category === filterCategory) &&
-          (filterOwnership === "all" ||
-            (filterOwnership === "global" ? !p.is_personal : p.is_personal)) &&
-          (search.trim() === "" || p.caption.toLowerCase().includes(search.toLowerCase())),
-      ),
-    [posts, search, filterPlatform, filterCategory, filterOwnership],
-  );
+  // Debounce search text so every keystroke doesn't fire a request; reset to
+  // page 1 whenever the effective search term or any filter changes so the
+  // user doesn't land on an out-of-range page for the new result set.
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search.trim()), 400);
+    return () => clearTimeout(timer);
+  }, [search]);
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, filterPlatform, filterCategory, filterOwnership]);
 
-  // Personal examples can carry a free-text category (see examples.tsx) —
-  // surface whatever categories actually show up in the data, official or
-  // not, so an emerging unofficial one is immediately filterable/countable.
-  const availableCategories = useMemo(
-    () => Array.from(new Set(posts.map((p) => p.business_category).filter((c): c is string => !!c))),
-    [posts],
-  );
+  const { data } = useQuery({
+    queryKey: [
+      "admin",
+      "example-posts",
+      { page, search: debouncedSearch, filterPlatform, filterCategory, filterOwnership },
+    ],
+    queryFn: () =>
+      api.adminListExamplePosts({
+        page,
+        pageSize: PAGE_SIZE,
+        search: debouncedSearch,
+        platform: filterPlatform,
+        businessCategory: filterCategory,
+        ownership: filterOwnership,
+      }),
+    placeholderData: keepPreviousData,
+  });
+  const posts = data?.items ?? [];
+  const total = data?.total ?? 0;
+
+  // Categories fetched separately (unpaginated, unfiltered) so the filter
+  // dropdown keeps surfacing every category in use — including unofficial
+  // free-text ones from promoted personal posts — regardless of what's on
+  // the current page.
+  const { data: availableCategories = [] } = useQuery({
+    queryKey: ["admin", "example-posts", "categories"],
+    queryFn: () => api.adminListExamplePostCategories(),
+  });
 
   function refresh() {
     queryClient.invalidateQueries({ queryKey: ["admin", "example-posts"] });
@@ -152,7 +171,7 @@ function AdminExamplesPage() {
       <div className="p-6 md:p-8">
         <PageHeader
           title="ตัวอย่างโพสต์"
-          subtitle={`คลังกลาง + ที่ผู้ใช้เพิ่มเอง (${filtered.length}/${posts.length})`}
+          subtitle={`คลังกลาง + ที่ผู้ใช้เพิ่มเอง (ทั้งหมด ${total} รายการ)`}
         />
 
         <div className="glass-card mb-6 grid gap-3 rounded-2xl p-5 md:grid-cols-2">
@@ -267,7 +286,7 @@ function AdminExamplesPage() {
         </div>
 
         <div className="grid gap-3">
-          {filtered.map((post) => (
+          {posts.map((post) => (
             <div
               key={post.id}
               className="glass-card grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-4 rounded-2xl p-4"
@@ -342,14 +361,19 @@ function AdminExamplesPage() {
               </div>
             </div>
           ))}
-          {filtered.length === 0 && (
+          {posts.length === 0 && (
             <div className="glass-card rounded-2xl p-10 text-center text-sm text-muted-foreground">
-              {posts.length === 0
+              {total === 0 &&
+              !debouncedSearch &&
+              filterPlatform === "all" &&
+              filterCategory === "all" &&
+              filterOwnership === "all"
                 ? "ยังไม่มีตัวอย่างโพสต์ในระบบเลยค่ะ"
                 : "ไม่พบตัวอย่างที่ตรงกับตัวกรองค่ะ"}
             </div>
           )}
         </div>
+        <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
       </div>
     </AppShell>
   );

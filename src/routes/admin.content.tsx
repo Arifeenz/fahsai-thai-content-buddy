@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { api, platformLabel } from "@/lib/api";
 import { AppShell, PageHeader } from "@/components/app-shell";
 import { useRequireAdmin } from "@/lib/admin-guard";
+import { Pagination } from "@/components/pagination";
 import { feedbackOptions, StatusBadge } from "./dashboard";
 
 export const Route = createFileRoute("/admin/content")({
@@ -15,12 +17,18 @@ export const Route = createFileRoute("/admin/content")({
   component: AdminContentPage,
 });
 
+const PAGE_SIZE = 20;
+
 function AdminContentPage() {
   const { ready } = useRequireAdmin();
-  const { data: items = [] } = useQuery({
-    queryKey: ["admin", "content"],
-    queryFn: () => api.adminListContent(),
+  const [page, setPage] = useState(1);
+  const { data } = useQuery({
+    queryKey: ["admin", "content", page],
+    queryFn: () => api.adminListContent(page, PAGE_SIZE),
+    placeholderData: keepPreviousData,
   });
+  const items = data?.items ?? [];
+  const total = data?.total ?? 0;
 
   if (!ready) {
     return (
@@ -35,7 +43,7 @@ function AdminContentPage() {
   return (
     <AppShell>
       <div className="p-6 md:p-8">
-        <PageHeader title="คอนเทนต์ทั้งหมด" subtitle={`คอนเทนต์ทั้งหมด (${items.length})`} />
+        <PageHeader title="คอนเทนต์ทั้งหมด" subtitle={`คอนเทนต์ทั้งหมด (${total})`} />
         <div className="grid gap-3">
           {items.map((it) => (
             <div
@@ -72,6 +80,7 @@ function AdminContentPage() {
             </div>
           )}
         </div>
+        <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
       </div>
     </AppShell>
   );
