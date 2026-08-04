@@ -60,9 +60,9 @@ function LoginPage() {
       setLoading(true);
       const t = toast.loading("กำลังเข้าสู่ระบบให้อยู่ค่ะ...");
       try {
-        await api.loginWithGoogle(response.credential);
+        const { user } = await api.loginWithGoogle(response.credential);
         toast.success("ยินดีต้อนรับสู่ฟ้าใสค่ะ ✨", { id: t });
-        navigate({ to: "/dashboard" });
+        navigate({ to: user.role === "admin" ? "/admin" : "/dashboard" });
       } catch {
         toast.error("เข้าสู่ระบบไม่สำเร็จ ลองใหม่อีกครั้งนะคะ", { id: t });
       } finally {
@@ -130,9 +130,9 @@ function LoginPage() {
     setLoading(true);
     const t = toast.loading("กำลังเข้าสู่ระบบให้อยู่ค่ะ...");
     try {
-      await api.login(email, password);
+      const { user } = await api.login(email, password);
       toast.success("ยินดีต้อนรับค่ะ ✨", { id: t });
-      navigate({ to: "/dashboard" });
+      navigate({ to: user.role === "admin" ? "/admin" : "/dashboard" });
     } catch (err) {
       toast.error(errorMessage(err, "เข้าสู่ระบบไม่สำเร็จ ลองใหม่อีกครั้งนะคะ"), { id: t });
     } finally {
@@ -167,9 +167,9 @@ function LoginPage() {
     setLoading(true);
     const t = toast.loading("กำลังสมัครสมาชิกให้อยู่ค่ะ...");
     try {
-      await api.signup(name, email, password);
+      const { user } = await api.signup(name, email, password);
       toast.success("สมัครสมาชิกสำเร็จค่ะ ✨", { id: t });
-      navigate({ to: "/dashboard" });
+      navigate({ to: user.role === "admin" ? "/admin" : "/dashboard" });
     } catch (err) {
       toast.error(errorMessage(err, "สมัครสมาชิกไม่สำเร็จ ลองใหม่อีกครั้งนะคะ"), { id: t });
     } finally {

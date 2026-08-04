@@ -1,5 +1,5 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -324,6 +324,14 @@ const DNA_KEYS: DnaDocType[] = ["history", "menu", "usp", "tone"];
 function Dashboard() {
   const { ready } = useRequireAuth();
   const user = useCurrentUser();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (ready && user?.role === "admin") {
+      navigate({ to: "/admin" });
+    }
+  }, [ready, user, navigate]);
+
   const { data: stats } = useQuery({ queryKey: ["stats"], queryFn: () => api.stats() });
   const { data: items = [] } = useQuery({
     queryKey: ["content"],
@@ -350,7 +358,7 @@ function Dashboard() {
         ? "โพสต์วันนี้ค่ะ ✨"
         : "วันที่แล้ว";
 
-  if (!ready) {
+  if (!ready || user?.role === "admin") {
     return (
       <AppShell>
         <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">
