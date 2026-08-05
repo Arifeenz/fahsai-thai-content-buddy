@@ -139,6 +139,7 @@ function CreateContent() {
   const [videoScriptLoading, setVideoScriptLoading] = useState(false);
   const [scheduleDate, setScheduleDate] = useState("");
   const [scheduling, setScheduling] = useState(false);
+  const [contentId, setContentId] = useState<string | null>(null);
   const [approved, setApproved] = useState(false);
   const [showShortPromptWarning, setShowShortPromptWarning] = useState(false);
 
@@ -350,18 +351,27 @@ function CreateContent() {
         formData.append("platform", platform);
         formData.append("tone", tone);
         formData.append("context", photoContext);
+        if (contentId) formData.append("content_id", contentId);
         photoFiles.forEach((file) => formData.append("images", file));
         const res = await api.generateFromImage(formData);
         setCaption(res.caption);
         setResultImageUrls(res.image_urls);
         setImagePrompt(null);
         setImagePromptTh(null);
+        setContentId(res.content_id);
       } else {
-        const res = await api.generate({ businessId: "me", prompt, platform, tone });
+        const res = await api.generate({
+          businessId: "me",
+          prompt,
+          platform,
+          tone,
+          contentId: contentId ?? undefined,
+        });
         setCaption(res.caption);
         setResultImageUrls([]);
         setImagePrompt(res.image_prompt);
         setImagePromptTh(res.image_prompt_th);
+        setContentId(res.content_id);
       }
       toast.success("โพสต์ใหม่พร้อมแล้วค่ะ ลองดูได้เลย", { id: t });
     } catch {
@@ -398,31 +408,37 @@ function CreateContent() {
   }
 
   async function approve() {
-    if (!caption.trim()) return;
+    if (!caption.trim() || !contentId) return;
     setApproved(true);
-    await api.saveContent({ platform, preview: caption, status: "approved", mode });
+    await api.updateContent(contentId, { preview: caption, status: "approved" });
     toast.success("อนุมัติแล้วค่ะ พร้อมคัดลอกไปโพสต์ได้เลย ✓");
   }
 
   async function copy() {
     await navigator.clipboard.writeText(caption);
-    await api.saveContent({ platform, preview: caption, status: "posted", mode });
+    if (contentId) {
+      await api.updateContent(contentId, { preview: caption, status: "posted" });
+      // A posted item is done — the next generation should start a fresh
+      // draft instead of silently overwriting what was just published.
+      setContentId(null);
+    }
     toast.success("คัดลอกแล้วค่ะ ไปวางในแอปของคุณได้เลย 🎉");
   }
 
   async function scheduleContent() {
-    if (!scheduleDate || !caption.trim() || scheduling) return;
+    if (!scheduleDate || !caption.trim() || scheduling || !contentId) return;
     setScheduling(true);
     try {
-      await api.saveContent({
-        platform,
+      await api.updateContent(contentId, {
         preview: caption,
         status: "approved",
-        mode,
         scheduled_date: scheduleDate,
       });
       toast.success('เตรียมไว้ในตารางโพสต์แล้วค่ะ ✅ ดูได้ที่เมนู "ตารางโพสต์"');
       setScheduleDate("");
+      // Same reasoning as copy(): this item is now claimed for a specific
+      // date, so further regeneration shouldn't be able to overwrite it.
+      setContentId(null);
     } catch {
       toast.error("บันทึกลงตารางโพสต์ไม่สำเร็จ ลองใหม่อีกครั้งนะคะ");
     } finally {
@@ -453,6 +469,7 @@ function CreateContent() {
                 onClick={() => {
                   setMode("idea");
                   setShowShortPromptWarning(false);
+                  setContentId(null);
                 }}
                 className={
                   "rounded-full border px-4 py-1.5 text-sm transition " +
@@ -467,6 +484,7 @@ function CreateContent() {
                 onClick={() => {
                   setMode("photo");
                   setShowShortPromptWarning(false);
+                  setContentId(null);
                 }}
                 className={
                   "rounded-full border px-4 py-1.5 text-sm transition " +

@@ -13,6 +13,7 @@ export interface GenerateInput {
   prompt: string;
   platform: Platform;
   tone: Tone;
+  contentId?: string;
 }
 export interface ContentItem {
   id: string;
@@ -300,15 +301,25 @@ export const api = {
     });
   },
 
-  async generate(
-    input: GenerateInput,
-  ): Promise<{ caption: string; image_prompt: string | null; image_prompt_th: string | null }> {
+  async generate(input: GenerateInput): Promise<{
+    caption: string;
+    image_prompt: string | null;
+    image_prompt_th: string | null;
+    content_id: string;
+  }> {
     return request("/generate", {
       method: "POST",
-      body: JSON.stringify({ prompt: input.prompt, platform: input.platform, tone: input.tone }),
+      body: JSON.stringify({
+        prompt: input.prompt,
+        platform: input.platform,
+        tone: input.tone,
+        content_id: input.contentId,
+      }),
     });
   },
-  async generateFromImage(formData: FormData): Promise<{ caption: string; image_urls: string[] }> {
+  async generateFromImage(
+    formData: FormData,
+  ): Promise<{ caption: string; image_urls: string[]; content_id: string }> {
     return requestForm("/generate-from-image", formData);
   },
   async generateVideoScript(
@@ -351,6 +362,12 @@ export const api = {
   },
   async deleteContent(id: string): Promise<void> {
     await request(`/content/${id}`, { method: "DELETE" });
+  },
+  async updateContent(
+    id: string,
+    updates: { preview?: string; status?: ContentStatus; scheduled_date?: string },
+  ): Promise<ContentItem> {
+    return request(`/content/${id}`, { method: "PATCH", body: JSON.stringify(updates) });
   },
 
   async stats() {
@@ -400,7 +417,11 @@ export const api = {
     const { logs } = await request<{ logs: GenerationLogEntry[] }>("/admin/generation-log");
     return logs;
   },
-  async adminListUsers(page = 1, pageSize = 20): Promise<Paginated<AdminUser>> {
+  async adminListUsers(page = 1, pageSize = 20, search = ""): Promise<Paginated<AdminUser>> {
+    const qs = new URLSearchParams();
+    qs.set("page", String(page));
+    qs.set("page_size", String(pageSize));
+    if (search.trim()) qs.set("search", search.trim());
     const {
       users,
       total,
@@ -411,7 +432,7 @@ export const api = {
       total: number;
       page: number;
       page_size: number;
-    }>(`/admin/users?page=${page}&page_size=${pageSize}`);
+    }>(`/admin/users?${qs.toString()}`);
     return { items: users, total, page: p, page_size };
   },
   async adminListContent(page = 1, pageSize = 20): Promise<Paginated<AdminContentItem>> {

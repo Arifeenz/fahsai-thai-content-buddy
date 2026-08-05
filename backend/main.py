@@ -80,6 +80,7 @@ from db import (
     set_verification_token,
     touch_last_login,
     update_business_category,
+    update_content_item,
     update_content_schedule,
     update_event,
     update_example_post,
@@ -324,6 +325,7 @@ class GenerateRequest(BaseModel):
     prompt: str
     platform: str
     tone: str | None = None
+    content_id: int | None = None
 
 
 class VideoScriptRequest(BaseModel):
@@ -345,6 +347,12 @@ class ContentFeedbackUpdate(BaseModel):
 
 
 class ContentScheduleUpdate(BaseModel):
+    scheduled_date: str | None = None
+
+
+class ContentItemUpdate(BaseModel):
+    preview: str | None = None
+    status: str | None = None
     scheduled_date: str | None = None
 
 
@@ -488,6 +496,21 @@ def content_to_dict(row) -> dict:
         "createdAt": row["created_at"].date().isoformat() if row["created_at"] else None,
         "scheduledDate": row["scheduled_date"].isoformat() if row["scheduled_date"] else None,
     }
+
+
+def save_generated_draft(
+    user_id: int, platform: str, caption: str, mode: str, content_id: int | None
+) -> dict:
+    # /generate and /generate-from-image auto-save every result as a
+    # content_item so nothing is lost if the user never clicks approve —
+    # if content_id points at a row from an earlier generation in the same
+    # session (e.g. "สร้างใหม่"/regenerate), update it in place instead of
+    # piling up a fresh draft row per attempt.
+    if content_id is not None:
+        row = update_content_item(content_id, user_id, preview=caption, status="draft")
+        if row is not None:
+            return row
+    return create_content_item(user_id, platform, caption, "draft", mode=mode)
 
 
 def admin_content_to_dict(row) -> dict:
@@ -777,6 +800,17 @@ def update_content_schedule_endpoint(
 ):
     user = require_user(request)
     row = update_content_schedule(content_id, user["id"], body.scheduled_date)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Content not found")
+    return content_to_dict(row)
+
+
+@app.patch("/content/{content_id}")
+def update_content_endpoint(content_id: int, body: ContentItemUpdate, request: Request):
+    user = require_user(request)
+    row = update_content_item(
+        content_id, user["id"], body.preview, body.status, body.scheduled_date
+    )
     if row is None:
         raise HTTPException(status_code=404, detail="Content not found")
     return content_to_dict(row)
@@ -1113,7 +1147,15 @@ def generate_content(body: GenerateRequest, request: Request):
         create_generation_log(
             user["id"], body.platform, body.tone, body.prompt, chosen["template_text"], mode="idea"
         )
-        return {"caption": chosen["template_text"], "image_prompt": None, "image_prompt_th": None}
+        content_row = save_generated_draft(
+            user["id"], body.platform, chosen["template_text"], "idea", body.content_id
+        )
+        return {
+            "caption": chosen["template_text"],
+            "image_prompt": None,
+            "image_prompt_th": None,
+            "content_id": content_row["id"],
+        }
 
     dna = get_brand_dna(user["id"])
     style_examples = "\n---\n".join(t["template_text"] for t in templates[:3])
@@ -1205,7 +1247,13 @@ def generate_content(body: GenerateRequest, request: Request):
         system_prompt,
         mode="idea",
     )
-    return {"caption": caption, "image_prompt": image_prompt, "image_prompt_th": image_prompt_th}
+    content_row = save_generated_draft(user["id"], body.platform, caption, "idea", body.content_id)
+    return {
+        "caption": caption,
+        "image_prompt": image_prompt,
+        "image_prompt_th": image_prompt_th,
+        "content_id": content_row["id"],
+    }
 
 
 @app.post("/generate-from-image")
@@ -1215,6 +1263,7 @@ def generate_from_image(
     platform: str = Form(...),
     tone: str | None = Form(None),
     context: str = Form(""),
+    content_id: int | None = Form(None),
     images: list[UploadFile] = File(...),
 ):
     user = require_user(request)
@@ -1304,7 +1353,8 @@ def generate_from_image(
         system_prompt,
         mode="photo",
     )
-    return {"caption": caption, "image_urls": image_urls}
+    content_row = save_generated_draft(user["id"], platform, caption, "photo", content_id)
+    return {"caption": caption, "image_urls": image_urls, "content_id": content_row["id"]}
 
 
 @app.post("/generate-video-script")
@@ -1455,11 +1505,11 @@ def admin_generation_log(request: Request):
 
 @app.get("/admin/users")
 @limiter.limit("60/minute")
-def admin_list_users(request: Request, page: int = 1, page_size: int = 20):
+def admin_list_users(request: Request, page: int = 1, page_size: int = 20, search: str | None = None):
     require_admin(request)
     page = max(page, 1)
     page_size = min(max(page_size, 1), 100)
-    rows, total = list_all_users(page, page_size)
+    rows, total = list_all_users(page, page_size, search)
     return {
         "users": [admin_user_to_dict(row) for row in rows],
         "total": total,

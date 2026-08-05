@@ -409,12 +409,20 @@ def update_example_selection_mode(user_id: int, mode: str) -> dict | None:
     return row
 
 
-def list_all_users(page: int = 1, page_size: int = 20) -> tuple[list[dict], int]:
+def list_all_users(
+    page: int = 1, page_size: int = 20, search: str | None = None
+) -> tuple[list[dict], int]:
     conn = get_connection()
-    total = conn.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
+    where_sql = "WHERE 1=1"
+    params: list = []
+    if search:
+        where_sql += " AND (name ILIKE %s OR email ILIKE %s)"
+        params.append(f"%{search}%")
+        params.append(f"%{search}%")
+    total = conn.execute(f"SELECT COUNT(*) AS n FROM users {where_sql}", params).fetchone()["n"]
     rows = conn.execute(
-        "SELECT * FROM users ORDER BY created_at DESC LIMIT %s OFFSET %s",
-        (page_size, (page - 1) * page_size),
+        f"SELECT * FROM users {where_sql} ORDER BY created_at DESC LIMIT %s OFFSET %s",
+        params + [page_size, (page - 1) * page_size],
     ).fetchall()
     conn.close()
     return rows, total
@@ -452,11 +460,12 @@ def get_admin_stats() -> dict:
 
 
 def get_approval_rate_by_mode() -> list[dict]:
-    # "approved" = a content_item was ever saved for that generation mode
-    # (create.tsx only calls saveContent on approve/copy, not on every
-    # generate) -- generation_log and content_items aren't linked by a
-    # foreign key, so this compares aggregate counts per mode, not a true
-    # per-generation conversion rate.
+    # "approved" = a content_item reached approved/posted for that generation
+    # mode (every /generate call saves a 'draft' content_item automatically,
+    # so drafts are excluded here or this would read as ~100% approval) --
+    # generation_log and content_items aren't linked by a foreign key, so
+    # this compares aggregate counts per mode, not a true per-generation
+    # conversion rate.
     conn = get_connection()
     rows = conn.execute(
         """
@@ -469,7 +478,7 @@ def get_approval_rate_by_mode() -> list[dict]:
         approved AS (
             SELECT mode, COUNT(*) AS approved
             FROM content_items
-            WHERE mode IS NOT NULL
+            WHERE mode IS NOT NULL AND status != 'draft'
             GROUP BY mode
         )
         SELECT
@@ -525,6 +534,7 @@ def get_dna_completeness_correlation() -> list[dict]:
         approved_counts AS (
             SELECT user_id, COUNT(*) AS approved
             FROM content_items
+            WHERE status != 'draft'
             GROUP BY user_id
         )
         SELECT
@@ -706,6 +716,31 @@ def set_content_feedback(content_id: int, user_id: int, feedback: str) -> dict |
     row = conn.execute(
         "UPDATE content_items SET feedback = %s WHERE id = %s AND user_id = %s RETURNING *",
         (feedback, content_id, user_id),
+    ).fetchone()
+    conn.commit()
+    conn.close()
+    return row
+
+
+def update_content_item(
+    content_id: int,
+    user_id: int,
+    preview: str | None = None,
+    status: str | None = None,
+    scheduled_date: str | None = None,
+) -> dict | None:
+    conn = get_connection()
+    row = conn.execute(
+        """
+        UPDATE content_items
+        SET
+            preview = COALESCE(%s, preview),
+            status = COALESCE(%s, status),
+            scheduled_date = COALESCE(%s, scheduled_date)
+        WHERE id = %s AND user_id = %s
+        RETURNING *
+        """,
+        (preview, status, scheduled_date, content_id, user_id),
     ).fetchone()
     conn.commit()
     conn.close()
