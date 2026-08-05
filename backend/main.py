@@ -38,6 +38,7 @@ from db import (
     delete_event,
     delete_example_post,
     delete_prompt_template,
+    ensure_demo_users,
     get_admin_stats,
     get_all_events,
     get_approval_rate_by_mode,
@@ -47,6 +48,7 @@ from db import (
     get_example_post,
     get_feedback_ratio_by_mode,
     get_monthly_openai_spend,
+    get_demo_user_by_category,
     get_retention_stats,
     get_social_links,
     get_user_by_email,
@@ -259,6 +261,7 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONRe
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()
+    ensure_demo_users()
 
 
 class GoogleLoginRequest(BaseModel):
@@ -274,6 +277,10 @@ class SignupRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: str
     password: str
+
+
+class DemoLoginRequest(BaseModel):
+    business_category: str
 
 
 class VerifyEmailRequest(BaseModel):
@@ -440,6 +447,7 @@ def user_to_dict(row) -> dict:
         "email_verified": bool(row["email_verified"]),
         "example_selection_mode": row["example_selection_mode"],
         "has_password": row["password_hash"] is not None,
+        "is_demo": bool(row["is_demo"]),
     }
 
 
@@ -452,6 +460,7 @@ def admin_user_to_dict(row) -> dict:
         "business_category": row["business_category"],
         "created_at": to_utc_iso(row["created_at"]),
         "last_login_at": to_utc_iso(row["last_login_at"]),
+        "is_demo": bool(row["is_demo"]),
     }
 
 
@@ -606,6 +615,17 @@ def login(body: LoginRequest, response: Response, request: Request):
     if not bcrypt.checkpw(body.password.encode(), user["password_hash"].encode()):
         raise HTTPException(status_code=401, detail="อีเมลหรือรหัสผ่านไม่ถูกต้อง")
 
+    user = touch_last_login(user["id"])
+    issue_session_cookie(response, user["id"])
+    return {"user": user_to_dict(user)}
+
+
+@app.post("/auth/demo-login")
+@limiter.limit("10/minute")
+def demo_login(body: DemoLoginRequest, response: Response, request: Request):
+    user = get_demo_user_by_category(body.business_category)
+    if user is None:
+        raise HTTPException(status_code=404, detail="ไม่พบบัญชีทดลองสำหรับหมวดนี้ค่ะ")
     user = touch_last_login(user["id"])
     issue_session_cookie(response, user["id"])
     return {"user": user_to_dict(user)}

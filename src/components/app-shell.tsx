@@ -13,6 +13,7 @@ import {
   CalendarDays,
   ShieldAlert,
   MailWarning,
+  Info,
   History,
   Images,
   LineChart,
@@ -147,6 +148,15 @@ export function AppShell({ children }: { children: ReactNode }) {
       </header>
 
       <main className="min-w-0 flex-1 pb-24 md:pb-8">
+        {user?.is_demo && (
+          <div className="flex flex-wrap items-center gap-3 border-b border-border bg-teal/10 px-4 py-2.5 text-sm md:px-8">
+            <Info className="h-4 w-4 shrink-0 text-teal" />
+            <span className="flex-1">
+              นี่คือบัญชีทดลองที่แชร์กับผู้ใช้ท่านอื่น ข้อมูลอาจถูกแก้ไข/รีเซ็ตได้ตลอดเวลา
+              และมีการจำกัดจำนวนครั้งสร้างคอนเทนต์ต่อชั่วโมง
+            </span>
+          </div>
+        )}
         {user && !user.email_verified && !bannerDismissed && (
           <div className="flex flex-wrap items-center gap-3 border-b border-border bg-gold/10 px-4 py-2.5 text-sm md:px-8">
             <MailWarning className="h-4 w-4 shrink-0 text-gold" />

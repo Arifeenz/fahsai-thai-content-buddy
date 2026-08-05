@@ -49,6 +49,7 @@ def init_db() -> None:
     _add_column_if_missing(
         conn, "users", "example_selection_mode TEXT NOT NULL DEFAULT 'latest'"
     )
+    _add_column_if_missing(conn, "users", "is_demo BOOLEAN NOT NULL DEFAULT FALSE")
 
     conn.execute(
         """
@@ -1051,6 +1052,94 @@ def upsert_brand_dna(user_id: int, docs: dict[str, str]) -> dict[str, str]:
     conn.commit()
     conn.close()
     return get_brand_dna(user_id)
+
+
+# One shared, public login per business category so a visitor can try the
+# product before signing up. Seeded with realistic brand_dna content so the
+# demo isn't an empty shell on first login. No password_hash is set, so
+# these can never be logged into through the normal /auth/login form —
+# only through the dedicated /auth/demo-login endpoint.
+DEMO_ACCOUNTS: dict[str, dict] = {
+    "food_beverage": {
+        "email": "demo-food_beverage@fahsai.demo",
+        "name": "บัญชีทดลอง - ร้านอาหาร/เครื่องดื่ม",
+        "dna": {
+            "history": "ร้านกาแฟเปิดที่ยะลาปี 2565 เริ่มจากคั่วเมล็ดในบ้านเล็กๆ ก่อนขยายเป็นคาเฟ่ริมถนน",
+            "menu": "กาแฟดริป ลาเต้ อเมริกาโน่ กาแฟส้ม เค้กมะพร้าว ชาชักใต้",
+            "usp": "เมล็ดคั่วสดใหม่ทุกวัน บรรยากาศอบอุ่นแบบชายแดนใต้ พนักงานพูดได้สามภาษา",
+            "tone": "อบอุ่น เป็นกันเอง ใช้คำว่า 'ค่ะ/ครับ' พูดเหมือนเพื่อนบ้านทักทาย ไม่เป็นทางการ",
+        },
+    },
+    "online_shop": {
+        "email": "demo-online_shop@fahsai.demo",
+        "name": "บัญชีทดลอง - ขายของออนไลน์",
+        "dna": {
+            "history": "เปิดร้านขายออนไลน์ปี 2566 เริ่มจากขายในเฟซบุ๊ก ก่อนขยายมาขายใน Shopee/Lazada",
+            "menu": "เสื้อยืดคอกลมพิมพ์ลาย กระเป๋าหนังแท้ ครีมบำรุงผิวหน้าสูตรอ่อนโยน",
+            "usp": "ส่งไวภายใน 24 ชม. การันตีของแท้ 100% แพ็คสินค้าอย่างดี",
+            "tone": "อบอุ่น เป็นกันเอง ใช้คำว่า 'ค่ะ/ครับ' พูดเหมือนเพื่อนบ้านทักทาย ไม่เป็นทางการ",
+        },
+    },
+    "fortune_telling": {
+        "email": "demo-fortune_telling@fahsai.demo",
+        "name": "บัญชีทดลอง - ดูดวง",
+        "dna": {
+            "history": "ดูดวงมากว่า 10 ปี เรียนโหราศาสตร์ไทยจากอาจารย์ต้นตำรับ เปิดดูที่ยะลาตั้งแต่ปี 2560",
+            "menu": "ไพ่ยิปซี โหราศาสตร์ไทย ดูดวงเบอร์โทร เสริมดวงฮวงจุ้ย",
+            "usp": "ทำนายแม่นตรงจุด ให้คำปรึกษาแบบเข้าใจง่าย นัดดูผ่านออนไลน์ได้ทุกที่",
+            "tone": "อบอุ่น เป็นกันเอง ใช้คำว่า 'ค่ะ/ครับ' พูดเหมือนเพื่อนบ้านทักทาย ไม่เป็นทางการ",
+        },
+    },
+    "streamer": {
+        "email": "demo-streamer@fahsai.demo",
+        "name": "บัญชีทดลอง - สตรีมเมอร์/เกมเมอร์",
+        "dna": {
+            "history": "เริ่มสตรีมปี 2564 จากความชอบเล่นเกม FPS ตอนนี้ไลฟ์ประจำ 4 วันต่อสัปดาห์",
+            "menu": "Valorant ไต่แรงค์ทุกคืน, Free Fire คู่หูสองคน, เล่นเกมสยองขวัญวันศุกร์",
+            "usp": "มุกตลกเฉพาะตัว พูดคุยกับแชทตลอดเวลา เล่นเกมแนวสยองขวัญเป็นประจำ",
+            "tone": "อบอุ่น เป็นกันเอง ใช้คำว่า 'ค่ะ/ครับ' พูดเหมือนเพื่อนบ้านทักทาย ไม่เป็นทางการ",
+        },
+    },
+}
+
+
+def ensure_demo_users() -> None:
+    conn = get_connection()
+    for category, info in DEMO_ACCOUNTS.items():
+        existing = conn.execute(
+            "SELECT id FROM users WHERE email = %s", (info["email"],)
+        ).fetchone()
+        if existing is not None:
+            continue
+        row = conn.execute(
+            """
+            INSERT INTO users (email, name, role, business_category, is_demo, email_verified)
+            VALUES (%s, %s, 'user', %s, TRUE, TRUE)
+            RETURNING id
+            """,
+            (info["email"], info["name"], category),
+        ).fetchone()
+        for doc_type, content in info["dna"].items():
+            conn.execute(
+                """
+                INSERT INTO brand_dna (user_id, doc_type, content)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (user_id, doc_type) DO NOTHING
+                """,
+                (row["id"], doc_type, content),
+            )
+    conn.commit()
+    conn.close()
+
+
+def get_demo_user_by_category(business_category: str) -> dict | None:
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM users WHERE is_demo = TRUE AND business_category = %s LIMIT 1",
+        (business_category,),
+    ).fetchone()
+    conn.close()
+    return row
 
 
 SOCIAL_LINK_PLATFORMS = ["facebook", "instagram", "line", "tiktok", "youtube", "twitch"]

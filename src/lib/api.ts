@@ -42,6 +42,7 @@ export interface AuthUser {
   email_verified: boolean;
   example_selection_mode: ExampleSelectionMode;
   has_password: boolean;
+  is_demo: boolean;
 }
 export interface AdminUser {
   id: number;
@@ -51,6 +52,7 @@ export interface AdminUser {
   business_category?: BusinessCategory;
   created_at: string;
   last_login_at?: string;
+  is_demo: boolean;
 }
 export interface PromptTemplate {
   id: number;
@@ -200,6 +202,12 @@ export const api = {
     return request("/auth/signup", {
       method: "POST",
       body: JSON.stringify({ name, email, password }),
+    });
+  },
+  async demoLogin(businessCategory: BusinessCategory): Promise<{ user: AuthUser }> {
+    return request("/auth/demo-login", {
+      method: "POST",
+      body: JSON.stringify({ business_category: businessCategory }),
     });
   },
   // Real Google login: credential is the ID token from Google Identity Services,

@@ -1,8 +1,10 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api, businessCategoryLabel, type BusinessCategory } from "@/lib/api";
 import logo from "@/assets/fahsai-logo.png";
+
+const demoCategories = Object.keys(businessCategoryLabel) as BusinessCategory[];
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
 
@@ -51,6 +53,7 @@ function LoginPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [forgotSubmitted, setForgotSubmitted] = useState(false);
+  const [demoLoading, setDemoLoading] = useState<BusinessCategory | null>(null);
   const googleButtonRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -174,6 +177,21 @@ function LoginPage() {
       toast.error(errorMessage(err, "สมัครสมาชิกไม่สำเร็จ ลองใหม่อีกครั้งนะคะ"), { id: t });
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleDemoLogin(category: BusinessCategory) {
+    if (demoLoading) return;
+    setDemoLoading(category);
+    const t = toast.loading("กำลังเข้าสู่บัญชีทดลองให้อยู่ค่ะ...");
+    try {
+      const { user } = await api.demoLogin(category);
+      toast.success("เข้าสู่บัญชีทดลองแล้วค่ะ ✨", { id: t });
+      navigate({ to: user.role === "admin" ? "/admin" : "/dashboard" });
+    } catch (err) {
+      toast.error(errorMessage(err, "เข้าสู่บัญชีทดลองไม่สำเร็จ ลองใหม่อีกครั้งนะคะ"), { id: t });
+    } finally {
+      setDemoLoading(null);
     }
   }
 
@@ -371,6 +389,29 @@ function LoginPage() {
             </button>
           </p>
         )}
+
+        <div className="mt-8 border-t border-border pt-6 text-left">
+          <p className="text-center text-sm font-semibold text-muted-foreground">
+            หรือทดลองใช้ก่อนสมัครสมาชิก
+          </p>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            {demoCategories.map((category) => (
+              <button
+                key={category}
+                type="button"
+                onClick={() => handleDemoLogin(category)}
+                disabled={demoLoading !== null}
+                className="rounded-xl border border-dashed border-border px-3 py-2.5 text-sm text-muted-foreground transition hover:border-teal hover:text-teal disabled:opacity-60"
+              >
+                {demoLoading === category ? "กำลังเข้าสู่ระบบ..." : businessCategoryLabel[category]}
+              </button>
+            ))}
+          </div>
+          <p className="mt-3 text-center text-xs text-muted-foreground">
+            บัญชีทดลองใช้ร่วมกับผู้ใช้อื่นได้ ข้อมูลอาจถูกแก้ไขหรือรีเซ็ตได้ตลอดเวลา
+            และมีการจำกัดจำนวนครั้งสร้างคอนเทนต์ ไม่เหมาะสำหรับเก็บข้อมูลจริงนะคะ
+          </p>
+        </div>
 
         <div className="mt-10 flex justify-center gap-6 text-xs text-muted-foreground">
           <a href="#" className="underline underline-offset-4">
