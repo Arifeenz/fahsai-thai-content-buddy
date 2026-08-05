@@ -323,6 +323,12 @@ class GenerateRequest(BaseModel):
     tone: str | None = None
 
 
+class VideoScriptRequest(BaseModel):
+    caption: str
+    platform: str
+    tone: str | None = None
+
+
 class ContentItemCreate(BaseModel):
     platform: str
     preview: str
@@ -1259,6 +1265,88 @@ def generate_from_image(
         mode="photo",
     )
     return {"caption": caption, "image_urls": image_urls}
+
+
+@app.post("/generate-video-script")
+@limiter.limit("15/hour")
+def generate_video_script(body: VideoScriptRequest, request: Request):
+    user = require_user(request)
+    caption = body.caption.strip()
+    if not caption:
+        raise HTTPException(status_code=400, detail="ต้องมีแคปชั่นก่อนถึงจะสร้างสคริปวิดีโอได้ค่ะ")
+
+    budget_exceeded = openai_client is not None and get_monthly_openai_spend() >= OPENAI_MONTHLY_BUDGET_USD
+    if openai_client is None or budget_exceeded:
+        # No sensible fallback here either — a shooting script has to be
+        # grounded in the actual caption, so there's nothing generic to
+        # fall back to.
+        if budget_exceeded:
+            log_security_event("openai_budget_exceeded", f"user:{user['id']}", "/generate-video-script")
+        raise HTTPException(
+            status_code=503,
+            detail="ระบบสร้างสคริปวิดีโอไม่พร้อมใช้งานตอนนี้ ลองใหม่ภายหลังนะคะ",
+        )
+
+    dna = get_brand_dna(user["id"])
+    platform_label = PLATFORM_LABELS.get(body.platform, body.platform)
+    tone_label = TONE_LABELS.get(body.tone or "", body.tone or "เป็นกันเอง")
+    category_label = BUSINESS_CATEGORY_LABELS.get(
+        user["business_category"], user["business_category"] or "ไม่ระบุ"
+    )
+    menu_label = DNA_MENU_LABELS.get(user["business_category"], DNA_MENU_LABELS["food_beverage"])
+
+    system_prompt = f"""คุณคือ FAHSAI ผู้ช่วยวางแผนถ่ายวิดีโอสั้น (TikTok/Reels/Shorts) ให้ร้าน SME ไทย เขียนเป็นภาษาไทยเท่านั้น
+
+ข้อมูลร้าน:
+- ประเภทร้าน: {category_label}
+- {menu_label}: {dna["menu"] or "ไม่ระบุ"}
+- บุคลิกแบรนด์: {dna["tone"] or "ไม่ระบุ"}
+
+แคปชั่นที่จะใช้คู่กับวิดีโอนี้ (ลงแพลตฟอร์ม {platform_label} โทน "{tone_label}"):
+{caption}
+
+จากแคปชั่นนี้ ช่วยวางสคริปวิดีโอสั้นความยาวประมาณ 15-30 วินาที แบ่งเป็นฉาก 2-4 ฉาก แต่ละฉากบอก:
+- ถ่ายอะไร มุมกล้องแบบไหน (เช่น โคลสอัพ, มุมสูง, ถ่ายมือทำ)
+- พูดหรือบรรยายว่าอะไร (บทพูดจริงที่พูดได้เลย ไม่ใช่คำแนะนำลอยๆ)
+
+จบด้วยคำแนะนำสั้นๆ 1-2 ข้อ เช่น เพลงประกอบแนวไหน หรือจังหวะตัดต่อ
+
+ตอบเป็นข้อความล้วน จัดรูปแบบให้อ่านง่าย ขึ้นบรรทัดใหม่แต่ละฉาก ใช้หัวข้อ "ฉาก 1:" "ฉาก 2:" ต่อเนื่องไป ห้ามใส่ markdown หรือสัญลักษณ์พิเศษ"""
+
+    try:
+        response = openai_client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[{"role": "system", "content": system_prompt}],
+            max_tokens=600,
+            timeout=20,
+        )
+        script = response.choices[0].message.content.strip()
+        prompt_tokens = response.usage.prompt_tokens if response.usage else None
+        completion_tokens = response.usage.completion_tokens if response.usage else None
+    except Exception as exc:
+        print(f"[generate_video_script:openai_error] {type(exc).__name__}: {exc}")
+        sentry_sdk.capture_exception(exc)
+        raise HTTPException(status_code=502, detail="สร้างสคริปวิดีโอไม่สำเร็จ ลองใหม่อีกครั้งนะคะ")
+
+    estimated_cost_usd = 0.0
+    if prompt_tokens is not None and completion_tokens is not None:
+        estimated_cost_usd = (prompt_tokens / 1_000_000) * OPENAI_INPUT_PRICE_PER_1M + (
+            completion_tokens / 1_000_000
+        ) * OPENAI_OUTPUT_PRICE_PER_1M
+
+    create_generation_log(
+        user["id"],
+        body.platform,
+        body.tone,
+        caption,
+        script,
+        prompt_tokens,
+        completion_tokens,
+        estimated_cost_usd,
+        system_prompt,
+        mode="video_script",
+    )
+    return {"video_script": script}
 
 
 @app.get("/admin/stats")

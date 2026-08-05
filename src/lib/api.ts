@@ -310,6 +310,16 @@ export const api = {
   async generateFromImage(formData: FormData): Promise<{ caption: string; image_urls: string[] }> {
     return requestForm("/generate-from-image", formData);
   },
+  async generateVideoScript(
+    caption: string,
+    platform: Platform,
+    tone: Tone,
+  ): Promise<{ video_script: string }> {
+    return request("/generate-video-script", {
+      method: "POST",
+      body: JSON.stringify({ caption, platform, tone }),
+    });
+  },
 
   async listContent(): Promise<ContentItem[]> {
     const { items } = await request<{ items: ContentItem[] }>("/content");

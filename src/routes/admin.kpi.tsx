@@ -18,6 +18,7 @@ export const Route = createFileRoute("/admin/kpi")({
 const modeLabel: Record<string, string> = {
   idea: "เขียนจากไอเดีย",
   photo: "เขียนจากรูปภาพ",
+  video_script: "สคริปวิดีโอสั้น",
 };
 
 function pct(numerator: number, denominator: number): string {

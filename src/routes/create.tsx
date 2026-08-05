@@ -34,6 +34,8 @@ import {
   X,
   Camera,
   RotateCcw,
+  Loader2,
+  Clapperboard,
 } from "lucide-react";
 
 export const Route = createFileRoute("/create")({
@@ -130,6 +132,8 @@ function CreateContent() {
   const [resultImageUrls, setResultImageUrls] = useState<string[]>([]);
   const [imagePrompt, setImagePrompt] = useState<string | null>(null);
   const [imagePromptTh, setImagePromptTh] = useState<string | null>(null);
+  const [videoScript, setVideoScript] = useState<string | null>(null);
+  const [videoScriptLoading, setVideoScriptLoading] = useState(false);
   const [approved, setApproved] = useState(false);
   const [showShortPromptWarning, setShowShortPromptWarning] = useState(false);
 
@@ -328,6 +332,7 @@ function CreateContent() {
     }
     setLoading(true);
     setApproved(false);
+    setVideoScript(null);
     const t = toast.loading("กำลังสร้างโพสต์ให้อยู่ค่ะ...");
     try {
       if (mode === "photo" && photoFiles.length > 0) {
@@ -356,6 +361,24 @@ function CreateContent() {
       });
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleGenerateVideoScript() {
+    if (!caption.trim() || videoScriptLoading) return;
+    setVideoScriptLoading(true);
+    const t = toast.loading("กำลังวางสคริปวิดีโอให้อยู่ค่ะ...");
+    try {
+      const res = await api.generateVideoScript(caption, platform, tone);
+      setVideoScript(res.video_script);
+      toast.success("ได้สคริปวิดีโอแล้วค่ะ ✨", { id: t });
+    } catch {
+      toast.error("สร้างสคริปวิดีโอไม่สำเร็จ ลองใหม่อีกครั้งนะคะ", {
+        id: t,
+        action: { label: "ลองใหม่", onClick: handleGenerateVideoScript },
+      });
+    } finally {
+      setVideoScriptLoading(false);
     }
   }
 
@@ -659,6 +682,7 @@ function CreateContent() {
                   onChange={(e) => {
                     setCaption(e.target.value);
                     setApproved(false);
+                    setVideoScript(null);
                   }}
                   rows={10}
                   className="w-full resize-none rounded-xl border border-border bg-input p-4 text-base leading-relaxed outline-none focus:border-teal"
@@ -750,6 +774,61 @@ function CreateContent() {
                     </div>
                   </div>
                 )}
+
+                <div className="mt-5 rounded-xl border border-dashed border-border bg-input/40 p-4">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <div className="text-sm font-semibold">สคริปวิดีโอสั้น</div>
+                    {!videoScript && (
+                      <button
+                        type="button"
+                        onClick={handleGenerateVideoScript}
+                        disabled={videoScriptLoading}
+                        className="btn-gold inline-flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 text-xs disabled:opacity-60"
+                      >
+                        {videoScriptLoading ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Clapperboard className="h-3.5 w-3.5" />
+                        )}
+                        {videoScriptLoading ? "กำลังวางสคริป..." : "สร้างสคริปวิดีโอสั้น"}
+                      </button>
+                    )}
+                  </div>
+
+                  {videoScript ? (
+                    <>
+                      <textarea
+                        value={videoScript}
+                        onChange={(e) => setVideoScript(e.target.value)}
+                        rows={8}
+                        className="w-full resize-none rounded-lg border border-border bg-input p-3 text-sm leading-relaxed outline-none focus:border-teal"
+                      />
+                      <div className="mt-3 flex flex-wrap items-center gap-3">
+                        <button
+                          onClick={async () => {
+                            await navigator.clipboard.writeText(videoScript);
+                            toast.success("คัดลอกสคริปวิดีโอแล้วค่ะ");
+                          }}
+                          className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm hover:bg-white/5"
+                        >
+                          <Copy className="h-4 w-4" /> คัดลอกสคริป
+                        </button>
+                        <button
+                          onClick={handleGenerateVideoScript}
+                          disabled={videoScriptLoading}
+                          className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm hover:bg-white/5 disabled:opacity-60"
+                        >
+                          <RefreshCw className="h-4 w-4" /> วางสคริปใหม่
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      ให้ FAHSAI ช่วยแนะนำว่าควรถ่ายฉากไหน มุมกล้องแบบไหน และพูดอะไรบ้าง
+                      สำหรับทำวิดีโอสั้นคู่กับโพสต์นี้
+                    </p>
+                  )}
+                </div>
               </>
             ) : (
               <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-dashed border-border text-center">
