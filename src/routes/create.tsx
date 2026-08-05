@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { z } from "zod";
 import {
   api,
   exampleSelectionModeLabel,
@@ -36,9 +37,11 @@ import {
   RotateCcw,
   Loader2,
   Clapperboard,
+  CalendarPlus,
 } from "lucide-react";
 
 export const Route = createFileRoute("/create")({
+  validateSearch: z.object({ date: z.string().optional() }),
   head: () => ({
     meta: [
       { title: "สร้างคอนเทนต์ — FAHSAI" },
@@ -134,10 +137,17 @@ function CreateContent() {
   const [imagePromptTh, setImagePromptTh] = useState<string | null>(null);
   const [videoScript, setVideoScript] = useState<string | null>(null);
   const [videoScriptLoading, setVideoScriptLoading] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState("");
+  const [scheduling, setScheduling] = useState(false);
   const [approved, setApproved] = useState(false);
   const [showShortPromptWarning, setShowShortPromptWarning] = useState(false);
 
   const categoryKey: CategoryKey = user?.business_category ?? "default";
+  const { date: requestedDate } = Route.useSearch();
+
+  useEffect(() => {
+    if (requestedDate) setScheduleDate(requestedDate);
+  }, [requestedDate]);
 
   useEffect(() => {
     if (videoRef.current && captureStream) {
@@ -398,6 +408,26 @@ function CreateContent() {
     await navigator.clipboard.writeText(caption);
     await api.saveContent({ platform, preview: caption, status: "posted", mode });
     toast.success("คัดลอกแล้วค่ะ ไปวางในแอปของคุณได้เลย 🎉");
+  }
+
+  async function scheduleContent() {
+    if (!scheduleDate || !caption.trim() || scheduling) return;
+    setScheduling(true);
+    try {
+      await api.saveContent({
+        platform,
+        preview: caption,
+        status: "approved",
+        mode,
+        scheduled_date: scheduleDate,
+      });
+      toast.success('เตรียมไว้ในตารางโพสต์แล้วค่ะ ✅ ดูได้ที่เมนู "ตารางโพสต์"');
+      setScheduleDate("");
+    } catch {
+      toast.error("บันทึกลงตารางโพสต์ไม่สำเร็จ ลองใหม่อีกครั้งนะคะ");
+    } finally {
+      setScheduling(false);
+    }
   }
 
   if (!ready) {
@@ -709,6 +739,27 @@ function CreateContent() {
                       <Copy className="h-4 w-4" /> คัดลอกไปโพสต์
                     </button>
                   )}
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4">
+                  <input
+                    type="date"
+                    value={scheduleDate}
+                    onChange={(e) => setScheduleDate(e.target.value)}
+                    className="rounded-full border border-border bg-input px-3 py-1.5 text-sm outline-none focus:border-teal"
+                  />
+                  <button
+                    type="button"
+                    onClick={scheduleContent}
+                    disabled={!scheduleDate || scheduling}
+                    className="inline-flex items-center gap-2 rounded-full border border-dashed border-teal px-4 py-2 text-sm text-teal hover:bg-teal/10 disabled:opacity-60"
+                  >
+                    <CalendarPlus className="h-4 w-4" />
+                    {scheduling ? "กำลังบันทึก..." : "เตรียมไว้สำหรับวันที่นี้"}
+                  </button>
+                  <span className="w-full text-xs text-muted-foreground">
+                    ไม่โพสต์ทันที แค่เก็บไว้ในตารางโพสต์ รอถึงวันนั้นค่อยมาคัดลอกไปโพสต์เอง
+                  </span>
                 </div>
 
                 {imagePrompt && (

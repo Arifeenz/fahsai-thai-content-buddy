@@ -21,6 +21,7 @@ export interface ContentItem {
   status: ContentStatus;
   feedback: ContentFeedback | null;
   createdAt: string;
+  scheduledDate: string | null;
 }
 export interface AdminContentItem extends ContentItem {
   owner_name: string;
@@ -326,7 +327,10 @@ export const api = {
     return items;
   },
   async saveContent(
-    item: Omit<ContentItem, "id" | "createdAt" | "feedback"> & { mode?: "idea" | "photo" },
+    item: Omit<ContentItem, "id" | "createdAt" | "feedback" | "scheduledDate"> & {
+      mode?: "idea" | "photo";
+      scheduled_date?: string;
+    },
   ): Promise<ContentItem> {
     return request("/content", { method: "POST", body: JSON.stringify(item) });
   },
@@ -335,6 +339,18 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ feedback }),
     });
+  },
+  async updateContentSchedule(id: string, scheduledDate: string | null): Promise<ContentItem> {
+    return request(`/content/${id}/schedule`, {
+      method: "PATCH",
+      body: JSON.stringify({ scheduled_date: scheduledDate }),
+    });
+  },
+  async markContentPosted(id: string): Promise<ContentItem> {
+    return request(`/content/${id}/mark-posted`, { method: "PATCH" });
+  },
+  async deleteContent(id: string): Promise<void> {
+    await request(`/content/${id}`, { method: "DELETE" });
   },
 
   async stats() {

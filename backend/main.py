@@ -35,6 +35,7 @@ from db import (
     create_generation_log,
     create_prompt_template,
     create_support_ticket,
+    delete_content_item,
     delete_event,
     delete_example_post,
     delete_prompt_template,
@@ -69,6 +70,7 @@ from db import (
     list_security_events,
     list_support_tickets,
     log_security_event,
+    mark_content_posted,
     promote_example_post_to_global,
     reset_password as db_reset_password,
     set_content_feedback,
@@ -78,6 +80,7 @@ from db import (
     set_verification_token,
     touch_last_login,
     update_business_category,
+    update_content_schedule,
     update_event,
     update_example_post,
     update_example_selection_mode,
@@ -334,10 +337,15 @@ class ContentItemCreate(BaseModel):
     preview: str
     status: str
     mode: str | None = None
+    scheduled_date: str | None = None
 
 
 class ContentFeedbackUpdate(BaseModel):
     feedback: Literal["good", "neutral", "bad"]
+
+
+class ContentScheduleUpdate(BaseModel):
+    scheduled_date: str | None = None
 
 
 class PromptTemplateWrite(BaseModel):
@@ -478,6 +486,7 @@ def content_to_dict(row) -> dict:
         "status": row["status"],
         "feedback": row["feedback"],
         "createdAt": row["created_at"].date().isoformat() if row["created_at"] else None,
+        "scheduledDate": row["scheduled_date"].isoformat() if row["scheduled_date"] else None,
     }
 
 
@@ -747,7 +756,9 @@ def get_my_content(request: Request):
 @app.post("/content")
 def post_my_content(body: ContentItemCreate, request: Request):
     user = require_user(request)
-    row = create_content_item(user["id"], body.platform, body.preview, body.status, body.mode)
+    row = create_content_item(
+        user["id"], body.platform, body.preview, body.status, body.mode, body.scheduled_date
+    )
     return content_to_dict(row)
 
 
@@ -758,6 +769,35 @@ def update_content_feedback(content_id: int, body: ContentFeedbackUpdate, reques
     if row is None:
         raise HTTPException(status_code=404, detail="Content not found")
     return content_to_dict(row)
+
+
+@app.patch("/content/{content_id}/schedule")
+def update_content_schedule_endpoint(
+    content_id: int, body: ContentScheduleUpdate, request: Request
+):
+    user = require_user(request)
+    row = update_content_schedule(content_id, user["id"], body.scheduled_date)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Content not found")
+    return content_to_dict(row)
+
+
+@app.patch("/content/{content_id}/mark-posted")
+def mark_content_posted_endpoint(content_id: int, request: Request):
+    user = require_user(request)
+    row = mark_content_posted(content_id, user["id"])
+    if row is None:
+        raise HTTPException(status_code=404, detail="Content not found")
+    return content_to_dict(row)
+
+
+@app.delete("/content/{content_id}")
+def delete_content_endpoint(content_id: int, request: Request):
+    user = require_user(request)
+    deleted = delete_content_item(content_id, user["id"])
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Content not found")
+    return {"ok": True}
 
 
 @app.get("/stats")

@@ -147,6 +147,7 @@ def init_db() -> None:
     _add_column_if_missing(conn, "generation_log", "mode TEXT")
     _add_column_if_missing(conn, "content_items", "feedback TEXT")
     _add_column_if_missing(conn, "content_items", "mode TEXT")
+    _add_column_if_missing(conn, "content_items", "scheduled_date DATE")
 
     conn.execute(
         """
@@ -679,12 +680,21 @@ def list_generation_logs(limit: int = 100) -> list[dict]:
 
 
 def create_content_item(
-    user_id: int, platform: str, preview: str, status: str, mode: str | None = None
+    user_id: int,
+    platform: str,
+    preview: str,
+    status: str,
+    mode: str | None = None,
+    scheduled_date: str | None = None,
 ) -> dict:
     conn = get_connection()
     row = conn.execute(
-        "INSERT INTO content_items (user_id, platform, preview, status, mode) VALUES (%s, %s, %s, %s, %s) RETURNING *",
-        (user_id, platform, preview, status, mode),
+        """
+        INSERT INTO content_items (user_id, platform, preview, status, mode, scheduled_date)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        RETURNING *
+        """,
+        (user_id, platform, preview, status, mode, scheduled_date),
     ).fetchone()
     conn.commit()
     conn.close()
@@ -700,6 +710,41 @@ def set_content_feedback(content_id: int, user_id: int, feedback: str) -> dict |
     conn.commit()
     conn.close()
     return row
+
+
+def update_content_schedule(
+    content_id: int, user_id: int, scheduled_date: str | None
+) -> dict | None:
+    conn = get_connection()
+    row = conn.execute(
+        "UPDATE content_items SET scheduled_date = %s WHERE id = %s AND user_id = %s RETURNING *",
+        (scheduled_date, content_id, user_id),
+    ).fetchone()
+    conn.commit()
+    conn.close()
+    return row
+
+
+def mark_content_posted(content_id: int, user_id: int) -> dict | None:
+    conn = get_connection()
+    row = conn.execute(
+        "UPDATE content_items SET status = 'posted' WHERE id = %s AND user_id = %s RETURNING *",
+        (content_id, user_id),
+    ).fetchone()
+    conn.commit()
+    conn.close()
+    return row
+
+
+def delete_content_item(content_id: int, user_id: int) -> bool:
+    conn = get_connection()
+    row = conn.execute(
+        "DELETE FROM content_items WHERE id = %s AND user_id = %s RETURNING id",
+        (content_id, user_id),
+    ).fetchone()
+    conn.commit()
+    conn.close()
+    return row is not None
 
 
 def list_content_for_user(user_id: int) -> list[dict]:

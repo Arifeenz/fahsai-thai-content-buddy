@@ -18,6 +18,7 @@ import { Route as ExamplesRouteImport } from './routes/examples'
 import { Route as LibraryRouteImport } from './routes/library'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as ScheduleRouteImport } from './routes/schedule'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as VerifyEmailRouteImport } from './routes/verify-email'
@@ -75,6 +76,11 @@ const LoginRoute = LoginRouteImport.update({
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
   path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ScheduleRoute = ScheduleRouteImport.update({
+  id: '/schedule',
+  path: '/schedule',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -153,6 +159,7 @@ export interface FileRoutesByFullPath {
   '/library': typeof LibraryRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/schedule': typeof ScheduleRoute
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/verify-email': typeof VerifyEmailRoute
@@ -176,6 +183,7 @@ export interface FileRoutesByTo {
   '/library': typeof LibraryRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/schedule': typeof ScheduleRoute
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/verify-email': typeof VerifyEmailRoute
@@ -201,6 +209,7 @@ export interface FileRoutesById {
   '/library': typeof LibraryRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/schedule': typeof ScheduleRoute
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/verify-email': typeof VerifyEmailRoute
@@ -227,6 +236,7 @@ export interface FileRouteTypes {
     | '/library'
     | '/login'
     | '/reset-password'
+    | '/schedule'
     | '/settings'
     | '/sitemap.xml'
     | '/verify-email'
@@ -250,6 +260,7 @@ export interface FileRouteTypes {
     | '/library'
     | '/login'
     | '/reset-password'
+    | '/schedule'
     | '/settings'
     | '/sitemap.xml'
     | '/verify-email'
@@ -274,6 +285,7 @@ export interface FileRouteTypes {
     | '/library'
     | '/login'
     | '/reset-password'
+    | '/schedule'
     | '/settings'
     | '/sitemap.xml'
     | '/verify-email'
@@ -299,6 +311,7 @@ export interface RootRouteChildren {
   LibraryRoute: typeof LibraryRoute
   LoginRoute: typeof LoginRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
+  ScheduleRoute: typeof ScheduleRoute
   SettingsRoute: typeof SettingsRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   VerifyEmailRoute: typeof VerifyEmailRoute
@@ -367,6 +380,13 @@ declare module '@tanstack/react-router' {
       path: '/reset-password'
       fullPath: '/reset-password'
       preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/schedule': {
+      id: '/schedule'
+      path: '/schedule'
+      fullPath: '/schedule'
+      preLoaderRoute: typeof ScheduleRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -501,6 +521,7 @@ const rootRouteChildren: RootRouteChildren = {
   LibraryRoute: LibraryRoute,
   LoginRoute: LoginRoute,
   ResetPasswordRoute: ResetPasswordRoute,
+  ScheduleRoute: ScheduleRoute,
   SettingsRoute: SettingsRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   VerifyEmailRoute: VerifyEmailRoute,
