@@ -91,6 +91,18 @@ def init_db() -> None:
 
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS social_links (
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            platform TEXT NOT NULL,
+            url TEXT NOT NULL DEFAULT '',
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (user_id, platform)
+        )
+        """
+    )
+
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS events (
             id SERIAL PRIMARY KEY,
             user_id INTEGER REFERENCES users(id),
@@ -1039,6 +1051,40 @@ def upsert_brand_dna(user_id: int, docs: dict[str, str]) -> dict[str, str]:
     conn.commit()
     conn.close()
     return get_brand_dna(user_id)
+
+
+SOCIAL_LINK_PLATFORMS = ["facebook", "instagram", "line", "tiktok", "youtube", "twitch"]
+
+
+def get_social_links(user_id: int) -> dict[str, str]:
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT platform, url FROM social_links WHERE user_id = %s", (user_id,)
+    ).fetchall()
+    conn.close()
+    links = {p: "" for p in SOCIAL_LINK_PLATFORMS}
+    for row in rows:
+        if row["platform"] in links:
+            links[row["platform"]] = row["url"]
+    return links
+
+
+def upsert_social_links(user_id: int, links: dict[str, str]) -> dict[str, str]:
+    conn = get_connection()
+    for platform in SOCIAL_LINK_PLATFORMS:
+        conn.execute(
+            """
+            INSERT INTO social_links (user_id, platform, url, updated_at)
+            VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+            ON CONFLICT(user_id, platform) DO UPDATE SET
+                url = excluded.url,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (user_id, platform, links.get(platform, "")),
+        )
+    conn.commit()
+    conn.close()
+    return get_social_links(user_id)
 
 
 def get_all_events() -> list[dict]:

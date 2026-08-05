@@ -2,13 +2,25 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { api, businessCategoryLabel, type BusinessCategory, type DnaDocType } from "@/lib/api";
+import {
+  api,
+  businessCategoryLabel,
+  socialPlatformLabel,
+  socialPlatformsByCategory,
+  type BusinessCategory,
+  type DnaDocType,
+  type SocialLinks,
+  type SocialPlatform,
+} from "@/lib/api";
 import { AppShell, PageHeader, useCurrentUser } from "@/components/app-shell";
 import { useRequireAuth } from "@/lib/auth-guard";
 import {
   Dna,
   BookOpen,
   Coffee,
+  ShoppingBag,
+  Moon,
+  Gamepad2,
   Sparkles,
   MessageCircle,
   Wand2,
@@ -16,6 +28,7 @@ import {
   Loader2,
   AlertTriangle,
   Store,
+  Link2,
 } from "lucide-react";
 
 export const Route = createFileRoute("/brand-dna")({
@@ -30,47 +43,155 @@ export const Route = createFileRoute("/brand-dna")({
   component: BrandDna,
 });
 
-const sections: {
+type Section = {
   key: DnaDocType;
   title: string;
   hint: string;
   icon: any;
   placeholder: string;
   example: string;
-}[] = [
-  {
-    key: "history",
-    title: "เรื่องราวของร้าน",
-    hint: "ประวัติสั้นๆ ที่มาที่ไป",
-    icon: BookOpen,
-    placeholder: "เล่าให้ FAHSAI ฟังหน่อยค่ะ ร้านเปิดเมื่อไหร่ ใครเป็นเจ้าของ อยู่ที่ไหน...",
-    example: "ร้านเปิดที่ยะลาปี 2565 เริ่มจากคั่วเมล็ดในบ้านเล็กๆ ก่อนขยายเป็นคาเฟ่ริมถนน",
-  },
-  {
-    key: "menu",
-    title: "เมนู / สินค้าเด่น",
-    hint: "รายการที่อยากให้ AI พูดถึงบ่อยๆ",
-    icon: Coffee,
-    placeholder: "เช่น กาแฟดริป ลาเต้ ชาชักใต้ เค้กมะพร้าว...",
-    example: "กาแฟดริป ลาเต้ อเมริกาโน่ กาแฟส้ม เค้กมะพร้าว ชาชักใต้",
-  },
-  {
-    key: "usp",
-    title: "จุดขายที่ไม่เหมือนใคร (USP)",
-    hint: "อะไรที่ทำให้ร้านคุณต่างจากคนอื่น",
-    icon: Sparkles,
-    placeholder: "เช่น เมล็ดคั่วสดใหม่ทุกวัน บรรยากาศชายแดนใต้...",
-    example: "เมล็ดคั่วสดใหม่ทุกวัน บรรยากาศอบอุ่นแบบชายแดนใต้ พนักงานพูดได้สามภาษา",
-  },
-  {
-    key: "tone",
-    title: "บุคลิกแบรนด์",
-    hint: "เลือกบุคลิกที่ใกล้เคียงร้านคุณที่สุด",
-    icon: MessageCircle,
-    placeholder: "เลือกบุคลิกด้านล่าง หรือพิมพ์เองก็ได้ค่ะ...",
-    example: "อบอุ่น เป็นกันเอง ใช้คำว่า 'ค่ะ/ครับ' พูดเหมือนเพื่อนบ้านทักทาย ไม่เป็นทางการ",
-  },
-];
+};
+
+// Every category shares the same 4 slots, but what belongs in each one
+// differs — a streamer doesn't have a "menu" the way a cafe does.
+const sectionsByCategory: Record<BusinessCategory, Section[]> = {
+  food_beverage: [
+    {
+      key: "history",
+      title: "เรื่องราวของร้าน",
+      hint: "ประวัติสั้นๆ ที่มาที่ไป",
+      icon: BookOpen,
+      placeholder: "เล่าให้ FAHSAI ฟังหน่อยค่ะ ร้านเปิดเมื่อไหร่ ใครเป็นเจ้าของ อยู่ที่ไหน...",
+      example: "ร้านเปิดที่ยะลาปี 2565 เริ่มจากคั่วเมล็ดในบ้านเล็กๆ ก่อนขยายเป็นคาเฟ่ริมถนน",
+    },
+    {
+      key: "menu",
+      title: "เมนู / สินค้าเด่น",
+      hint: "รายการที่อยากให้ AI พูดถึงบ่อยๆ",
+      icon: Coffee,
+      placeholder: "เช่น กาแฟดริป ลาเต้ ชาชักใต้ เค้กมะพร้าว...",
+      example: "กาแฟดริป ลาเต้ อเมริกาโน่ กาแฟส้ม เค้กมะพร้าว ชาชักใต้",
+    },
+    {
+      key: "usp",
+      title: "จุดขายที่ไม่เหมือนใคร (USP)",
+      hint: "อะไรที่ทำให้ร้านคุณต่างจากคนอื่น",
+      icon: Sparkles,
+      placeholder: "เช่น เมล็ดคั่วสดใหม่ทุกวัน บรรยากาศชายแดนใต้...",
+      example: "เมล็ดคั่วสดใหม่ทุกวัน บรรยากาศอบอุ่นแบบชายแดนใต้ พนักงานพูดได้สามภาษา",
+    },
+    {
+      key: "tone",
+      title: "บุคลิกแบรนด์",
+      hint: "เลือกบุคลิกที่ใกล้เคียงร้านคุณที่สุด",
+      icon: MessageCircle,
+      placeholder: "เลือกบุคลิกด้านล่าง หรือพิมพ์เองก็ได้ค่ะ...",
+      example: "อบอุ่น เป็นกันเอง ใช้คำว่า 'ค่ะ/ครับ' พูดเหมือนเพื่อนบ้านทักทาย ไม่เป็นทางการ",
+    },
+  ],
+  online_shop: [
+    {
+      key: "history",
+      title: "เรื่องราวของร้าน",
+      hint: "ประวัติสั้นๆ ที่มาที่ไป",
+      icon: BookOpen,
+      placeholder: "เล่าให้ FAHSAI ฟังหน่อยค่ะ เปิดร้านเมื่อไหร่ ใครเป็นเจ้าของ ขายผ่านช่องทางไหนบ้าง...",
+      example: "เปิดร้านขายออนไลน์ปี 2566 เริ่มจากขายในเฟซบุ๊ก ก่อนขยายมาขายใน Shopee/Lazada",
+    },
+    {
+      key: "menu",
+      title: "สินค้าขายดี / สินค้าเด่น",
+      hint: "รายการที่อยากให้ AI พูดถึงบ่อยๆ",
+      icon: ShoppingBag,
+      placeholder: "เช่น เสื้อยืดคอกลม กระเป๋าหนัง ครีมบำรุงผิว...",
+      example: "เสื้อยืดคอกลมพิมพ์ลาย กระเป๋าหนังแท้ ครีมบำรุงผิวหน้าสูตรอ่อนโยน",
+    },
+    {
+      key: "usp",
+      title: "จุดขายที่ไม่เหมือนใคร (USP)",
+      hint: "อะไรที่ทำให้ร้านคุณต่างจากร้านอื่น",
+      icon: Sparkles,
+      placeholder: "เช่น ส่งไว ของแท้ 100% รับประกันคืนเงิน...",
+      example: "ส่งไวภายใน 24 ชม. การันตีของแท้ 100% แพ็คสินค้าอย่างดี",
+    },
+    {
+      key: "tone",
+      title: "บุคลิกแบรนด์",
+      hint: "เลือกบุคลิกที่ใกล้เคียงร้านคุณที่สุด",
+      icon: MessageCircle,
+      placeholder: "เลือกบุคลิกด้านล่าง หรือพิมพ์เองก็ได้ค่ะ...",
+      example: "อบอุ่น เป็นกันเอง ใช้คำว่า 'ค่ะ/ครับ' พูดเหมือนเพื่อนบ้านทักทาย ไม่เป็นทางการ",
+    },
+  ],
+  fortune_telling: [
+    {
+      key: "history",
+      title: "เรื่องราวของคุณ",
+      hint: "ประวัติสั้นๆ ที่มาที่ไป",
+      icon: BookOpen,
+      placeholder: "เล่าให้ FAHSAI ฟังหน่อยค่ะ เริ่มดูดวงตั้งแต่เมื่อไหร่ ร่ำเรียนศาสตร์ไหนมา...",
+      example: "ดูดวงมากว่า 10 ปี เรียนโหราศาสตร์ไทยจากอาจารย์ต้นตำรับ เปิดดูที่ยะลาตั้งแต่ปี 2560",
+    },
+    {
+      key: "menu",
+      title: "ศาสตร์ที่ถนัด / บริการเด่น",
+      hint: "รายการที่อยากให้ AI พูดถึงบ่อยๆ",
+      icon: Moon,
+      placeholder: "เช่น ไพ่ยิปซี โหราศาสตร์ไทย เลขศาสตร์ ฮวงจุ้ย...",
+      example: "ไพ่ยิปซี โหราศาสตร์ไทย ดูดวงเบอร์โทร เสริมดวงฮวงจุ้ย",
+    },
+    {
+      key: "usp",
+      title: "จุดเด่นที่ไม่เหมือนใคร (USP)",
+      hint: "อะไรที่ทำให้คนเลือกดูดวงกับคุณ",
+      icon: Sparkles,
+      placeholder: "เช่น ทำนายแม่นตรงจุด ให้คำปรึกษาแบบเป็นกันเอง ดูออนไลน์ได้...",
+      example: "ทำนายแม่นตรงจุด ให้คำปรึกษาแบบเข้าใจง่าย นัดดูผ่านออนไลน์ได้ทุกที่",
+    },
+    {
+      key: "tone",
+      title: "บุคลิกแบรนด์",
+      hint: "เลือกบุคลิกที่ใกล้เคียงตัวคุณที่สุด",
+      icon: MessageCircle,
+      placeholder: "เลือกบุคลิกด้านล่าง หรือพิมพ์เองก็ได้ค่ะ...",
+      example: "อบอุ่น เป็นกันเอง ใช้คำว่า 'ค่ะ/ครับ' พูดเหมือนเพื่อนบ้านทักทาย ไม่เป็นทางการ",
+    },
+  ],
+  streamer: [
+    {
+      key: "history",
+      title: "เรื่องราวของช่อง",
+      hint: "ประวัติสั้นๆ เริ่มสตรีมตอนไหน สายเกมไหน",
+      icon: BookOpen,
+      placeholder: "เล่าให้ FAHSAI ฟังหน่อยค่ะ เริ่มสตรีมตั้งแต่เมื่อไหร่ ทำไมถึงเริ่ม...",
+      example: "เริ่มสตรีมปี 2564 จากความชอบเล่นเกม FPS ตอนนี้ไลฟ์ประจำ 4 วันต่อสัปดาห์",
+    },
+    {
+      key: "menu",
+      title: "เกม / คอนเทนต์ที่เล่นประจำ",
+      hint: "รายการที่อยากให้ AI พูดถึงบ่อยๆ",
+      icon: Gamepad2,
+      placeholder: "เช่น Valorant, Free Fire, พูดคุย Just Chatting...",
+      example: "Valorant ไต่แรงค์ทุกคืน, Free Fire คู่หูสองคน, เล่นเกมสยองขวัญวันศุกร์",
+    },
+    {
+      key: "usp",
+      title: "จุดเด่นที่ไม่เหมือนใคร (USP)",
+      hint: "อะไรที่ทำให้คนติดตามช่องคุณ",
+      icon: Sparkles,
+      placeholder: "เช่น มุกตลก คอมเมนต์แบบเรียลไทม์ เล่นเกมแนวเฉพาะทาง...",
+      example: "มุกตลกเฉพาะตัว พูดคุยกับแชทตลอดเวลา เล่นเกมแนวสยองขวัญเป็นประจำ",
+    },
+    {
+      key: "tone",
+      title: "บุคลิกแบรนด์",
+      hint: "เลือกบุคลิกที่ใกล้เคียงช่องคุณที่สุด",
+      icon: MessageCircle,
+      placeholder: "เลือกบุคลิกด้านล่าง หรือพิมพ์เองก็ได้ค่ะ...",
+      example: "อบอุ่น เป็นกันเอง ใช้คำว่า 'ค่ะ/ครับ' พูดเหมือนเพื่อนบ้านทักทาย ไม่เป็นทางการ",
+    },
+  ],
+};
 
 const personalityOptions = [
   {
@@ -92,6 +213,14 @@ const personalityOptions = [
 ];
 
 const emptyValues: Record<DnaDocType, string> = { history: "", menu: "", usp: "", tone: "" };
+const emptySocialLinks: SocialLinks = {
+  facebook: "",
+  instagram: "",
+  line: "",
+  tiktok: "",
+  youtube: "",
+  twitch: "",
+};
 const AUTOSAVE_DELAY = 800;
 const MIN_FREE_TEXT_LENGTH = 20;
 
@@ -116,6 +245,22 @@ function BrandDna() {
   const valuesRef = useRef(values);
   const timers = useRef<Partial<Record<DnaDocType, ReturnType<typeof setTimeout>>>>({});
 
+  const category: BusinessCategory = (user?.business_category as BusinessCategory) || "food_beverage";
+  const sections = useMemo(() => sectionsByCategory[category], [category]);
+  const visiblePlatforms = useMemo(() => socialPlatformsByCategory[category], [category]);
+
+  const [socialLinks, setSocialLinks] = useState<SocialLinks>(emptySocialLinks);
+  const [savedSocialFields, setSavedSocialFields] = useState<Record<SocialPlatform, boolean>>({
+    facebook: false,
+    instagram: false,
+    line: false,
+    tiktok: false,
+    youtube: false,
+    twitch: false,
+  });
+  const socialLinksRef = useRef(socialLinks);
+  const socialTimers = useRef<Partial<Record<SocialPlatform, ReturnType<typeof setTimeout>>>>({});
+
   useEffect(() => {
     api.getDna().then((loaded) => {
       setValues(loaded);
@@ -127,19 +272,47 @@ function BrandDna() {
         tone: !!loaded.tone,
       });
     });
+    api.getSocialLinks().then((loaded) => {
+      setSocialLinks(loaded);
+      socialLinksRef.current = loaded;
+      setSavedSocialFields({
+        facebook: !!loaded.facebook,
+        instagram: !!loaded.instagram,
+        line: !!loaded.line,
+        tiktok: !!loaded.tiktok,
+        youtube: !!loaded.youtube,
+        twitch: !!loaded.twitch,
+      });
+    });
   }, []);
 
   useEffect(() => {
     const timersAtMount = timers.current;
+    const socialTimersAtMount = socialTimers.current;
     return () => {
       Object.values(timersAtMount).forEach((t) => t && clearTimeout(t));
+      Object.values(socialTimersAtMount).forEach((t) => t && clearTimeout(t));
     };
   }, []);
 
   const filledCount = useMemo(
     () => sections.filter((s) => values[s.key].trim() !== "").length,
-    [values],
+    [sections, values],
   );
+
+  function updateSocialLink(platform: SocialPlatform, value: string) {
+    const next = { ...socialLinksRef.current, [platform]: value };
+    socialLinksRef.current = next;
+    setSocialLinks(next);
+    setSavedSocialFields((s) => ({ ...s, [platform]: false }));
+
+    const existingTimer = socialTimers.current[platform];
+    if (existingTimer) clearTimeout(existingTimer);
+    socialTimers.current[platform] = setTimeout(async () => {
+      await api.saveSocialLinks(socialLinksRef.current);
+      setSavedSocialFields((s) => ({ ...s, [platform]: true }));
+    }, AUTOSAVE_DELAY);
+  }
 
   function updateField(key: DnaDocType, value: string) {
     const next = { ...valuesRef.current, [key]: value };
@@ -318,8 +491,8 @@ function BrandDna() {
           <div className="glass-card mb-6 rounded-2xl p-5">
             <div className="mb-2 font-bold">เล่าเรื่องร้านให้ FAHSAI ฟังหน่อยค่ะ</div>
             <div className="mb-3 text-sm text-muted-foreground">
-              พิมพ์คร่าวๆ ก็ได้ค่ะ ที่มาร้าน เมนู/สินค้าเด่น จุดขาย และบุคลิกร้านเป็นยังไง แล้ว
-              FAHSAI จะช่วยแยกใส่ 4 หัวข้อให้เอง
+              พิมพ์คร่าวๆ ก็ได้ค่ะ ที่มา {sections.find((s) => s.key === "menu")?.title} จุดขาย
+              และบุคลิกเป็นยังไง แล้ว FAHSAI จะช่วยแยกใส่ 4 หัวข้อให้เอง
             </div>
             <textarea
               value={freeText}
@@ -443,6 +616,43 @@ function BrandDna() {
             ))}
           </div>
         )}
+
+        <div className="glass-card mt-6 rounded-2xl p-5">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-lg bg-white/5 text-teal">
+              <Link2 className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="font-bold">ลิงก์ Social Media</div>
+              <div className="text-xs text-muted-foreground">
+                ใส่ไว้เผื่อเอาไปใช้ต่อได้ง่าย เช่น แปะท้ายโพสต์ชวนติดตาม
+              </div>
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {visiblePlatforms.map((platform) => (
+              <div key={platform}>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <label className="text-xs font-semibold text-muted-foreground">
+                    {socialPlatformLabel[platform]}
+                  </label>
+                  {savedSocialFields[platform] && socialLinks[platform] && (
+                    <span className="flex items-center gap-1 text-xs text-success">
+                      <Check className="h-3 w-3" /> บันทึกแล้ว
+                    </span>
+                  )}
+                </div>
+                <input
+                  type="url"
+                  value={socialLinks[platform]}
+                  onChange={(e) => updateSocialLink(platform, e.target.value)}
+                  placeholder={`ลิงก์ ${socialPlatformLabel[platform]}...`}
+                  className="w-full rounded-xl border border-border bg-input p-3 text-sm outline-none placeholder:text-muted-foreground focus:border-teal"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </AppShell>
   );

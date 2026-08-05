@@ -5,6 +5,7 @@ export type ContentFeedback = "good" | "neutral" | "bad";
 export type DnaDocType = "history" | "menu" | "usp" | "tone";
 export type Role = "admin" | "user";
 export type BusinessCategory = "food_beverage" | "online_shop" | "fortune_telling" | "streamer";
+export type SocialPlatform = "facebook" | "instagram" | "line" | "tiktok" | "youtube" | "twitch";
 export type ExampleSelectionMode = "latest" | "rating" | "likes" | "random";
 
 export interface GenerateInput {
@@ -29,6 +30,7 @@ export interface DnaDocument {
   doc_type: DnaDocType;
   content: string;
 }
+export type SocialLinks = Record<SocialPlatform, string>;
 export interface AuthUser {
   name: string;
   email: string;
@@ -260,6 +262,13 @@ export const api = {
     text: string,
   ): Promise<Record<DnaDocType, string> & { missing_fields: DnaDocType[] }> {
     return request("/brand-dna/draft", { method: "POST", body: JSON.stringify({ text }) });
+  },
+
+  async getSocialLinks(): Promise<SocialLinks> {
+    return request("/social-links");
+  },
+  async saveSocialLinks(links: SocialLinks): Promise<SocialLinks> {
+    return request("/social-links", { method: "PUT", body: JSON.stringify(links) });
   },
 
   async createFollowerSnapshot(
@@ -532,6 +541,25 @@ export const businessCategoryLabel: Record<BusinessCategory, string> = {
   online_shop: "ขายของออนไลน์",
   fortune_telling: "ดูดวง",
   streamer: "สตรีมเมอร์/เกมเมอร์",
+};
+
+export const socialPlatformLabel: Record<SocialPlatform, string> = {
+  facebook: "Facebook",
+  instagram: "Instagram",
+  line: "LINE OA",
+  tiktok: "TikTok",
+  youtube: "YouTube",
+  twitch: "Twitch",
+};
+
+// Every category gets the general-purpose platforms; streamers additionally
+// get the platforms they actually go live on.
+const BASE_SOCIAL_PLATFORMS: SocialPlatform[] = ["facebook", "instagram", "line", "tiktok"];
+export const socialPlatformsByCategory: Record<BusinessCategory, SocialPlatform[]> = {
+  food_beverage: BASE_SOCIAL_PLATFORMS,
+  online_shop: BASE_SOCIAL_PLATFORMS,
+  fortune_telling: BASE_SOCIAL_PLATFORMS,
+  streamer: [...BASE_SOCIAL_PLATFORMS, "youtube", "twitch"],
 };
 
 export const exampleSelectionModeLabel: Record<ExampleSelectionMode, string> = {

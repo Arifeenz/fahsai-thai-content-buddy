@@ -48,6 +48,7 @@ from db import (
     get_feedback_ratio_by_mode,
     get_monthly_openai_spend,
     get_retention_stats,
+    get_social_links,
     get_user_by_email,
     get_user_by_id,
     get_user_by_reset_token,
@@ -82,6 +83,7 @@ from db import (
     update_prompt_template,
     upsert_brand_dna,
     upsert_google_user,
+    upsert_social_links,
     verify_email_by_token,
 )
 
@@ -337,6 +339,15 @@ class BrandDnaWrite(BaseModel):
     menu: str = ""
     usp: str = ""
     tone: str = ""
+
+
+class SocialLinksWrite(BaseModel):
+    facebook: str = ""
+    instagram: str = ""
+    line: str = ""
+    tiktok: str = ""
+    youtube: str = ""
+    twitch: str = ""
 
 
 class BrandDnaDraftRequest(BaseModel):
@@ -769,6 +780,18 @@ def put_brand_dna_endpoint(body: BrandDnaWrite, request: Request):
     return upsert_brand_dna(user["id"], body.model_dump())
 
 
+@app.get("/social-links")
+def get_social_links_endpoint(request: Request):
+    user = require_user(request)
+    return get_social_links(user["id"])
+
+
+@app.put("/social-links")
+def put_social_links_endpoint(body: SocialLinksWrite, request: Request):
+    user = require_user(request)
+    return upsert_social_links(user["id"], body.model_dump())
+
+
 @app.post("/follower-snapshot")
 def create_my_follower_snapshot(body: FollowerSnapshotCreate, request: Request):
     user = require_user(request)
@@ -814,16 +837,19 @@ def draft_brand_dna(body: BrandDnaDraftRequest, request: Request):
             detail="ระบบช่วยจัดข้อมูลไม่พร้อมใช้งานตอนนี้ กรอกทีละช่องแทนได้ค่ะ",
         )
 
-    system_prompt = """คุณคือ FAHSAI ผู้ช่วยจัดระเบียบข้อมูลร้านให้เจ้าของร้าน SME ไทย
+    menu_draft_hint = DNA_MENU_DRAFT_HINTS.get(
+        user["business_category"], DNA_MENU_DRAFT_HINTS["food_beverage"]
+    )
+    system_prompt = f"""คุณคือ FAHSAI ผู้ช่วยจัดระเบียบข้อมูลร้านให้เจ้าของร้าน SME ไทย
 อ่านข้อความที่ร้านเล่ามาให้ฟัง แล้วแยกใส่ 4 หมวดนี้ เขียนเป็นภาษาไทยเท่านั้น:
 - history: ประวัติร้าน ที่มาที่ไป
-- menu: เมนู/สินค้าเด่นที่อยากให้พูดถึงบ่อยๆ
+- menu: {menu_draft_hint}
 - usp: จุดขายที่ไม่เหมือนใคร (USP)
 - tone: บุคลิกแบรนด์ น้ำเสียงตอนเขียนโพสต์
 
 ถ้าข้อความที่ร้านเล่ามาไม่มีข้อมูลพอสำหรับหมวดไหน ให้ปล่อยหมวดนั้นเป็นข้อความว่าง "" แล้วใส่ชื่อหมวด (history/menu/usp/tone) ไว้ใน missing_fields ห้ามเดาหรือแต่งข้อมูลขึ้นเองเด็ดขาด
 
-ตอบกลับเป็น JSON เท่านั้น รูปแบบ: {"history": "...", "menu": "...", "usp": "...", "tone": "...", "missing_fields": ["menu"]}"""
+ตอบกลับเป็น JSON เท่านั้น รูปแบบ: {{"history": "...", "menu": "...", "usp": "...", "tone": "...", "missing_fields": ["menu"]}}"""
 
     try:
         response = openai_client.chat.completions.create(
@@ -982,6 +1008,21 @@ BUSINESS_CATEGORY_LABELS = {
     "fortune_telling": "ดูดวง",
     "streamer": "สตรีมเมอร์/เกมเมอร์",
 }
+# The brand_dna "menu" field means something different per business category
+# (a food menu isn't a thing for a streamer) — these labels/hints keep the
+# AI prompts (and the frontend form) speaking about the right kind of content.
+DNA_MENU_LABELS = {
+    "food_beverage": "เมนู/สินค้าเด่น",
+    "online_shop": "สินค้าขายดี/สินค้าเด่น",
+    "fortune_telling": "ศาสตร์ที่ถนัด/บริการเด่น",
+    "streamer": "เกม/คอนเทนต์ที่เล่นประจำ",
+}
+DNA_MENU_DRAFT_HINTS = {
+    "food_beverage": "เมนู/สินค้าเด่นที่อยากให้พูดถึงบ่อยๆ",
+    "online_shop": "สินค้าขายดีหรือสินค้าเด่นที่อยากให้พูดถึงบ่อยๆ",
+    "fortune_telling": "ศาสตร์การดูดวงหรือบริการเด่นที่อยากให้พูดถึงบ่อยๆ",
+    "streamer": "เกมหรือคอนเทนต์ที่เล่น/ไลฟ์เป็นประจำ",
+}
 
 
 @app.post("/generate")
@@ -1023,6 +1064,7 @@ def generate_content(body: GenerateRequest, request: Request):
     category_label = BUSINESS_CATEGORY_LABELS.get(
         user["business_category"], user["business_category"] or "ไม่ระบุ"
     )
+    menu_label = DNA_MENU_LABELS.get(user["business_category"], DNA_MENU_LABELS["food_beverage"])
     examples_section = (
         f"ตัวอย่างโพสต์ที่ร้านเคยเขียน ใช้เป็นแนวทางโทนเสียงเท่านั้น ห้ามก็อปมาตรงๆ:\n{style_examples}"
         if style_examples
@@ -1034,7 +1076,7 @@ def generate_content(body: GenerateRequest, request: Request):
 ข้อมูลร้าน:
 - ประเภทร้าน: {category_label}
 - ประวัติร้าน: {dna["history"] or "ไม่ระบุ"}
-- เมนู/สินค้าเด่น: {dna["menu"] or "ไม่ระบุ"}
+- {menu_label}: {dna["menu"] or "ไม่ระบุ"}
 - จุดขาย (USP): {dna["usp"] or "ไม่ระบุ"}
 - บุคลิกแบรนด์: {dna["tone"] or "ไม่ระบุ"}
 
@@ -1134,6 +1176,7 @@ def generate_from_image(
     category_label = BUSINESS_CATEGORY_LABELS.get(
         user["business_category"], user["business_category"] or "ไม่ระบุ"
     )
+    menu_label = DNA_MENU_LABELS.get(user["business_category"], DNA_MENU_LABELS["food_beverage"])
     context_line = f"\nบริบทเพิ่มเติมจากร้าน: {context}" if context.strip() else ""
 
     system_prompt = f"""คุณคือ FAHSAI ผู้ช่วยเขียนโพสต์โซเชียลมีเดียให้ร้าน SME ไทย เขียนเป็นภาษาไทยเท่านั้น
@@ -1141,7 +1184,7 @@ def generate_from_image(
 ข้อมูลร้าน:
 - ประเภทร้าน: {category_label}
 - ประวัติร้าน: {dna["history"] or "ไม่ระบุ"}
-- เมนู/สินค้าเด่น: {dna["menu"] or "ไม่ระบุ"}
+- {menu_label}: {dna["menu"] or "ไม่ระบุ"}
 - จุดขาย (USP): {dna["usp"] or "ไม่ระบุ"}
 - บุคลิกแบรนด์: {dna["tone"] or "ไม่ระบุ"}
 
