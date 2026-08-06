@@ -46,6 +46,7 @@ from db import (
     get_avg_days_to_first_content,
     get_brand_dna,
     get_dna_completeness_correlation,
+    get_event_headline,
     get_example_post,
     get_feedback_ratio_by_mode,
     get_monthly_openai_spend,
@@ -73,6 +74,7 @@ from db import (
     mark_content_posted,
     promote_example_post_to_global,
     reset_password as db_reset_password,
+    save_event_headline,
     set_content_feedback,
     set_example_post_rating,
     set_reset_token,
@@ -977,9 +979,53 @@ def draft_brand_dna(body: BrandDnaDraftRequest, request: Request):
     }
 
 
+def _event_headline(user: dict, event_row: dict) -> str | None:
+    category = user["business_category"]
+    if not category:
+        return None
+
+    cached = get_event_headline(event_row["id"], category)
+    if cached:
+        return cached["headline"]
+
+    budget_exceeded = openai_client is not None and get_monthly_openai_spend() >= OPENAI_MONTHLY_BUDGET_USD
+    if openai_client is None or budget_exceeded:
+        return None
+
+    category_label = BUSINESS_CATEGORY_LABELS.get(category, category)
+    system_prompt = f"""คุณคือ FAHSAI ผู้ช่วยคิดไอเดียคอนเทนต์โซเชียลมีเดียให้ร้าน SME ไทย
+ประเภทร้าน: {category_label}
+วันสำคัญที่ใกล้ถึง: {event_row["name"]}
+
+คิดไอเดียคอนเทนต์เด่น 1 อย่างที่เหมาะกับร้านประเภทนี้ในโอกาสนี้ ตอบเป็นประโยคเดียวสั้นๆ ภาษาไทย ไม่เกิน 20 คำ ห้ามมีเครื่องหมายคำพูด bullet หรือคำนำ ตอบแค่ประโยคเดียวเท่านั้น"""
+
+    try:
+        response = openai_client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[{"role": "system", "content": system_prompt}],
+            max_tokens=80,
+            timeout=15,
+        )
+        headline = (response.choices[0].message.content or "").strip().strip('"')
+    except Exception as exc:
+        print(f"[event_headline:openai_error] {type(exc).__name__}: {exc}")
+        sentry_sdk.capture_exception(exc)
+        return None
+
+    if not headline:
+        return None
+
+    # Cached per (event, business_category), not logged to generation_log —
+    # this is shared across every user in the category and only ever
+    # generated once per pair, so it never meaningfully touches the monthly
+    # OpenAI budget the way per-user /generate calls do.
+    save_event_headline(event_row["id"], category, headline)
+    return headline
+
+
 @app.get("/events/upcoming")
 def upcoming_event(request: Request):
-    require_user(request)
+    user = require_user(request)
     today = datetime.now(timezone.utc).date()
     nearest = None
     nearest_days = None
@@ -995,6 +1041,7 @@ def upcoming_event(request: Request):
             "name": nearest["name"],
             "days_until": nearest_days,
             "suggestion_text": nearest["suggestion_text"],
+            "headline": _event_headline(user, nearest),
         }
     }
 

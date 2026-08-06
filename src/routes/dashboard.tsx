@@ -6,6 +6,7 @@ import {
   api,
   platformLabel,
   statusLabel,
+  type BusinessCategory,
   type ContentFeedback,
   type ContentItem,
   type DnaDocType,
@@ -46,6 +47,14 @@ const MONTH_LABELS = [
   "ธ.ค.",
 ];
 
+const calendarTitleByCategory: Record<BusinessCategory | "default", string> = {
+  food_beverage: "ปฏิทินร้าน",
+  online_shop: "ปฏิทินร้าน",
+  fortune_telling: "ปฏิทินหมอดู",
+  streamer: "ปฏิทินสตรีม",
+  default: "ปฏิทิน",
+};
+
 function EventsCalendarCard() {
   const queryClient = useQueryClient();
   const user = useCurrentUser();
@@ -84,7 +93,9 @@ function EventsCalendarCard() {
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <CalendarDays className="h-4 w-4 text-teal" />
-          <h2 className="text-sm font-bold">ปฏิทินร้าน</h2>
+          <h2 className="text-sm font-bold">
+            {calendarTitleByCategory[user?.business_category ?? "default"]}
+          </h2>
         </div>
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
           ซ่อนวันของระบบ
@@ -493,7 +504,7 @@ function Dashboard() {
                 </div>
                 <h3 className="mt-2 text-lg font-bold">มีไอเดียโพสต์ไหมคะ?</h3>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  {upcomingEvent.suggestion_text}
+                  {upcomingEvent.headline ?? upcomingEvent.suggestion_text}
                 </p>
               </>
             ) : (
@@ -510,9 +521,11 @@ function Dashboard() {
             )}
             <Link
               to="/create"
+              search={upcomingEvent?.headline ? { prompt: upcomingEvent.headline } : undefined}
               className="btn-gold mt-5 inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm"
             >
-              สร้างคอนเทนต์ <ArrowRight className="h-4 w-4" />
+              {upcomingEvent?.headline ? "ใช้ไอเดียนี้" : "สร้างคอนเทนต์"}{" "}
+              <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
         </div>

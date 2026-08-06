@@ -41,7 +41,7 @@ import {
 } from "lucide-react";
 
 export const Route = createFileRoute("/create")({
-  validateSearch: z.object({ date: z.string().optional() }),
+  validateSearch: z.object({ date: z.string().optional(), prompt: z.string().optional() }),
   head: () => ({
     meta: [
       { title: "สร้างคอนเทนต์ — FAHSAI" },
@@ -144,11 +144,19 @@ function CreateContent() {
   const [showShortPromptWarning, setShowShortPromptWarning] = useState(false);
 
   const categoryKey: CategoryKey = user?.business_category ?? "default";
-  const { date: requestedDate } = Route.useSearch();
+  const { date: requestedDate, prompt: requestedPrompt } = Route.useSearch();
 
   useEffect(() => {
     if (requestedDate) setScheduleDate(requestedDate);
   }, [requestedDate]);
+
+  useEffect(() => {
+    if (requestedPrompt) {
+      setMode("idea");
+      setPrompt(requestedPrompt);
+      promptRef.current?.focus();
+    }
+  }, [requestedPrompt]);
 
   useEffect(() => {
     if (videoRef.current && captureStream) {
@@ -613,7 +621,7 @@ function CreateContent() {
             </div>
 
             <div className="mt-5">
-              <div className="mb-2 text-sm font-semibold">น้ำเสียง</div>
+              <div className="mb-2 text-sm font-semibold">สไตล์การเขียน</div>
               <div className="flex flex-wrap gap-2">
                 {tones.map(({ key, label }) => (
                   <button

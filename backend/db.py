@@ -117,6 +117,19 @@ def init_db() -> None:
 
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS event_ai_headlines (
+            id SERIAL PRIMARY KEY,
+            event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+            business_category TEXT NOT NULL,
+            headline TEXT NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (event_id, business_category)
+        )
+        """
+    )
+
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS security_events (
             id SERIAL PRIMARY KEY,
             event_type TEXT NOT NULL,
@@ -1313,6 +1326,32 @@ def delete_event(event_id: int, owner_user_id: int | None) -> bool:
     deleted = cur.rowcount > 0
     conn.close()
     return deleted
+
+
+def get_event_headline(event_id: int, business_category: str) -> dict | None:
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM event_ai_headlines WHERE event_id = %s AND business_category = %s",
+        (event_id, business_category),
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def save_event_headline(event_id: int, business_category: str, headline: str) -> dict:
+    conn = get_connection()
+    row = conn.execute(
+        """
+        INSERT INTO event_ai_headlines (event_id, business_category, headline)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (event_id, business_category) DO UPDATE SET headline = EXCLUDED.headline
+        RETURNING *
+        """,
+        (event_id, business_category, headline),
+    ).fetchone()
+    conn.commit()
+    conn.close()
+    return row
 
 
 def create_follower_snapshot(user_id: int, platform: str, follower_count: int) -> dict:

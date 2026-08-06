@@ -109,6 +109,7 @@ export interface UpcomingEvent {
   name: string;
   days_until: number;
   suggestion_text: string;
+  headline: string | null;
 }
 export interface EventItem {
   id: number;
