@@ -6,7 +6,6 @@ import {
   api,
   platformLabel,
   statusLabel,
-  type BusinessCategory,
   type ContentFeedback,
   type ContentItem,
   type DnaDocType,
@@ -23,6 +22,7 @@ import {
   Dna,
   PartyPopper,
   CalendarDays,
+  CalendarPlus,
   Trash2,
   Plus,
   ThumbsUp,
@@ -47,13 +47,14 @@ const MONTH_LABELS = [
   "ธ.ค.",
 ];
 
-const calendarTitleByCategory: Record<BusinessCategory | "default", string> = {
-  food_beverage: "ปฏิทินร้าน",
-  online_shop: "ปฏิทินร้าน",
-  fortune_telling: "ปฏิทินหมอดู",
-  streamer: "ปฏิทินสตรีม",
-  default: "ปฏิทิน",
-};
+// Matches schedule.tsx's addDaysIso -- both need to turn an event's
+// days_until into the same target date string for the /create?date=
+// link to land on the date schedule.tsx groups it under.
+function addDaysIso(daysFromToday: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + daysFromToday);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 function EventsCalendarCard() {
   const queryClient = useQueryClient();
@@ -93,9 +94,7 @@ function EventsCalendarCard() {
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <CalendarDays className="h-4 w-4 text-teal" />
-          <h2 className="text-sm font-bold">
-            {calendarTitleByCategory[user?.business_category ?? "default"]}
-          </h2>
+          <h2 className="text-sm font-bold">วันสำคัญที่ใกล้ถึง</h2>
         </div>
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
           ซ่อนวันของระบบ
@@ -114,6 +113,14 @@ function EventsCalendarCard() {
             <div className="shrink-0 text-xs text-muted-foreground">
               {ev.days_until === 0 ? "วันนี้!" : `อีก ${ev.days_until} วัน`}
             </div>
+            <Link
+              to="/create"
+              search={{ date: addDaysIso(ev.days_until) }}
+              title="สร้างโพสต์"
+              className="shrink-0 text-muted-foreground hover:text-teal"
+            >
+              <CalendarPlus className="h-3.5 w-3.5" />
+            </Link>
             {ev.is_personal && (
               <button
                 onClick={() => removeEvent(ev.id)}
@@ -129,6 +136,14 @@ function EventsCalendarCard() {
           <li className="py-4 text-center text-sm text-muted-foreground">ยังไม่มีวันสำคัญค่ะ</li>
         )}
       </ul>
+      {events.length > 0 && (
+        <Link
+          to="/schedule"
+          className="mt-3 inline-flex items-center gap-1 text-xs text-teal hover:underline"
+        >
+          ดูตารางโพสต์ทั้งหมด <ArrowRight className="h-3 w-3" />
+        </Link>
+      )}
       <form onSubmit={addEvent} className="mt-3 flex flex-wrap items-center gap-2">
         <input
           value={name}
@@ -521,7 +536,14 @@ function Dashboard() {
             )}
             <Link
               to="/create"
-              search={upcomingEvent?.headline ? { prompt: upcomingEvent.headline } : undefined}
+              search={
+                upcomingEvent
+                  ? {
+                      date: addDaysIso(upcomingEvent.days_until),
+                      prompt: upcomingEvent.headline ?? undefined,
+                    }
+                  : undefined
+              }
               className="btn-gold mt-5 inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm"
             >
               {upcomingEvent?.headline ? "ใช้ไอเดียนี้" : "สร้างคอนเทนต์"}{" "}

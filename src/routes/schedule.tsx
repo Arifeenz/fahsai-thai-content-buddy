@@ -176,7 +176,8 @@ function SchedulePage() {
                     search={{ date: group.date }}
                     className="inline-flex items-center gap-1.5 text-xs text-teal hover:underline"
                   >
-                    <CalendarPlus className="h-3.5 w-3.5" /> วางแผนโพสต์สำหรับวันนี้
+                    <CalendarPlus className="h-3.5 w-3.5" /> วางแผนโพสต์สำหรับ{" "}
+                    {group.isToday ? "วันนี้" : formatThaiDate(group.date)}
                   </Link>
                 ) : (
                   <div className="grid gap-2">
