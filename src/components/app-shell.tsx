@@ -20,11 +20,13 @@ import {
   LineChart,
   LifeBuoy,
   Heart,
+  MoreHorizontal,
 } from "lucide-react";
 import { toast } from "sonner";
 import logo from "@/assets/fahsai-logo.png";
 import { api } from "@/lib/api";
 import { useState, type ReactNode } from "react";
+import { Drawer, DrawerContent, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer";
 
 export function useCurrentUserQuery() {
   return useQuery({ queryKey: ["me"], queryFn: () => api.getMe(), retry: false });
@@ -61,6 +63,29 @@ const adminNavItems = [
 
 const exactMatchOnly = new Set(["/dashboard", "/admin"]);
 
+// Mobile bottom nav only has room for a handful of icon+label columns before
+// Thai labels start crowding/overlapping each other -- cap what's shown
+// directly and tuck the rest behind a "เพิ่มเติม" drawer instead of letting
+// the grid wrap onto a second row.
+const MOBILE_NAV_VISIBLE_COUNT = 5;
+
+function mobileNavGridClass(columnCount: number): string {
+  switch (columnCount) {
+    case 1:
+      return "grid-cols-1";
+    case 2:
+      return "grid-cols-2";
+    case 3:
+      return "grid-cols-3";
+    case 4:
+      return "grid-cols-4";
+    case 5:
+      return "grid-cols-5";
+    default:
+      return "grid-cols-6";
+  }
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
@@ -68,6 +93,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   const items = user?.role === "admin" ? adminNavItems : userNavItems;
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [resending, setResending] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  const mobileVisibleItems = items.slice(0, MOBILE_NAV_VISIBLE_COUNT);
+  const mobileOverflowItems = items.slice(MOBILE_NAV_VISIBLE_COUNT);
+  const mobileNavColumns =
+    mobileOverflowItems.length > 0 ? mobileVisibleItems.length + 1 : mobileVisibleItems.length;
 
   async function resendVerification() {
     setResending(true);
@@ -186,36 +217,63 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {/* Mobile bottom nav */}
       <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-sidebar-border bg-sidebar/95 backdrop-blur md:hidden">
-        <div
-          className={
-            "mx-auto grid max-w-md " +
-            (items.length > 8
-              ? "grid-cols-9"
-              : items.length > 7
-                ? "grid-cols-8"
-                : items.length > 6
-                  ? "grid-cols-7"
-                  : items.length > 5
-                    ? "grid-cols-6"
-                    : "grid-cols-5")
-          }
-        >
-          {items.map(({ to, label, icon: Icon }) => {
+        <div className={"mx-auto grid max-w-md " + mobileNavGridClass(mobileNavColumns)}>
+          {mobileVisibleItems.map(({ to, label, icon: Icon }) => {
             const active = isActive(to);
             return (
               <Link
                 key={to}
                 to={to}
                 className={
-                  "flex flex-col items-center gap-1 py-2.5 text-[11px] " +
+                  "flex min-w-0 flex-col items-center gap-1 py-2.5 text-[11px] " +
                   (active ? "text-teal" : "text-muted-foreground")
                 }
               >
                 <Icon className="h-5 w-5" />
-                <span className="truncate">{label}</span>
+                <span className="w-full truncate text-center">{label}</span>
               </Link>
             );
           })}
+          {mobileOverflowItems.length > 0 && (
+            <Drawer open={moreOpen} onOpenChange={setMoreOpen}>
+              <DrawerTrigger asChild>
+                <button
+                  type="button"
+                  className={
+                    "flex min-w-0 flex-col items-center gap-1 py-2.5 text-[11px] " +
+                    (mobileOverflowItems.some((item) => isActive(item.to))
+                      ? "text-teal"
+                      : "text-muted-foreground")
+                  }
+                >
+                  <MoreHorizontal className="h-5 w-5" />
+                  <span className="w-full truncate text-center">เพิ่มเติม</span>
+                </button>
+              </DrawerTrigger>
+              <DrawerContent>
+                <DrawerTitle className="px-4 pt-2 text-base">เมนูเพิ่มเติม</DrawerTitle>
+                <div className="grid gap-1 p-3 pb-6">
+                  {mobileOverflowItems.map(({ to, label, icon: Icon }) => {
+                    const active = isActive(to);
+                    return (
+                      <Link
+                        key={to}
+                        to={to}
+                        onClick={() => setMoreOpen(false)}
+                        className={
+                          "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium " +
+                          (active ? "bg-sidebar-accent text-teal" : "text-foreground")
+                        }
+                      >
+                        <Icon className="h-5 w-5" />
+                        {label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </DrawerContent>
+            </Drawer>
+          )}
         </div>
       </nav>
     </div>
