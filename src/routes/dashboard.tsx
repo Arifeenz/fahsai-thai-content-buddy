@@ -107,7 +107,7 @@ function EventsCalendarCard() {
         </label>
       </div>
       <ul className="divide-y divide-white/5">
-        {events.slice(0, 5).map((ev) => (
+        {events.slice(0, 3).map((ev) => (
           <li key={ev.id} className="flex items-center justify-between gap-3 py-2">
             <div className="min-w-0 flex-1 truncate text-sm">{ev.name}</div>
             <div className="shrink-0 text-xs text-muted-foreground">
@@ -480,7 +480,7 @@ function Dashboard() {
               </Link>
             </div>
             <ul className="divide-y divide-white/5">
-              {items.slice(0, 5).map((it) => (
+              {items.slice(0, 3).map((it) => (
                 <li
                   key={it.id}
                   className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 py-3"
