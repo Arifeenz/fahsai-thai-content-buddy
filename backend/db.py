@@ -233,29 +233,57 @@ def init_db() -> None:
             ],
         )
 
-    # Seed a few generic (no business_category) templates so /generate has
-    # something to pick from before an admin has curated anything.
+    # Seed fallback templates so /generate still has something to pick from
+    # before an admin has curated anything, and -- critically -- so that
+    # fallback (no OpenAI key, or monthly budget exceeded) doesn't hand
+    # every business category the same coffee-shop-flavored caption. Scoped
+    # per business_category now instead of NULL/generic, so a streamer or
+    # fortune teller falling back gets something at least on-topic.
     template_count = conn.execute("SELECT COUNT(*) AS n FROM prompt_templates").fetchone()["n"]
     if template_count == 0:
         conn.cursor().executemany(
-            "INSERT INTO prompt_templates (business_category, platform, tone, template_text) VALUES (NULL, %s, NULL, %s)",
+            "INSERT INTO prompt_templates (business_category, platform, tone, template_text) VALUES (%s, %s, NULL, %s)",
             [
-                (
-                    "facebook",
-                    "☕ ตื่นเช้ามาที่ยะลาวันนี้ กลิ่นกาแฟหอมกรุ่นรอคุณอยู่นะคะ ✨\nร้านเราคั่วเมล็ดใหม่ทุกวัน หวานนิดขมกำลังดี ดื่มแล้วสดชื่นทั้งวัน 🌤️\nแวะมาทักทายกันได้เลยค่ะ เปิดตั้งแต่ 7 โมงเช้า ถึง 5 โมงเย็น\n#กาแฟยะลา #ร้านกาแฟใต้ #FAHSAI",
-                ),
-                (
-                    "facebook",
-                    "พิเศษวันนี้! ☀️ เมนูกาแฟส้มสูตรฟ้าใส หวานเปรี้ยวลงตัว เย็นชื่นใจ\nสั่ง 2 แก้วลด 20 บาท เฉพาะช่วงบ่ายเท่านั้นนะคะ\nแวะมาลองกันได้ที่ร้านค่ะ 💛",
-                ),
-                (
-                    "line",
-                    "สวัสดีค่ะลูกค้าคนเก่ง 💛\nวันนี้ร้านเรามีเมนูใหม่ 'ลาเต้มะพร้าวยะลา' หวานมันกลมกล่อม สั่งผ่าน LINE รับส่วนลด 10% เลยค่ะ\nพิมพ์ 'สั่ง' เพื่อสั่งเลยนะคะ ☕✨",
-                ),
-                (
-                    "instagram",
-                    "sun-kissed mornings in Yala ☀️☕\nลาเต้แก้วโปรดของคุณ พร้อมเสิร์ฟที่ FAHSAI Coffee\nเปิดทุกวัน 7:00–17:00\n·\n·\n#yalacoffee #southernthailand #specialtycoffee #ฟ้าใส",
-                ),
+                # food_beverage
+                ("food_beverage", "facebook", "☕ วันนี้แวะมาที่ร้านกันหรือยังคะ เมนูอร่อยๆ รอเสิร์ฟให้ทุกท่านอยู่นะคะ บรรยากาศดี นั่งชิลได้ทั้งวัน แวะมาทักทายกันได้เลยค่ะ 🌤️\n#ร้านอาหารยะลา #FAHSAI"),
+                ("food_beverage", "facebook", "พิเศษวันนี้! 🎉 มีโปรโมชั่นดีๆ รอคุณอยู่ที่ร้าน แวะมาลองกันได้เลยนะคะ รับรองว่าคุ้มค่าแน่นอน 💛"),
+                ("food_beverage", "facebook", "สวัสดีค่ะลูกค้าคนพิเศษ 🌟 ขอบคุณที่แวะมาอุดหนุนร้านเราเสมอมานะคะ วันนี้ก็ยังเปิดให้บริการตามปกติ พร้อมต้อนรับทุกท่านค่ะ"),
+                ("food_beverage", "line", "สวัสดีค่ะลูกค้าคนเก่ง 💛 วันนี้ร้านเรามีเมนูพิเศษรอเสิร์ฟอยู่นะคะ พิมพ์ 'สั่ง' เพื่อสั่งเลยค่ะ ☕✨"),
+                ("food_beverage", "line", "แจ้งข่าวดีค่ะ! ร้านเรามีโปรโมชั่นพิเศษสำหรับลูกค้า LINE OA วันนี้เท่านั้น รีบสั่งกันเลยนะคะ 🎁"),
+                ("food_beverage", "line", "ขอบคุณที่ติดตามร้านเรานะคะ 🙏 มีคำถามหรืออยากสั่งอะไร ทักมาได้เลยค่ะ ยินดีให้บริการทุกวัน"),
+                ("food_beverage", "instagram", "good vibes only ☀️ แวะมาสัมผัสบรรยากาศดีๆ ที่ร้านเรากันนะคะ\n·\n·\n#thailandfood #localcafe #ฟ้าใส"),
+                ("food_beverage", "instagram", "your daily dose of happiness 🌿 พร้อมเสิร์ฟให้ทุกวัน\n·\n·\n#foodie #thaicafe #FAHSAI"),
+                ("food_beverage", "instagram", "made with love, served with a smile 💫\n·\n·\n#smallbusiness #supportlocal #ยะลา"),
+                # online_shop
+                ("online_shop", "facebook", "🛍️ สินค้าคุณภาพดี ราคาเป็นกันเอง พร้อมส่งให้ทุกท่านแล้วนะคะ แวะดูสินค้าในร้านได้เลยค่ะ"),
+                ("online_shop", "facebook", "โปรโมชั่นพิเศษวันนี้! 🎉 ลดราคาสินค้าหลายรายการ รีบสั่งก่อนหมดนะคะ"),
+                ("online_shop", "facebook", "ขอบคุณลูกค้าทุกท่านที่ไว้วางใจร้านเรานะคะ 🙏 เรามุ่งมั่นคัดสินค้าดีๆ มาให้เสมอค่ะ"),
+                ("online_shop", "line", "สวัสดีค่ะ 🛒 สนใจสินค้าตัวไหน ทักมาสอบถามได้เลยนะคะ ตอบไวแน่นอนค่ะ"),
+                ("online_shop", "line", "แจ้งโปรพิเศษ! วันนี้สั่งผ่าน LINE รับส่วนลดพิเศษค่ะ พิมพ์ 'สนใจ' เพื่อดูรายละเอียดเพิ่มเติม"),
+                ("online_shop", "line", "ของเข้าใหม่แล้วค่ะ ✨ ใครรอของชิ้นไหนอยู่ ทักมาจองได้เลยนะคะ"),
+                ("online_shop", "instagram", "new arrivals just dropped ✨\n·\n·\n#onlineshop #shoplocal #ของมันต้องมี"),
+                ("online_shop", "instagram", "quality you can trust, prices you'll love 💕\n·\n·\n#thailandshop #onlinestore"),
+                ("online_shop", "instagram", "shop smart, shop with us 🛍️\n·\n·\n#supportsmallbusiness #FAHSAI"),
+                # fortune_telling
+                ("fortune_telling", "facebook", "🔮 อยากรู้ว่าดวงชะตาช่วงนี้เป็นอย่างไร ทักมาปรึกษาได้เลยนะคะ ให้คำแนะนำด้วยความจริงใจค่ะ"),
+                ("fortune_telling", "facebook", "เปิดคิวดูดวงแล้วนะคะวันนี้ ✨ ใครมีเรื่องกังวลใจ อยากได้คำตอบ ทักมาคุยกันได้เลยค่ะ"),
+                ("fortune_telling", "facebook", "ขอบคุณทุกท่านที่ไว้วางใจให้ดูดวงนะคะ 🙏 ทุกคำทำนายตั้งใจให้คำแนะนำที่ดีที่สุดเสมอค่ะ"),
+                ("fortune_telling", "line", "สวัสดีค่ะ 🔮 อยากดูดวงเรื่องไหน ทักมาปรึกษาได้เลยนะคะ พร้อมให้คำแนะนำค่ะ"),
+                ("fortune_telling", "line", "เปิดจองคิวดูดวงแล้วนะคะ พิมพ์ 'จองคิว' เพื่อนัดเวลาได้เลยค่ะ"),
+                ("fortune_telling", "line", "มีเรื่องกังวลใจไหมคะ ทักมาคุยได้เสมอนะคะ ยินดีรับฟังและให้คำแนะนำค่ะ 💫"),
+                ("fortune_telling", "instagram", "trust the process, trust the stars ✨\n·\n·\n#ดูดวง #fortuneteller #thailand"),
+                ("fortune_telling", "instagram", "your path, your destiny 🔮\n·\n·\n#astrology #tarot #ดูดวงออนไลน์"),
+                ("fortune_telling", "instagram", "guidance when you need it most 💫\n·\n·\n#spiritualjourney #FAHSAI"),
+                # streamer
+                ("streamer", "facebook", "🎮 คืนนี้มีไลฟ์นะคะ ใครว่างมาชมกันได้เลย มาสนุกไปด้วยกันนะคะ"),
+                ("streamer", "facebook", "ขอบคุณทุกคนที่ติดตามช่องนะคะ 💛 มีอะไรอยากให้เล่นเกมไหนบอกได้เลยนะคะ"),
+                ("streamer", "facebook", "วันนี้มีกิจกรรมพิเศษระหว่างไลฟ์ด้วยนะคะ ห้ามพลาดเด็ดขาด แวะมาดูกันได้เลยค่ะ"),
+                ("streamer", "line", "สวัสดีค่ะ 🎮 วันนี้มีไลฟ์กี่โมง เดี๋ยวแจ้งให้ทราบนะคะ ติดตามกันไว้ได้เลยค่ะ"),
+                ("streamer", "line", "ขอบคุณที่ติดตามกันมานะคะ มีคำถามหรืออยากแนะนำอะไร ทักมาได้เลยค่ะ"),
+                ("streamer", "line", "คืนนี้มีเซอร์ไพรส์ระหว่างไลฟ์ด้วยนะคะ อย่าลืมมาดูกันค่ะ"),
+                ("streamer", "instagram", "game on 🎮✨\n·\n·\n#streamer #gaming #livestream"),
+                ("streamer", "instagram", "behind the screen, always grinding 💪\n·\n·\n#gamer #streaming #thailand"),
+                ("streamer", "instagram", "new stream, new memories 🎥\n·\n·\n#twitch #gamingcommunity #FAHSAI"),
             ],
         )
 
