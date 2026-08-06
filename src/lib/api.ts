@@ -120,6 +120,11 @@ export interface EventItem {
   is_personal: boolean;
   days_until: number;
 }
+export interface Quote {
+  id: number;
+  text: string;
+  mood: string;
+}
 export interface SecurityEvent {
   id: number;
   event_type: string;
@@ -385,6 +390,10 @@ export const api = {
     const { event } = await request<{ event: UpcomingEvent | null }>("/events/upcoming");
     return event;
   },
+  async getDailyQuote(): Promise<string | null> {
+    const { text } = await request<{ text: string | null }>("/quotes/daily");
+    return text;
+  },
   async listEvents(): Promise<EventItem[]> {
     const { events } = await request<{ events: EventItem[] }>("/events");
     return events;
@@ -486,6 +495,20 @@ export const api = {
   },
   async adminDeleteEvent(id: number): Promise<void> {
     await request(`/admin/events/${id}`, { method: "DELETE" });
+  },
+
+  async adminListQuotes(): Promise<Quote[]> {
+    const { quotes } = await request<{ quotes: Quote[] }>("/admin/quotes");
+    return quotes;
+  },
+  async adminCreateQuote(data: { text: string; mood: string }): Promise<Quote> {
+    return request("/admin/quotes", { method: "POST", body: JSON.stringify(data) });
+  },
+  async adminUpdateQuote(id: number, data: { text: string; mood: string }): Promise<Quote> {
+    return request(`/admin/quotes/${id}`, { method: "PUT", body: JSON.stringify(data) });
+  },
+  async adminDeleteQuote(id: number): Promise<void> {
+    await request(`/admin/quotes/${id}`, { method: "DELETE" });
   },
 
   async listMyExamplePosts(): Promise<ExamplePost[]> {

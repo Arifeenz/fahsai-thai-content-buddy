@@ -28,6 +28,7 @@ import { Route as AdminEventsRouteImport } from './routes/admin.events'
 import { Route as AdminExamplesRouteImport } from './routes/admin.examples'
 import { Route as AdminGenerationsRouteImport } from './routes/admin.generations'
 import { Route as AdminKpiRouteImport } from './routes/admin.kpi'
+import { Route as AdminQuotesRouteImport } from './routes/admin.quotes'
 import { Route as AdminSecurityRouteImport } from './routes/admin.security'
 import { Route as AdminSupportRouteImport } from './routes/admin.support'
 import { Route as AdminTemplatesRouteImport } from './routes/admin.templates'
@@ -128,6 +129,11 @@ const AdminKpiRoute = AdminKpiRouteImport.update({
   path: '/kpi',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminQuotesRoute = AdminQuotesRouteImport.update({
+  id: '/quotes',
+  path: '/quotes',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminSecurityRoute = AdminSecurityRouteImport.update({
   id: '/security',
   path: '/security',
@@ -168,6 +174,7 @@ export interface FileRoutesByFullPath {
   '/admin/examples': typeof AdminExamplesRoute
   '/admin/generations': typeof AdminGenerationsRoute
   '/admin/kpi': typeof AdminKpiRoute
+  '/admin/quotes': typeof AdminQuotesRoute
   '/admin/security': typeof AdminSecurityRoute
   '/admin/support': typeof AdminSupportRoute
   '/admin/templates': typeof AdminTemplatesRoute
@@ -192,6 +199,7 @@ export interface FileRoutesByTo {
   '/admin/examples': typeof AdminExamplesRoute
   '/admin/generations': typeof AdminGenerationsRoute
   '/admin/kpi': typeof AdminKpiRoute
+  '/admin/quotes': typeof AdminQuotesRoute
   '/admin/security': typeof AdminSecurityRoute
   '/admin/support': typeof AdminSupportRoute
   '/admin/templates': typeof AdminTemplatesRoute
@@ -218,6 +226,7 @@ export interface FileRoutesById {
   '/admin/examples': typeof AdminExamplesRoute
   '/admin/generations': typeof AdminGenerationsRoute
   '/admin/kpi': typeof AdminKpiRoute
+  '/admin/quotes': typeof AdminQuotesRoute
   '/admin/security': typeof AdminSecurityRoute
   '/admin/support': typeof AdminSupportRoute
   '/admin/templates': typeof AdminTemplatesRoute
@@ -245,6 +254,7 @@ export interface FileRouteTypes {
     | '/admin/examples'
     | '/admin/generations'
     | '/admin/kpi'
+    | '/admin/quotes'
     | '/admin/security'
     | '/admin/support'
     | '/admin/templates'
@@ -269,6 +279,7 @@ export interface FileRouteTypes {
     | '/admin/examples'
     | '/admin/generations'
     | '/admin/kpi'
+    | '/admin/quotes'
     | '/admin/security'
     | '/admin/support'
     | '/admin/templates'
@@ -294,6 +305,7 @@ export interface FileRouteTypes {
     | '/admin/examples'
     | '/admin/generations'
     | '/admin/kpi'
+    | '/admin/quotes'
     | '/admin/security'
     | '/admin/support'
     | '/admin/templates'
@@ -452,6 +464,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminKpiRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/quotes': {
+      id: '/admin/quotes'
+      path: '/quotes'
+      fullPath: '/admin/quotes'
+      preLoaderRoute: typeof AdminQuotesRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/security': {
       id: '/admin/security'
       path: '/security'
@@ -489,6 +508,7 @@ interface AdminRouteChildren {
   AdminExamplesRoute: typeof AdminExamplesRoute
   AdminGenerationsRoute: typeof AdminGenerationsRoute
   AdminKpiRoute: typeof AdminKpiRoute
+  AdminQuotesRoute: typeof AdminQuotesRoute
   AdminSecurityRoute: typeof AdminSecurityRoute
   AdminSupportRoute: typeof AdminSupportRoute
   AdminTemplatesRoute: typeof AdminTemplatesRoute
@@ -502,6 +522,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminExamplesRoute: AdminExamplesRoute,
   AdminGenerationsRoute: AdminGenerationsRoute,
   AdminKpiRoute: AdminKpiRoute,
+  AdminQuotesRoute: AdminQuotesRoute,
   AdminSecurityRoute: AdminSecurityRoute,
   AdminSupportRoute: AdminSupportRoute,
   AdminTemplatesRoute: AdminTemplatesRoute,

@@ -34,11 +34,13 @@ from db import (
     create_follower_snapshot,
     create_generation_log,
     create_prompt_template,
+    create_quote,
     create_support_ticket,
     delete_content_item,
     delete_event,
     delete_example_post,
     delete_prompt_template,
+    delete_quote,
     ensure_demo_users,
     get_admin_stats,
     get_all_events,
@@ -51,6 +53,7 @@ from db import (
     get_feedback_ratio_by_mode,
     get_monthly_openai_spend,
     get_demo_user_by_category,
+    get_random_quote,
     get_retention_stats,
     get_social_links,
     get_user_by_email,
@@ -68,6 +71,7 @@ from db import (
     list_follower_snapshots_for_user,
     list_generation_logs,
     list_prompt_templates,
+    list_quotes,
     list_security_events,
     list_support_tickets,
     log_security_event,
@@ -89,6 +93,7 @@ from db import (
     update_example_selection_mode,
     update_hide_global_events,
     update_prompt_template,
+    update_quote,
     upsert_brand_dna,
     upsert_google_user,
     upsert_social_links,
@@ -404,6 +409,11 @@ class EventWrite(BaseModel):
     suggestion_text: str = ""
 
 
+class QuoteWrite(BaseModel):
+    text: str
+    mood: str = "general"
+
+
 class SupportTicketCreate(BaseModel):
     message: str
     user_agent: str | None = None
@@ -586,6 +596,10 @@ def event_to_dict(row, today: date) -> dict:
         "is_personal": row["user_id"] is not None,
         "days_until": days_until_next(row["month"], row["day"], today),
     }
+
+
+def quote_to_dict(row) -> dict:
+    return {"id": row["id"], "text": row["text"], "mood": row["mood"]}
 
 
 def issue_session_cookie(response: Response, user_id: int) -> None:
@@ -1047,6 +1061,38 @@ def upcoming_event(request: Request):
             "headline": _event_headline(user, nearest),
         }
     }
+
+
+QUOTE_DISCOURAGED_DAYS = 7
+QUOTE_CELEBRATION_GOOD_RATE = 0.7
+
+
+@app.get("/quotes/daily")
+def get_daily_quote(request: Request):
+    user = require_user(request)
+    items = list_content_for_user(user["id"])
+    now = datetime.now(timezone.utc)
+
+    posted_at = [
+        row["created_at"].replace(tzinfo=timezone.utc)
+        for row in items
+        if row["status"] == "posted" and row["created_at"]
+    ]
+    days_since_last_post = (now - max(posted_at)).days if posted_at else None
+
+    rated = [row for row in items if row["feedback"]]
+    good_rate = sum(1 for row in rated if row["feedback"] == "good") / len(rated) if rated else None
+
+    # A brand-new user with no posts yet isn't "discouraged", just starting --
+    # only nudge once they've posted before and gone quiet for a while.
+    mood = "general"
+    if days_since_last_post is not None and days_since_last_post >= QUOTE_DISCOURAGED_DAYS:
+        mood = "discouraged"
+    elif good_rate is not None and good_rate >= QUOTE_CELEBRATION_GOOD_RATE:
+        mood = "celebration"
+
+    quote = get_random_quote(mood)
+    return {"text": quote["text"] if quote else None}
 
 
 @app.get("/events")
@@ -1791,4 +1837,39 @@ def admin_delete_event(event_id: int, request: Request):
     deleted = delete_event(event_id, None)
     if not deleted:
         raise HTTPException(status_code=404, detail="Event not found")
+    return {"ok": True}
+
+
+@app.get("/admin/quotes")
+@limiter.limit("60/minute")
+def admin_list_quotes(request: Request):
+    require_admin(request)
+    return {"quotes": [quote_to_dict(row) for row in list_quotes()]}
+
+
+@app.post("/admin/quotes")
+@limiter.limit("60/minute")
+def admin_create_quote(body: QuoteWrite, request: Request):
+    require_admin(request)
+    row = create_quote(body.text, body.mood)
+    return quote_to_dict(row)
+
+
+@app.put("/admin/quotes/{quote_id}")
+@limiter.limit("60/minute")
+def admin_update_quote(quote_id: int, body: QuoteWrite, request: Request):
+    require_admin(request)
+    row = update_quote(quote_id, body.text, body.mood)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Quote not found")
+    return quote_to_dict(row)
+
+
+@app.delete("/admin/quotes/{quote_id}")
+@limiter.limit("60/minute")
+def admin_delete_quote(quote_id: int, request: Request):
+    require_admin(request)
+    deleted = delete_quote(quote_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Quote not found")
     return {"ok": True}

@@ -27,6 +27,7 @@ TABLES = [
     "prompt_templates",
     "content_items",
     "brand_dna",
+    "quotes",
     "users",
 ]
 

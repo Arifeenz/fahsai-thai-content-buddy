@@ -368,6 +368,10 @@ function Dashboard() {
     queryKey: ["upcoming-event"],
     queryFn: () => api.getUpcomingEvent(),
   });
+  const { data: dailyQuote } = useQuery({
+    queryKey: ["daily-quote"],
+    queryFn: () => api.getDailyQuote(),
+  });
 
   const dnaFilledCount = dna ? DNA_KEYS.filter((k) => dna[k]?.trim()).length : null;
 
@@ -403,6 +407,9 @@ function Dashboard() {
             user?.email ? `ภาพรวมคอนเทนต์ของวันนี้ • ${user.email}` : "ภาพรวมคอนเทนต์ของวันนี้"
           }
         />
+        {dailyQuote && (
+          <p className="-mt-4 mb-6 text-sm italic text-teal">"{dailyQuote}"</p>
+        )}
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <StatCard

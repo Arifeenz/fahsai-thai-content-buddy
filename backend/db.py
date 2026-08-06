@@ -130,6 +130,17 @@ def init_db() -> None:
 
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS quotes (
+            id SERIAL PRIMARY KEY,
+            text TEXT NOT NULL,
+            mood TEXT NOT NULL DEFAULT 'general',
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS security_events (
             id SERIAL PRIMARY KEY,
             event_type TEXT NOT NULL,
@@ -1354,6 +1365,59 @@ def save_event_headline(event_id: int, business_category: str, headline: str) ->
         (event_id, business_category, headline),
     ).fetchone()
     conn.commit()
+    conn.close()
+    return row
+
+
+def list_quotes() -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute("SELECT * FROM quotes ORDER BY created_at DESC").fetchall()
+    conn.close()
+    return rows
+
+
+def create_quote(text: str, mood: str) -> dict:
+    conn = get_connection()
+    row = conn.execute(
+        "INSERT INTO quotes (text, mood) VALUES (%s, %s) RETURNING *",
+        (text, mood),
+    ).fetchone()
+    conn.commit()
+    conn.close()
+    return row
+
+
+def update_quote(quote_id: int, text: str, mood: str) -> dict | None:
+    conn = get_connection()
+    row = conn.execute(
+        "UPDATE quotes SET text = %s, mood = %s WHERE id = %s RETURNING *",
+        (text, mood, quote_id),
+    ).fetchone()
+    conn.commit()
+    conn.close()
+    return row
+
+
+def delete_quote(quote_id: int) -> bool:
+    conn = get_connection()
+    cur = conn.execute("DELETE FROM quotes WHERE id = %s", (quote_id,))
+    conn.commit()
+    deleted = cur.rowcount > 0
+    conn.close()
+    return deleted
+
+
+def get_random_quote(mood: str) -> dict | None:
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM quotes WHERE mood = %s ORDER BY RANDOM() LIMIT 1", (mood,)
+    ).fetchone()
+    # Fall back to the general pool if nothing's been tagged for this mood yet,
+    # so admins can add mood-specific quotes gradually instead of all at once.
+    if row is None and mood != "general":
+        row = conn.execute(
+            "SELECT * FROM quotes WHERE mood = 'general' ORDER BY RANDOM() LIMIT 1"
+        ).fetchone()
     conn.close()
     return row
 
