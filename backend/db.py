@@ -526,7 +526,7 @@ def get_feedback_ratio_by_mode() -> list[dict]:
 
 
 def get_dna_completeness_correlation() -> list[dict]:
-    # Buckets users by how many of their 4 brand_dna fields are non-empty,
+    # Buckets users by how many of their brand_dna fields are non-empty,
     # then compares generation/approval volume per bucket -- pre-aggregate
     # each metric per user_id in its own CTE before joining, so joining
     # users to both generation_log and content_items doesn't fan out and
@@ -1114,7 +1114,7 @@ def promote_example_post_to_global(post_id: int) -> dict | None:
     return row
 
 
-DNA_DOC_TYPES = ["history", "menu", "usp", "tone"]
+DNA_DOC_TYPES = ["history", "menu", "usp", "tone", "audience"]
 
 
 def get_brand_dna(user_id: int) -> dict[str, str]:
@@ -1161,6 +1161,7 @@ DEMO_ACCOUNTS: dict[str, dict] = {
             "menu": "กาแฟดริป ลาเต้ อเมริกาโน่ กาแฟส้ม เค้กมะพร้าว ชาชักใต้",
             "usp": "เมล็ดคั่วสดใหม่ทุกวัน บรรยากาศอบอุ่นแบบชายแดนใต้ พนักงานพูดได้สามภาษา",
             "tone": "อบอุ่น เป็นกันเอง ใช้คำว่า 'ค่ะ/ครับ' พูดเหมือนเพื่อนบ้านทักทาย ไม่เป็นทางการ",
+            "audience": "วัยทำงานออฟฟิศแถวร้านที่แวะซื้อกาแฟตอนเช้า และกลุ่มครอบครัวที่มาช่วงวันหยุด",
         },
     },
     "online_shop": {
@@ -1171,6 +1172,7 @@ DEMO_ACCOUNTS: dict[str, dict] = {
             "menu": "เสื้อยืดคอกลมพิมพ์ลาย กระเป๋าหนังแท้ ครีมบำรุงผิวหน้าสูตรอ่อนโยน",
             "usp": "ส่งไวภายใน 24 ชม. การันตีของแท้ 100% แพ็คสินค้าอย่างดี",
             "tone": "อบอุ่น เป็นกันเอง ใช้คำว่า 'ค่ะ/ครับ' พูดเหมือนเพื่อนบ้านทักทาย ไม่เป็นทางการ",
+            "audience": "ผู้หญิงวัย 20-35 ปีที่ชอบแฟชั่นเกาหลี ซื้อผ่านมือถือเป็นหลัก",
         },
     },
     "fortune_telling": {
@@ -1181,6 +1183,7 @@ DEMO_ACCOUNTS: dict[str, dict] = {
             "menu": "ไพ่ยิปซี โหราศาสตร์ไทย ดูดวงเบอร์โทร เสริมดวงฮวงจุ้ย",
             "usp": "ทำนายแม่นตรงจุด ให้คำปรึกษาแบบเข้าใจง่าย นัดดูผ่านออนไลน์ได้ทุกที่",
             "tone": "อบอุ่น เป็นกันเอง ใช้คำว่า 'ค่ะ/ครับ' พูดเหมือนเพื่อนบ้านทักทาย ไม่เป็นทางการ",
+            "audience": "คนวัยเริ่มทำงานถึงวัยกลางคนที่กำลังสับสนเรื่องความรักหรือการงาน อยากได้คำแนะนำชัดเจน",
         },
     },
     "streamer": {
@@ -1191,6 +1194,7 @@ DEMO_ACCOUNTS: dict[str, dict] = {
             "menu": "Valorant ไต่แรงค์ทุกคืน, Free Fire คู่หูสองคน, เล่นเกมสยองขวัญวันศุกร์",
             "usp": "มุกตลกเฉพาะตัว พูดคุยกับแชทตลอดเวลา เล่นเกมแนวสยองขวัญเป็นประจำ",
             "tone": "อบอุ่น เป็นกันเอง ใช้คำว่า 'ค่ะ/ครับ' พูดเหมือนเพื่อนบ้านทักทาย ไม่เป็นทางการ",
+            "audience": "วัยรุ่นถึงวัยเริ่มทำงานที่ชอบเกม FPS สายแข่งขัน ชอบดูสไตล์ตลกไม่ซีเรียส",
         },
     },
 }

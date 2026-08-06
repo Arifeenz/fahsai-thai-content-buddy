@@ -37,7 +37,7 @@ def test_admin_kpi_reflects_generations_approvals_feedback_and_dna(client):
     signup(client, "user_a@test.local")
     res = client.put(
         "/brand-dna",
-        json={"history": "h", "menu": "m", "usp": "u", "tone": "t"},
+        json={"history": "h", "menu": "m", "usp": "u", "tone": "t", "audience": "a"},
     )
     assert res.status_code == 200
     res = client.post(
@@ -76,9 +76,9 @@ def test_admin_kpi_reflects_generations_approvals_feedback_and_dna(client):
     assert feedback_idea["total_rated"] == 1
 
     dna_buckets = {r["filled_count"]: r for r in body["dna_completeness"]}
-    assert dna_buckets[4]["user_count"] >= 1  # user_a
-    assert dna_buckets[4]["total_generations"] >= 1
-    assert dna_buckets[4]["total_approved"] >= 1
+    assert dna_buckets[5]["user_count"] >= 1  # user_a
+    assert dna_buckets[5]["total_generations"] >= 1
+    assert dna_buckets[5]["total_approved"] >= 1
     assert dna_buckets[0]["user_count"] >= 1  # user_b (and the admin/seed user)
 
     assert isinstance(body["retained_users"], int)

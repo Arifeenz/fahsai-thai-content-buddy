@@ -330,7 +330,7 @@ function StatCard({
   );
 }
 
-const DNA_KEYS: DnaDocType[] = ["history", "menu", "usp", "tone"];
+const DNA_KEYS: DnaDocType[] = ["history", "menu", "usp", "tone", "audience"];
 
 function Dashboard() {
   const { ready } = useRequireAuth();

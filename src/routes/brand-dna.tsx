@@ -23,6 +23,7 @@ import {
   Gamepad2,
   Sparkles,
   MessageCircle,
+  Users,
   Wand2,
   Check,
   Loader2,
@@ -88,6 +89,14 @@ const sectionsByCategory: Record<BusinessCategory, Section[]> = {
       placeholder: "เลือกบุคลิกด้านล่าง หรือพิมพ์เองก็ได้ค่ะ...",
       example: "อบอุ่น เป็นกันเอง ใช้คำว่า 'ค่ะ/ครับ' พูดเหมือนเพื่อนบ้านทักทาย ไม่เป็นทางการ",
     },
+    {
+      key: "audience",
+      title: "กลุ่มลูกค้าเป้าหมาย",
+      hint: "ลูกค้าหลักของร้านคือใคร",
+      icon: Users,
+      placeholder: "เช่น วัยทำงานแถวร้าน นักเรียนนักศึกษา นักท่องเที่ยว...",
+      example: "วัยทำงานออฟฟิศแถวร้านที่แวะซื้อกาแฟตอนเช้า และกลุ่มครอบครัวที่มาช่วงวันหยุด",
+    },
   ],
   online_shop: [
     {
@@ -121,6 +130,14 @@ const sectionsByCategory: Record<BusinessCategory, Section[]> = {
       icon: MessageCircle,
       placeholder: "เลือกบุคลิกด้านล่าง หรือพิมพ์เองก็ได้ค่ะ...",
       example: "อบอุ่น เป็นกันเอง ใช้คำว่า 'ค่ะ/ครับ' พูดเหมือนเพื่อนบ้านทักทาย ไม่เป็นทางการ",
+    },
+    {
+      key: "audience",
+      title: "กลุ่มลูกค้าเป้าหมาย",
+      hint: "ลูกค้าหลักที่ซื้อสินค้าคุณคือใคร",
+      icon: Users,
+      placeholder: "เช่น วัยรุ่นสายแฟชั่น คนทำงานที่ชอบความสะดวก แม่บ้าน...",
+      example: "ผู้หญิงวัย 20-35 ปีที่ชอบแฟชั่นเกาหลี ซื้อผ่านมือถือเป็นหลัก",
     },
   ],
   fortune_telling: [
@@ -156,6 +173,14 @@ const sectionsByCategory: Record<BusinessCategory, Section[]> = {
       placeholder: "เลือกบุคลิกด้านล่าง หรือพิมพ์เองก็ได้ค่ะ...",
       example: "อบอุ่น เป็นกันเอง ใช้คำว่า 'ค่ะ/ครับ' พูดเหมือนเพื่อนบ้านทักทาย ไม่เป็นทางการ",
     },
+    {
+      key: "audience",
+      title: "กลุ่มลูกค้าเป้าหมาย",
+      hint: "คนที่มาดูดวงกับคุณส่วนใหญ่เป็นใคร",
+      icon: Users,
+      placeholder: "เช่น คนที่กำลังตัดสินใจเรื่องความรัก/งาน วัยเริ่มทำงาน...",
+      example: "คนวัยเริ่มทำงานถึงวัยกลางคนที่กำลังสับสนเรื่องความรักหรือการงาน อยากได้คำแนะนำชัดเจน",
+    },
   ],
   streamer: [
     {
@@ -190,6 +215,14 @@ const sectionsByCategory: Record<BusinessCategory, Section[]> = {
       placeholder: "เลือกบุคลิกด้านล่าง หรือพิมพ์เองก็ได้ค่ะ...",
       example: "อบอุ่น เป็นกันเอง ใช้คำว่า 'ค่ะ/ครับ' พูดเหมือนเพื่อนบ้านทักทาย ไม่เป็นทางการ",
     },
+    {
+      key: "audience",
+      title: "กลุ่มลูกค้าเป้าหมาย",
+      hint: "คนดูหลักของช่องคุณคือใคร",
+      icon: Users,
+      placeholder: "เช่น สายแข่งขัน วัยรุ่นที่ชอบเกมแนวเดียวกัน...",
+      example: "วัยรุ่นถึงวัยเริ่มทำงานที่ชอบเกม FPS สายแข่งขัน ชอบดูสไตล์ตลกไม่ซีเรียส",
+    },
   ],
 };
 
@@ -212,7 +245,13 @@ const personalityOptions = [
   },
 ];
 
-const emptyValues: Record<DnaDocType, string> = { history: "", menu: "", usp: "", tone: "" };
+const emptyValues: Record<DnaDocType, string> = {
+  history: "",
+  menu: "",
+  usp: "",
+  tone: "",
+  audience: "",
+};
 const emptySocialLinks: SocialLinks = {
   facebook: "",
   instagram: "",
@@ -236,6 +275,7 @@ function BrandDna() {
     menu: false,
     usp: false,
     tone: false,
+    audience: false,
   });
   const [entryMode, setEntryMode] = useState<EntryMode>("fields");
   const [freeText, setFreeText] = useState("");
@@ -270,6 +310,7 @@ function BrandDna() {
         menu: !!loaded.menu,
         usp: !!loaded.usp,
         tone: !!loaded.tone,
+        audience: !!loaded.audience,
       });
     });
     api.getSocialLinks().then((loaded) => {
@@ -350,6 +391,7 @@ function BrandDna() {
       menu: !!merged.menu,
       usp: !!merged.usp,
       tone: !!merged.tone,
+      audience: !!merged.audience,
     });
     setEntryMode("fields");
     setMissingFields(null);
@@ -366,7 +408,7 @@ function BrandDna() {
       const { missing_fields, ...draft } = await api.draftDna(freeText);
       if (missing_fields.length === 0) {
         await applyDraft(draft);
-        toast.success("จัดข้อมูลครบ 4 หมวดแล้วค่ะ ลองตรวจสอบอีกครั้งได้เลย");
+        toast.success("จัดข้อมูลครบ 5 หมวดแล้วค่ะ ลองตรวจสอบอีกครั้งได้เลย");
       } else {
         setMissingFields(missing_fields);
         setPendingDraft(draft);
@@ -491,8 +533,8 @@ function BrandDna() {
           <div className="glass-card mb-6 rounded-2xl p-5">
             <div className="mb-2 font-bold">เล่าเรื่องร้านให้ FAHSAI ฟังหน่อยค่ะ</div>
             <div className="mb-3 text-sm text-muted-foreground">
-              พิมพ์คร่าวๆ ก็ได้ค่ะ ที่มา {sections.find((s) => s.key === "menu")?.title} จุดขาย
-              และบุคลิกเป็นยังไง แล้ว FAHSAI จะช่วยแยกใส่ 4 หัวข้อให้เอง
+              พิมพ์คร่าวๆ ก็ได้ค่ะ ที่มา {sections.find((s) => s.key === "menu")?.title} กลุ่มลูกค้า
+              จุดขาย และบุคลิกเป็นยังไง แล้ว FAHSAI จะช่วยแยกใส่ 5 หัวข้อให้เอง
             </div>
             <textarea
               value={freeText}
@@ -513,7 +555,7 @@ function BrandDna() {
                 ) : (
                   <Wand2 className="h-4 w-4" />
                 )}
-                {drafting ? "กำลังจัดข้อมูลให้อยู่ค่ะ..." : "ให้ AI ช่วยจัดให้ครบ 4 หมวด"}
+                {drafting ? "กำลังจัดข้อมูลให้อยู่ค่ะ..." : "ให้ AI ช่วยจัดให้ครบ 5 หมวด"}
               </button>
               {freeText.trim().length > 0 && freeText.trim().length < MIN_FREE_TEXT_LENGTH && (
                 <span className="text-xs text-muted-foreground">

@@ -370,6 +370,7 @@ class BrandDnaWrite(BaseModel):
     menu: str = ""
     usp: str = ""
     tone: str = ""
+    audience: str = ""
 
 
 class SocialLinksWrite(BaseModel):
@@ -943,15 +944,16 @@ def draft_brand_dna(body: BrandDnaDraftRequest, request: Request):
         user["business_category"], DNA_MENU_DRAFT_HINTS["food_beverage"]
     )
     system_prompt = f"""คุณคือ FAHSAI ผู้ช่วยจัดระเบียบข้อมูลร้านให้เจ้าของร้าน SME ไทย
-อ่านข้อความที่ร้านเล่ามาให้ฟัง แล้วแยกใส่ 4 หมวดนี้ เขียนเป็นภาษาไทยเท่านั้น:
+อ่านข้อความที่ร้านเล่ามาให้ฟัง แล้วแยกใส่ 5 หมวดนี้ เขียนเป็นภาษาไทยเท่านั้น:
 - history: ประวัติร้าน ที่มาที่ไป
 - menu: {menu_draft_hint}
 - usp: จุดขายที่ไม่เหมือนใคร (USP)
 - tone: บุคลิกแบรนด์ น้ำเสียงตอนเขียนโพสต์
+- audience: กลุ่มลูกค้าเป้าหมาย ลูกค้าหลักของร้านคือใคร
 
-ถ้าข้อความที่ร้านเล่ามาไม่มีข้อมูลพอสำหรับหมวดไหน ให้ปล่อยหมวดนั้นเป็นข้อความว่าง "" แล้วใส่ชื่อหมวด (history/menu/usp/tone) ไว้ใน missing_fields ห้ามเดาหรือแต่งข้อมูลขึ้นเองเด็ดขาด
+ถ้าข้อความที่ร้านเล่ามาไม่มีข้อมูลพอสำหรับหมวดไหน ให้ปล่อยหมวดนั้นเป็นข้อความว่าง "" แล้วใส่ชื่อหมวด (history/menu/usp/tone/audience) ไว้ใน missing_fields ห้ามเดาหรือแต่งข้อมูลขึ้นเองเด็ดขาด
 
-ตอบกลับเป็น JSON เท่านั้น รูปแบบ: {{"history": "...", "menu": "...", "usp": "...", "tone": "...", "missing_fields": ["menu"]}}"""
+ตอบกลับเป็น JSON เท่านั้น รูปแบบ: {{"history": "...", "menu": "...", "usp": "...", "tone": "...", "audience": "...", "missing_fields": ["menu"]}}"""
 
     try:
         response = openai_client.chat.completions.create(
@@ -975,6 +977,7 @@ def draft_brand_dna(body: BrandDnaDraftRequest, request: Request):
         "menu": parsed.get("menu") or "",
         "usp": parsed.get("usp") or "",
         "tone": parsed.get("tone") or "",
+        "audience": parsed.get("audience") or "",
         "missing_fields": parsed.get("missing_fields") or [],
     }
 
@@ -1234,6 +1237,7 @@ def generate_content(body: GenerateRequest, request: Request):
 - {menu_label}: {dna["menu"] or "ไม่ระบุ"}
 - จุดขาย (USP): {dna["usp"] or "ไม่ระบุ"}
 - บุคลิกแบรนด์: {dna["tone"] or "ไม่ระบุ"}
+- กลุ่มลูกค้าเป้าหมาย: {dna["audience"] or "ไม่ระบุ"}
 
 โพสต์นี้จะลงแพลตฟอร์ม {platform_label} ด้วยโทน "{tone_label}" ให้ความยาวและสไตล์เหมาะกับแพลตฟอร์มนั้น (Facebook เขียนได้ยาวหน่อย, LINE OA กระชับเป็นกันเอง, Instagram ใช้แฮชแท็กได้)
 
@@ -1349,6 +1353,7 @@ def generate_from_image(
 - {menu_label}: {dna["menu"] or "ไม่ระบุ"}
 - จุดขาย (USP): {dna["usp"] or "ไม่ระบุ"}
 - บุคลิกแบรนด์: {dna["tone"] or "ไม่ระบุ"}
+- กลุ่มลูกค้าเป้าหมาย: {dna["audience"] or "ไม่ระบุ"}
 
 ร้านแนบรูปภาพมาให้ {len(image_urls)} รูป ดูรูปเหล่านี้แล้วเขียนแคปชั่นโปรโมตสิ่งที่เห็น ให้เหมาะกับร้าน{context_line}
 
@@ -1438,6 +1443,7 @@ def generate_video_script(body: VideoScriptRequest, request: Request):
 - ประเภทร้าน: {category_label}
 - {menu_label}: {dna["menu"] or "ไม่ระบุ"}
 - บุคลิกแบรนด์: {dna["tone"] or "ไม่ระบุ"}
+- กลุ่มลูกค้าเป้าหมาย: {dna["audience"] or "ไม่ระบุ"}
 
 แคปชั่นที่จะใช้คู่กับวิดีโอนี้ (ลงแพลตฟอร์ม {platform_label} โทน "{tone_label}"):
 {caption}
