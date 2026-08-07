@@ -146,7 +146,11 @@ supabase_client = (
     else None
 )
 EXAMPLE_POSTS_BUCKET = "example-posts"
-MAX_IMAGE_BYTES = 5 * 1024 * 1024
+# Raw upload cap, checked before resize_and_compress_image() downsizes it --
+# a normal unprocessed phone photo (12-48MP cameras routinely produce
+# 6-12MB JPEGs, more for screenshots/HEIC) needs real headroom here, since
+# whatever gets through ends up compressed to a few hundred KB anyway.
+MAX_IMAGE_BYTES = 15 * 1024 * 1024
 IMAGE_MAX_DIMENSION = 1920
 IMAGE_JPEG_QUALITY = 85
 MAX_GENERATE_IMAGES = 3
@@ -183,19 +187,23 @@ def resize_and_compress_image(contents: bytes) -> bytes | None:
 def upload_example_image(file: UploadFile | None, owner_id: int) -> str | None:
     if file is None or not file.filename:
         return None
-    if not (file.content_type or "").startswith("image/"):
-        raise HTTPException(status_code=400, detail="ไฟล์ต้องเป็นรูปภาพเท่านั้นนะคะ")
     if supabase_client is None:
         raise HTTPException(
             status_code=503, detail="ระบบเก็บรูปภาพยังไม่ได้ตั้งค่า ลองแนบแค่ข้อความไปก่อนนะคะ"
         )
     contents = file.file.read()
     if len(contents) > MAX_IMAGE_BYTES:
-        raise HTTPException(status_code=400, detail="ไฟล์รูปภาพใหญ่เกินไป (จำกัด 5MB นะคะ)")
+        raise HTTPException(status_code=400, detail="ไฟล์รูปภาพใหญ่เกินไป (จำกัด 15MB นะคะ)")
     resized = resize_and_compress_image(contents)
     if resized is not None:
+        # PIL successfully decoding the bytes IS the real image check --
+        # more reliable than trusting the browser's Content-Type, which
+        # isn't set consistently for drag-and-dropped files (unlike the
+        # <input type="file"> picker, which gets it from the OS).
         contents, ext, content_type = resized, "jpg", "image/jpeg"
     else:
+        if not (file.content_type or "").startswith("image/"):
+            raise HTTPException(status_code=400, detail="ไฟล์ต้องเป็นรูปภาพเท่านั้นนะคะ")
         ext = (file.filename.rsplit(".", 1)[-1] if "." in file.filename else "jpg").lower()
         content_type = file.content_type
     path = f"{owner_id}/{uuid.uuid4()}.{ext}"

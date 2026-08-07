@@ -101,6 +101,18 @@ const categoryPlaceholder: Record<CategoryKey, string> = {
   default: "เช่น อยากได้โพสต์ชวนคนมาลองเมนูใหม่ กาแฟส้ม ช่วงบ่ายลด 20%",
 };
 
+// The photo already shows the AI what to describe -- this field is only for
+// details a picture can't convey (price, promo window, booking slots), so
+// the examples lean on that rather than repeating categoryPlaceholder's
+// "what to post about" framing.
+const photoContextPlaceholder: Record<CategoryKey, string> = {
+  food_beverage: "บริบทเพิ่มเติม (ถ้ามี) เช่น ราคา 65 บาท โปรลด 20% ถึงสิ้นเดือน",
+  online_shop: "บริบทเพิ่มเติม (ถ้ามี) เช่น ราคา 590 บาท ส่งฟรี เหลือ 5 ชิ้นสุดท้าย",
+  fortune_telling: "บริบทเพิ่มเติม (ถ้ามี) เช่น เปิดคิวดูดวงวันนี้ถึง 3 ทุ่ม ทักไลน์จองคิว",
+  streamer: "บริบทเพิ่มเติม (ถ้ามี) เช่น ไฮไลต์จากไลฟ์เมื่อคืน กดติดตามช่องดูคลิปเต็ม",
+  default: "บริบทเพิ่มเติม (ถ้ามี) เช่น เน้นโปรโมชั่นหรือรายละเอียดที่อยากให้พูดถึง",
+};
+
 const categoryChips: Record<CategoryKey, { label: string; insert: string }[]> = {
   food_beverage: [
     { label: "เมนู", insert: "เมนูที่จะโปรโมท: " },
@@ -425,8 +437,13 @@ function CreateContent() {
         setContentId(res.content_id);
       }
       toast.success("โพสต์ใหม่พร้อมแล้วค่ะ ลองดูได้เลย", { id: t });
-    } catch {
-      toast.error("สร้างไม่สำเร็จ ลองอีกครั้งนะคะ", {
+    } catch (err) {
+      // The backend already explains *why* (rate limited, budget exhausted,
+      // too many images, etc.) via the thrown Error's message -- showing a
+      // generic string here just hides that reason and makes a specific,
+      // self-explanatory failure look like a mystery bug.
+      const message = err instanceof Error && err.message ? err.message : "สร้างไม่สำเร็จ ลองอีกครั้งนะคะ";
+      toast.error(message, {
         id: t,
         action: { label: "ลองใหม่", onClick: generate },
       });
@@ -666,7 +683,7 @@ function CreateContent() {
                 <input
                   value={photoContext}
                   onChange={(e) => setPhotoContext(e.target.value)}
-                  placeholder="บริบทเพิ่มเติม (ถ้ามี) เช่น เน้นโปรโมชั่นลด 20%"
+                  placeholder={photoContextPlaceholder[categoryKey]}
                   className="mt-3 w-full rounded-xl border border-border bg-input p-3 text-sm outline-none placeholder:text-muted-foreground focus:border-teal"
                 />
               </>
