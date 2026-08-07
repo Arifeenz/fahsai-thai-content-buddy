@@ -28,6 +28,7 @@ dist-ssr
 backend/.env
 backend/fahsai.db
 backend/venv/
+backend/backups/
 backend/__pycache__/
 backend/**/__pycache__/
 backend/.pytest_cache/

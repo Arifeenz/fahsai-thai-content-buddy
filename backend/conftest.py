@@ -7,6 +7,21 @@ from dotenv import load_dotenv
 # tests never touch production data, real email, real OpenAI, or real Sentry.
 load_dotenv()
 
+# Hard guard against the exact mistake that once wiped the real database:
+# a throwaway debug script set TEST_DATABASE_URL to the real DATABASE_URL's
+# value, so this override below became a no-op and the test suite's
+# TRUNCATE ... RESTART IDENTITY CASCADE teardown ran against production
+# instead of the test project. If the two URLs ever match again -- however
+# that happens -- refuse to proceed rather than silently truncating
+# whatever DATABASE_URL happens to point at.
+if os.environ["TEST_DATABASE_URL"] == os.environ["DATABASE_URL"]:
+    raise RuntimeError(
+        "TEST_DATABASE_URL is identical to DATABASE_URL. Refusing to run tests: "
+        "this fixture TRUNCATEs its target database after every test, and running "
+        "it against the real database destroys real data. Fix the environment "
+        "before running tests again."
+    )
+
 os.environ["DATABASE_URL"] = os.environ["TEST_DATABASE_URL"]
 os.environ["OPENAI_API_KEY"] = ""
 os.environ["RESEND_API_KEY"] = ""
