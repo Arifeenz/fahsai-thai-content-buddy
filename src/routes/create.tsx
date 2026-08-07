@@ -117,6 +117,7 @@ function CreateContent() {
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
   const [photoContext, setPhotoContext] = useState("");
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const [isDraggingPhoto, setIsDraggingPhoto] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
   const [captureStream, setCaptureStream] = useState<MediaStream | null>(null);
   const [capturedUrl, setCapturedUrl] = useState<string | null>(null);
@@ -304,14 +305,23 @@ function CreateContent() {
     }
 
     const file = new File([finalBlob], `screenshot-${Date.now()}.jpg`, { type: "image/jpeg" });
-    setPhotoFiles((prev) => {
-      if (prev.length >= MAX_PHOTOS) {
-        toast.error(`แนบได้สูงสุด ${MAX_PHOTOS} รูปนะคะ`);
-        return prev;
-      }
-      return [...prev, file];
-    });
+    addPhotoFiles([file]);
     closeCaptureModal();
+  }
+
+  function addPhotoFiles(incoming: File[]) {
+    const images = incoming.filter((f) => f.type.startsWith("image/"));
+    if (images.length === 0) {
+      if (incoming.length > 0) toast.error("แนบได้เฉพาะไฟล์รูปภาพนะคะ");
+      return;
+    }
+    setPhotoFiles((prev) => {
+      const combined = [...prev, ...images];
+      if (combined.length > MAX_PHOTOS) {
+        toast.error(`แนบได้สูงสุด ${MAX_PHOTOS} รูปนะคะ`);
+      }
+      return combined.slice(0, MAX_PHOTOS);
+    });
   }
 
   function insertChip(insert: string) {
@@ -539,12 +549,31 @@ function CreateContent() {
                 <label className="mb-2 block text-sm font-semibold">
                   แนบรูปภาพที่จะโพสต์ (สูงสุด {MAX_PHOTOS} รูป)
                 </label>
-                <div className="grid grid-cols-2 gap-2">
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDraggingPhoto(true);
+                  }}
+                  onDragLeave={(e) => {
+                    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                      setIsDraggingPhoto(false);
+                    }
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDraggingPhoto(false);
+                    addPhotoFiles(Array.from(e.dataTransfer.files));
+                  }}
+                  className={
+                    "grid grid-cols-2 gap-2 rounded-xl transition " +
+                    (isDraggingPhoto ? "ring-2 ring-teal ring-offset-2 ring-offset-background" : "")
+                  }
+                >
                   <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-input/40 px-4 py-6 text-sm text-muted-foreground hover:text-foreground">
                     <ImagePlus className="h-5 w-5" />
                     {photoFiles.length > 0
                       ? `เลือกแล้ว ${photoFiles.length} รูป`
-                      : "แตะเพื่อเลือกรูปภาพ"}
+                      : "แตะเพื่อเลือกรูปภาพ หรือลากมาวางตรงนี้"}
                     <input
                       ref={photoInputRef}
                       type="file"
@@ -552,11 +581,8 @@ function CreateContent() {
                       multiple
                       className="hidden"
                       onChange={(e) => {
-                        const files = Array.from(e.target.files ?? []);
-                        if (files.length > MAX_PHOTOS) {
-                          toast.error(`แนบได้สูงสุด ${MAX_PHOTOS} รูปนะคะ`);
-                        }
-                        setPhotoFiles(files.slice(0, MAX_PHOTOS));
+                        addPhotoFiles(Array.from(e.target.files ?? []));
+                        e.target.value = "";
                       }}
                     />
                   </label>
