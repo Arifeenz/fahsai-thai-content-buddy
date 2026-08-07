@@ -1104,7 +1104,11 @@ def list_my_events(request: Request):
         event_to_dict(row, today) for row in list_events_for_user(user["id"], hide_global)
     ]
     events.sort(key=lambda e: e["days_until"])
-    return {"events": events[:7]}
+    # No cap here -- the /schedule calendar needs every event regardless of
+    # how far out it falls, since it lets users browse to any month.
+    # Consumers that only want a short list (e.g. the dashboard card)
+    # already slice client-side.
+    return {"events": events}
 
 
 @app.post("/events")
