@@ -288,8 +288,57 @@ def init_db() -> None:
             ],
         )
 
+    # Platforms added to a category after the block above already ran once
+    # (template_count > 0 on an existing DB) need their own guard, scoped to
+    # that exact (category, platform) pair rather than the whole table, so
+    # they backfill on existing databases instead of only fresh ones.
+    _seed_templates_for_platform_if_missing(
+        conn,
+        "online_shop",
+        "tiktok",
+        [
+            "ของมาใหม่ 🔥 คลิปเดียวจบ กดตะกร้าเลย! #TikTokShop #ของมันต้องมี",
+            "ห้ามพลาด! ราคานี้มีจำนวนจำกัด สั่งก่อนหมดนะคะ 🛒 #TikTokShop #โปรวันนี้",
+            "รีวิวจริงจากลูกค้า ยืนยันของดีจริง มาดูกันเลย ✨ #TikTokShop #รีวิวสินค้า",
+        ],
+    )
+    _seed_templates_for_platform_if_missing(
+        conn,
+        "streamer",
+        "tiktok",
+        [
+            "ไฮไลต์เมื่อคืนมาแล้ว 🎮 มาดูกันว่าเกิดอะไรขึ้น! #ไฮไลต์ #เกมเมอร์",
+            "คลิปนี้พลาดไม่ได้ 😱 กดติดตามไว้ดูคลิปเต็มเลยนะ #สตรีมเมอร์ #ไลฟ์เกม",
+            "โมเมนต์ฮาๆ จากไลฟ์คืนนี้ ห้ามพลาด! #เกมมิ่ง #FunnyMoments",
+        ],
+    )
+    _seed_templates_for_platform_if_missing(
+        conn,
+        "streamer",
+        "youtube",
+        [
+            "ไลฟ์เกมคืนนี้เต็มๆ ดูย้อนหลังได้ที่นี่เลยครับ กดติดตาม + กดกระดิ่งไว้ไม่พลาดไลฟ์ครั้งหน้า",
+            "รวมไฮไลต์เด็ดจากการไลฟ์สัปดาห์นี้ ใครพลาดไลฟ์ มาดูสรุปได้ในคลิปนี้เลย",
+            "ขอบคุณทุกคนที่ติดตามช่องนะครับ วันนี้มาพร้อมคลิปใหม่ กดดูกันได้เลย",
+        ],
+    )
+
     conn.commit()
     conn.close()
+
+
+def _seed_templates_for_platform_if_missing(
+    conn: psycopg.Connection, business_category: str, platform: str, texts: list[str]
+) -> None:
+    existing = conn.execute(
+        "SELECT COUNT(*) AS n FROM prompt_templates WHERE business_category = %s AND platform = %s",
+        (business_category, platform),
+    ).fetchone()["n"]
+    if existing == 0:
+        conn.cursor().executemany(
+            "INSERT INTO prompt_templates (business_category, platform, tone, template_text) VALUES (%s, %s, NULL, %s)",
+            [(business_category, platform, text) for text in texts],
+        )
 
 
 def upsert_google_user(

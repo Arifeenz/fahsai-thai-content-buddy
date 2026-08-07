@@ -6,6 +6,8 @@ import {
   Facebook,
   Instagram,
   MessageCircle,
+  Youtube,
+  Music2,
   Coffee,
   ShoppingBag,
   Moon,
@@ -45,6 +47,8 @@ const platformIcon: Record<Platform, LucideIcon> = {
   facebook: Facebook,
   line: MessageCircle,
   instagram: Instagram,
+  tiktok: Music2,
+  youtube: Youtube,
 };
 
 const mockPosts: { platform: Platform; caption: string; image: string }[] = [
@@ -61,7 +65,7 @@ const mockPosts: { platform: Platform; caption: string; image: string }[] = [
     image: mockFortuneTelling,
   },
   {
-    platform: "line",
+    platform: "tiktok",
     caption:
       "คืนนี้ไลฟ์ 3 ทุ่มนะครับ 🎮 มาลุ้นด้วยกันว่าจะผ่านด่านนี้ได้มั้ย มีแจกของรางวัลให้คนดูในไลฟ์ด้วย อย่าลืมกดติดตามกันไว้นะ",
     image: mockStreamer,

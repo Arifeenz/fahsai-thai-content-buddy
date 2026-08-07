@@ -11,18 +11,20 @@ def signup(client, email):
     )
 
 
-# "tiktok" is never seeded by init_db()'s default templates (only facebook/
-# line/instagram are), so it's a safe platform to use for tests that need a
-# fully controlled, deterministic set of matching templates.
+# A platform string init_db()'s default templates never seed anything under,
+# so it's safe for tests that need a fully controlled, deterministic set of
+# matching templates. Real platform keys (facebook/line/instagram/tiktok/
+# youtube) all have category-scoped seed rows now, so picking one of those
+# would risk matching unrelated seed data instead of just this test's row.
 def seed_template(client):
     signup(client, "admin@test.local")
     res = client.post(
         "/admin/prompt-templates",
         json={
             "business_category": None,
-            "platform": "tiktok",
+            "platform": "unseeded-platform",
             "tone": "friendly",
-            "template_text": "เทมเพลตทดสอบสำหรับ tiktok",
+            "template_text": "เทมเพลตทดสอบสำหรับแพลตฟอร์มทดสอบ",
         },
     )
     assert res.status_code == 200
@@ -34,10 +36,11 @@ def test_generate_falls_back_to_template_without_api_key(client):
     signup(client, "user@test.local")
 
     res = client.post(
-        "/generate", json={"prompt": "โปรโมชั่นหน้าร้อน", "platform": "tiktok", "tone": "friendly"}
+        "/generate",
+        json={"prompt": "โปรโมชั่นหน้าร้อน", "platform": "unseeded-platform", "tone": "friendly"},
     )
     assert res.status_code == 200
-    assert res.json()["caption"] == "เทมเพลตทดสอบสำหรับ tiktok"
+    assert res.json()["caption"] == "เทมเพลตทดสอบสำหรับแพลตฟอร์มทดสอบ"
 
 
 def test_generate_falls_back_when_budget_exceeded(client, monkeypatch):
@@ -50,16 +53,22 @@ def test_generate_falls_back_when_budget_exceeded(client, monkeypatch):
     monkeypatch.setattr(main, "OPENAI_MONTHLY_BUDGET_USD", 0.0)
 
     res = client.post(
-        "/generate", json={"prompt": "โปรโมชั่นหน้าร้อน", "platform": "tiktok", "tone": "friendly"}
+        "/generate",
+        json={"prompt": "โปรโมชั่นหน้าร้อน", "platform": "unseeded-platform", "tone": "friendly"},
     )
     assert res.status_code == 200
-    assert res.json()["caption"] == "เทมเพลตทดสอบสำหรับ tiktok"
+    assert res.json()["caption"] == "เทมเพลตทดสอบสำหรับแพลตฟอร์มทดสอบ"
 
 
 def test_generate_without_matching_template_returns_404(client):
+    # No business_category set, so the new category-widen fallback
+    # deliberately does not kick in (see main.py's generate_content) --
+    # confirms a categoryless user with no matching template still 404s
+    # instead of silently widening to "every template in the table."
     signup(client, "user@test.local")
     res = client.post(
-        "/generate", json={"prompt": "โปรโมชั่นหน้าร้อน", "platform": "tiktok", "tone": "friendly"}
+        "/generate",
+        json={"prompt": "โปรโมชั่นหน้าร้อน", "platform": "unseeded-platform", "tone": "friendly"},
     )
     assert res.status_code == 404
 
@@ -138,3 +147,22 @@ def test_generate_rating_mode_prefers_higher_rated_examples(client, monkeypatch)
     assert "ตัวอย่างเรตติ้ง high" in system_prompt
     assert "ตัวอย่างเรตติ้ง mid" in system_prompt
     assert "ตัวอย่างเรตติ้ง low" not in system_prompt
+
+
+def test_generate_falls_back_to_any_platform_template_for_category_when_exact_platform_missing(
+    client,
+):
+    # A category can be asked to generate for a platform with no
+    # platform-specific fallback template authored yet (e.g. fortune_telling
+    # has no "tiktok" templates seeded) -- generation should still work off
+    # any template for that category rather than 404ing, since a human
+    # reviewing an AI-outage fallback would consider it close enough.
+    signup(client, "user@test.local")
+    res = client.patch("/me", json={"business_category": "fortune_telling"})
+    assert res.status_code == 200
+
+    res = client.post(
+        "/generate", json={"prompt": "ดวงวันนี้", "platform": "tiktok", "tone": "friendly"}
+    )
+    assert res.status_code == 200
+    assert res.json()["caption"]

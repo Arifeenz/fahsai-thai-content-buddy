@@ -26,7 +26,7 @@ export const Route = createFileRoute("/admin/examples")({
   component: AdminExamplesPage,
 });
 
-const platforms: Platform[] = ["facebook", "line", "instagram"];
+const platforms: Platform[] = ["facebook", "line", "instagram", "tiktok", "youtube"];
 const PAGE_SIZE = 20;
 
 const emptyForm = {

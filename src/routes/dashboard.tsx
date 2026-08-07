@@ -6,6 +6,7 @@ import {
   api,
   platformLabel,
   statusLabel,
+  type BusinessCategory,
   type ContentFeedback,
   type ContentItem,
   type DnaDocType,
@@ -179,9 +180,19 @@ function EventsCalendarCard() {
 }
 
 const NUDGE_DUE_DAYS = 7;
-const followerPlatforms: Platform[] = ["facebook", "line", "instagram"];
+// Same reasoning as the platform choices on /create -- which platforms are
+// actually worth tracking follower counts for differs by business type.
+const followerPlatformsByCategory: Record<BusinessCategory | "default", Platform[]> = {
+  food_beverage: ["facebook", "line", "instagram"],
+  online_shop: ["facebook", "line", "instagram", "tiktok"],
+  fortune_telling: ["facebook", "line", "instagram"],
+  streamer: ["facebook", "instagram", "tiktok", "youtube"],
+  default: ["facebook", "line", "instagram"],
+};
 
 function FollowerNudgeCard() {
+  const user = useCurrentUser();
+  const followerPlatforms = followerPlatformsByCategory[user?.business_category ?? "default"];
   const queryClient = useQueryClient();
   const { data: snapshots = [] } = useQuery({
     queryKey: ["follower-snapshots"],

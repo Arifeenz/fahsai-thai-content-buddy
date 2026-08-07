@@ -4,15 +4,16 @@ def signup(client, email):
     )
 
 
-# "tiktok" is never seeded by init_db()'s default templates, so it's a safe
-# platform for deterministic template-fallback generations (see test_generate.py).
+# A platform string init_db()'s default templates never seed anything under
+# (real platform keys all have category-scoped seed rows now), so it's safe
+# for deterministic template-fallback generations (see test_generate.py).
 def seed_template(client):
     signup(client, "admin@test.local")
     res = client.post(
         "/admin/prompt-templates",
         json={
             "business_category": None,
-            "platform": "tiktok",
+            "platform": "unseeded-platform",
             "tone": "friendly",
             "template_text": "เทมเพลตทดสอบ",
         },
@@ -41,12 +42,12 @@ def test_admin_kpi_reflects_generations_approvals_feedback_and_dna(client):
     )
     assert res.status_code == 200
     res = client.post(
-        "/generate", json={"prompt": "test", "platform": "tiktok", "tone": "friendly"}
+        "/generate", json={"prompt": "test", "platform": "unseeded-platform", "tone": "friendly"}
     )
     assert res.status_code == 200
     res = client.post(
         "/content",
-        json={"platform": "tiktok", "preview": "approved post", "status": "approved", "mode": "idea"},
+        json={"platform": "unseeded-platform", "preview": "approved post", "status": "approved", "mode": "idea"},
     )
     assert res.status_code == 200
     content_id = res.json()["id"]
@@ -58,7 +59,7 @@ def test_admin_kpi_reflects_generations_approvals_feedback_and_dna(client):
     signup(client, "user_b@test.local")
     for _ in range(2):
         res = client.post(
-            "/generate", json={"prompt": "test", "platform": "tiktok", "tone": "friendly"}
+            "/generate", json={"prompt": "test", "platform": "unseeded-platform", "tone": "friendly"}
         )
         assert res.status_code == 200
 

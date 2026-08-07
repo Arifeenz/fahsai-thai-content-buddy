@@ -30,6 +30,8 @@ import {
   Facebook,
   Instagram,
   MessageCircle,
+  Youtube,
+  Music2,
   ImagePlus,
   Info,
   X,
@@ -53,11 +55,6 @@ export const Route = createFileRoute("/create")({
   component: CreateContent,
 });
 
-const platforms: { key: Platform; icon: any }[] = [
-  { key: "facebook", icon: Facebook },
-  { key: "line", icon: MessageCircle },
-  { key: "instagram", icon: Instagram },
-];
 const tones: { key: Tone; label: string }[] = [
   { key: "friendly", label: "เป็นกันเอง" },
   { key: "professional", label: "ทางการ" },
@@ -92,6 +89,40 @@ const CAPTURE_JPEG_QUALITY = 0.9;
 
 type Mode = "idea" | "photo";
 type CategoryKey = BusinessCategory | "default";
+
+// Which platforms actually fit each business's real posting habits in
+// Thailand -- e.g. LINE OA is core infrastructure for food/retail/fortune
+// telling (ordering, booking, broadcast promos) but streamers essentially
+// never use it to reach an audience, so it's swapped for TikTok/YouTube there.
+const categoryPlatforms: Record<CategoryKey, { key: Platform; icon: any }[]> = {
+  food_beverage: [
+    { key: "facebook", icon: Facebook },
+    { key: "line", icon: MessageCircle },
+    { key: "instagram", icon: Instagram },
+  ],
+  online_shop: [
+    { key: "facebook", icon: Facebook },
+    { key: "line", icon: MessageCircle },
+    { key: "instagram", icon: Instagram },
+    { key: "tiktok", icon: Music2 },
+  ],
+  fortune_telling: [
+    { key: "facebook", icon: Facebook },
+    { key: "line", icon: MessageCircle },
+    { key: "instagram", icon: Instagram },
+  ],
+  streamer: [
+    { key: "facebook", icon: Facebook },
+    { key: "instagram", icon: Instagram },
+    { key: "tiktok", icon: Music2 },
+    { key: "youtube", icon: Youtube },
+  ],
+  default: [
+    { key: "facebook", icon: Facebook },
+    { key: "line", icon: MessageCircle },
+    { key: "instagram", icon: Instagram },
+  ],
+};
 
 const categoryPlaceholder: Record<CategoryKey, string> = {
   food_beverage: "เช่น โปรโมทเมนูใหม่ กาแฟส้ม ลด 20% ช่วงบ่าย",
@@ -691,8 +722,13 @@ function CreateContent() {
 
             <div className="mt-5">
               <div className="mb-2 text-sm font-semibold">แพลตฟอร์ม</div>
-              <div className="grid grid-cols-3 gap-2">
-                {platforms.map(({ key, icon: Icon }) => (
+              <div
+                className={
+                  "grid gap-2 " +
+                  (categoryPlatforms[categoryKey].length > 3 ? "grid-cols-2" : "grid-cols-3")
+                }
+              >
+                {categoryPlatforms[categoryKey].map(({ key, icon: Icon }) => (
                   <button
                     key={key}
                     onClick={() => setPlatform(key)}

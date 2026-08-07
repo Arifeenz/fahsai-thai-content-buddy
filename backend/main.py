@@ -1244,7 +1244,23 @@ def rate_my_example_post(post_id: int, body: ExamplePostRatingWrite, request: Re
     return example_post_to_dict(row)
 
 
-PLATFORM_LABELS = {"facebook": "Facebook", "line": "LINE OA", "instagram": "Instagram"}
+PLATFORM_LABELS = {
+    "facebook": "Facebook",
+    "line": "LINE OA",
+    "instagram": "Instagram",
+    "tiktok": "TikTok",
+    "youtube": "YouTube",
+}
+# Appended to the platform line in generation prompts so style/length guidance
+# scales with whatever platforms a business category actually offers, instead
+# of the prompt silently saying nothing for tiktok/youtube.
+PLATFORM_STYLE_HINTS = {
+    "facebook": "Facebook เขียนได้ยาวหน่อย",
+    "line": "LINE OA กระชับเป็นกันเอง",
+    "instagram": "Instagram ใช้แฮชแท็กได้",
+    "tiktok": "TikTok สั้น กระชับ มีประโยคตะขอความสนใจ (hook) ตั้งแต่บรรทัดแรก ใช้แฮชแท็กเยอะได้",
+    "youtube": "YouTube เขียนแบบคำโปรยวิดีโอ บอกว่าคลิปนี้มีอะไร ชวนกดติดตาม/กดกระดิ่ง",
+}
 TONE_LABELS = {
     "friendly": "เป็นกันเอง",
     "professional": "ทางการ",
@@ -1288,6 +1304,19 @@ def generate_content(body: GenerateRequest, request: Request):
         if budget_exceeded:
             log_security_event("openai_budget_exceeded", f"user:{user['id']}", "/generate")
         if not templates:
+            # A category's exact (category, platform) pair may have no
+            # authored fallback yet -- e.g. a newly-added platform for that
+            # category -- so widen to any platform for this category before
+            # giving up, rather than 404ing on something a human would
+            # consider "close enough" while the real AI is down anyway. Only
+            # do this when a category is actually set: list_prompt_templates
+            # treats a falsy business_category as "don't filter by category
+            # at all", so without this guard a user with no category picked
+            # yet would widen to every template in the table, not "closest
+            # match for their business."
+            if user["business_category"]:
+                templates = list_prompt_templates(business_category=user["business_category"])
+        if not templates:
             raise HTTPException(
                 status_code=404,
                 detail="ยังไม่มี prompt template สำหรับแพลตฟอร์มนี้ — ให้แอดมินเพิ่มก่อนนะคะ",
@@ -1317,6 +1346,9 @@ def generate_content(body: GenerateRequest, request: Request):
             f"{style_examples}\n---\n{post_captions}" if style_examples else post_captions
         )
     platform_label = PLATFORM_LABELS.get(body.platform, body.platform)
+    platform_style_hint = PLATFORM_STYLE_HINTS.get(
+        body.platform, f"{platform_label} เขียนให้เหมาะกับแพลตฟอร์มนี้"
+    )
     tone_label = TONE_LABELS.get(body.tone or "", body.tone or "เป็นกันเอง")
     category_label = BUSINESS_CATEGORY_LABELS.get(
         user["business_category"], user["business_category"] or "ไม่ระบุ"
@@ -1338,7 +1370,7 @@ def generate_content(body: GenerateRequest, request: Request):
 - บุคลิกแบรนด์: {dna["tone"] or "ไม่ระบุ"}
 - กลุ่มลูกค้าเป้าหมาย: {dna["audience"] or "ไม่ระบุ"}
 
-โพสต์นี้จะลงแพลตฟอร์ม {platform_label} ด้วยโทน "{tone_label}" ให้ความยาวและสไตล์เหมาะกับแพลตฟอร์มนั้น (Facebook เขียนได้ยาวหน่อย, LINE OA กระชับเป็นกันเอง, Instagram ใช้แฮชแท็กได้)
+โพสต์นี้จะลงแพลตฟอร์ม {platform_label} ด้วยโทน "{tone_label}" ให้ความยาวและสไตล์เหมาะกับแพลตฟอร์มนั้น ({platform_style_hint})
 
 {examples_section}
 
@@ -1437,6 +1469,9 @@ def generate_from_image(
 
     dna = get_brand_dna(user["id"])
     platform_label = PLATFORM_LABELS.get(platform, platform)
+    platform_style_hint = PLATFORM_STYLE_HINTS.get(
+        platform, f"{platform_label} เขียนให้เหมาะกับแพลตฟอร์มนี้"
+    )
     tone_label = TONE_LABELS.get(tone or "", tone or "เป็นกันเอง")
     category_label = BUSINESS_CATEGORY_LABELS.get(
         user["business_category"], user["business_category"] or "ไม่ระบุ"
@@ -1456,7 +1491,7 @@ def generate_from_image(
 
 ร้านแนบรูปภาพมาให้ {len(image_urls)} รูป ดูรูปเหล่านี้แล้วเขียนแคปชั่นโปรโมตสิ่งที่เห็น ให้เหมาะกับร้าน{context_line}
 
-โพสต์นี้จะลงแพลตฟอร์ม {platform_label} ด้วยโทน "{tone_label}" ให้ความยาวและสไตล์เหมาะกับแพลตฟอร์มนั้น (Facebook เขียนได้ยาวหน่อย, LINE OA กระชับเป็นกันเอง, Instagram ใช้แฮชแท็กได้)
+โพสต์นี้จะลงแพลตฟอร์ม {platform_label} ด้วยโทน "{tone_label}" ให้ความยาวและสไตล์เหมาะกับแพลตฟอร์มนั้น ({platform_style_hint})
 
 ตอบกลับด้วยข้อความโพสต์เท่านั้น ไม่ต้องมีคำอธิบายอื่น"""
 

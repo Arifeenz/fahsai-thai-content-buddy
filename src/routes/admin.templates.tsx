@@ -25,7 +25,7 @@ export const Route = createFileRoute("/admin/templates")({
   component: AdminTemplatesPage,
 });
 
-const platforms: Platform[] = ["facebook", "line", "instagram"];
+const platforms: Platform[] = ["facebook", "line", "instagram", "tiktok", "youtube"];
 const tones: Tone[] = ["friendly", "professional", "playful", "promo"];
 
 const emptyForm = {

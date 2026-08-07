@@ -1,4 +1,4 @@
-export type Platform = "facebook" | "line" | "instagram";
+export type Platform = "facebook" | "line" | "instagram" | "tiktok" | "youtube";
 export type Tone = "friendly" | "professional" | "playful" | "promo";
 export type ContentStatus = "draft" | "approved" | "posted";
 export type ContentFeedback = "good" | "neutral" | "bad";
@@ -634,6 +634,8 @@ export const platformLabel: Record<Platform, string> = {
   facebook: "Facebook",
   line: "LINE OA",
   instagram: "Instagram",
+  tiktok: "TikTok",
+  youtube: "YouTube",
 };
 
 export const statusLabel: Record<ContentStatus, string> = {
