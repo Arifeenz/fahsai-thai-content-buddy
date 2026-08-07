@@ -10,11 +10,22 @@ import {
   type AdminExamplePost,
   type Platform,
 } from "@/lib/api";
+import { categoryPlatforms, likeCountLabel, type CategoryKey } from "@/lib/category-platforms";
 import { AppShell, PageHeader } from "@/components/app-shell";
 import { useRequireAdmin } from "@/lib/admin-guard";
+import { useScreenCapture } from "@/components/screen-capture";
 import { StarRating } from "@/components/star-rating";
 import { Pagination } from "@/components/pagination";
-import { ImagePlus, Trash2, ArrowUpCircle, Pencil, Search } from "lucide-react";
+import {
+  ImagePlus,
+  Trash2,
+  ArrowUpCircle,
+  Pencil,
+  Search,
+  Heart,
+  Camera,
+  Loader2,
+} from "lucide-react";
 
 export const Route = createFileRoute("/admin/examples")({
   head: () => ({
@@ -34,6 +45,7 @@ const emptyForm = {
   businessCategory: "food_beverage" as string,
   platform: "facebook" as Platform,
   caption: "",
+  likeCount: "",
 };
 
 function AdminExamplesPage() {
@@ -44,6 +56,23 @@ function AdminExamplesPage() {
   const [file, setFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [editingImageUrl, setEditingImageUrl] = useState<string | null>(null);
+  const [isDraggingImage, setIsDraggingImage] = useState(false);
+  const [extracting, setExtracting] = useState(false);
+
+  const platformsForForm =
+    categoryPlatforms[
+      form.businessCategory in categoryPlatforms ? (form.businessCategory as CategoryKey) : "default"
+    ];
+
+  // A platform picked under a different category may not exist in the newly
+  // selected category's list -- fall back to that category's first option
+  // instead of leaving a stale, no-longer-offered platform selected.
+  useEffect(() => {
+    if (!platformsForForm.some((p) => p.key === form.platform)) {
+      setForm((f) => ({ ...f, platform: platformsForForm[0].key }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.businessCategory]);
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -109,6 +138,7 @@ function AdminExamplesPage() {
       businessCategory: post.business_category ?? "food_beverage",
       platform: post.platform,
       caption: post.caption,
+      likeCount: post.like_count != null ? String(post.like_count) : "",
     });
     // A promoted personal post can carry a free-text category outside the
     // 3 official options this <select> offers — the dropdown will just show
@@ -118,12 +148,39 @@ function AdminExamplesPage() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
+  // Any of the 3 image-input paths (click-select, drag&drop, screen capture)
+  // funnel through here. Only auto-reads the screenshot for a brand-new
+  // entry -- when editing an existing post the caption/like count already
+  // hold real data tuned by hand, so a re-upload there stays manual to
+  // avoid silently clobbering it.
+  async function handleImageAttached(newFile: File) {
+    setFile(newFile);
+    if (form.id) return;
+    setExtracting(true);
+    try {
+      const result = await api.extractExamplePost(newFile);
+      if (result.caption) setForm((f) => ({ ...f, caption: result.caption }));
+      if (result.like_count != null) {
+        setForm((f) => ({ ...f, likeCount: String(result.like_count) }));
+      }
+      if (result.platform) setForm((f) => ({ ...f, platform: result.platform! }));
+      toast.success("อ่านข้อมูลจากภาพให้แล้วค่ะ เช็คความถูกต้องก่อนบันทึกนะคะ");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "อ่านภาพไม่สำเร็จ ลองกรอกเองนะคะ");
+    } finally {
+      setExtracting(false);
+    }
+  }
+
+  const { startScreenCapture, captureDialog } = useScreenCapture(handleImageAttached);
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       const formData = new FormData();
       formData.append("business_category", form.businessCategory);
       formData.append("platform", form.platform);
       formData.append("caption", form.caption);
+      if (form.likeCount.trim()) formData.append("like_count", form.likeCount.trim());
       if (file) formData.append("image", file);
       return form.id
         ? api.adminUpdateExamplePost(form.id, formData)
@@ -191,9 +248,9 @@ function AdminExamplesPage() {
             onChange={(e) => setForm({ ...form, platform: e.target.value as Platform })}
             className="rounded-full border border-border bg-input px-3 py-2 text-sm"
           >
-            {platforms.map((p) => (
-              <option key={p} value={p}>
-                {platformLabel[p]}
+            {platformsForForm.map(({ key }) => (
+              <option key={key} value={key}>
+                {platformLabel[key]}
               </option>
             ))}
           </select>
@@ -204,21 +261,71 @@ function AdminExamplesPage() {
             placeholder="ข้อความตัวอย่างโพสต์ที่ไปหามา..."
             className="rounded-xl border border-border bg-input p-3 text-sm md:col-span-2"
           />
+          <input
+            type="number"
+            min={0}
+            value={form.likeCount}
+            onChange={(e) => setForm({ ...form, likeCount: e.target.value })}
+            placeholder={likeCountLabel[form.platform]}
+            className="rounded-full border border-border bg-input px-4 py-2 text-sm outline-none placeholder:text-muted-foreground focus:border-teal md:col-span-2"
+          />
+          {!form.id && (
+            <p className="text-xs text-muted-foreground md:col-span-2">
+              แคปหน้าจอหรือลากรูปโพสต์ที่เจอมาวางได้เลย ให้ AI อ่านแคปชั่น/ยอดไลค์ให้อัตโนมัติ
+              แล้วค่อยเช็ค/แก้ก่อนบันทึก
+            </p>
+          )}
           <div className="flex flex-wrap items-center gap-3 md:col-span-2">
             {editingImageUrl && !file && (
               <img src={editingImageUrl} alt="" className="h-9 w-9 rounded-lg object-cover" />
             )}
-            <label className="flex cursor-pointer items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-muted-foreground hover:text-foreground">
+            <label
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDraggingImage(true);
+              }}
+              onDragLeave={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDraggingImage(false);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDraggingImage(false);
+                const dropped = e.dataTransfer.files?.[0];
+                if (dropped && dropped.type.startsWith("image/")) handleImageAttached(dropped);
+              }}
+              className={
+                "flex cursor-pointer items-center gap-2 rounded-full border px-4 py-2 text-sm transition " +
+                (isDraggingImage
+                  ? "border-teal bg-teal/10 text-teal"
+                  : "border-border text-muted-foreground hover:text-foreground")
+              }
+            >
               <ImagePlus className="h-4 w-4" />
-              {file ? file.name : editingImageUrl ? "เปลี่ยนรูปภาพ" : "แนบรูปภาพ (ถ้ามี)"}
+              {file ? file.name : editingImageUrl ? "เปลี่ยนรูปภาพ" : "แนบ/ลากรูปภาพมาวาง (ถ้ามี)"}
               <input
                 ref={fileInputRef}
                 type="file"
                 accept="image/*"
                 className="hidden"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                onChange={(e) => {
+                  const picked = e.target.files?.[0];
+                  if (picked) handleImageAttached(picked);
+                  e.target.value = "";
+                }}
               />
             </label>
+            <button
+              type="button"
+              onClick={startScreenCapture}
+              className="flex items-center gap-2 rounded-full border border-dashed border-border px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
+            >
+              <Camera className="h-4 w-4" /> จับภาพหน้าจอ
+            </button>
+            {extracting && (
+              <span className="flex items-center gap-1.5 text-xs text-teal">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> กำลังอ่านข้อมูลจากภาพ...
+              </span>
+            )}
             <div className="ml-auto flex gap-2">
               {form.id && (
                 <button
@@ -231,7 +338,7 @@ function AdminExamplesPage() {
               )}
               <button
                 onClick={() => saveMutation.mutate()}
-                disabled={!form.caption.trim() || saveMutation.isPending}
+                disabled={!form.caption.trim() || saveMutation.isPending || extracting}
                 className="btn-gold rounded-full px-5 py-2 text-sm disabled:opacity-60"
               >
                 {form.id ? "บันทึกการแก้ไข" : "เพิ่มเข้าคลังกลาง"}
@@ -239,6 +346,7 @@ function AdminExamplesPage() {
             </div>
           </div>
         </div>
+        {captureDialog}
 
         <div className="glass-card mb-4 flex flex-wrap items-center gap-3 rounded-2xl p-4">
           <div className="relative min-w-0 flex-1">
@@ -318,6 +426,12 @@ function AdminExamplesPage() {
                   <span className="rounded-full bg-white/5 px-2.5 py-0.5 text-[11px] text-muted-foreground">
                     {categoryDisplayLabel(post.business_category)}
                   </span>
+                  {post.like_count != null && (
+                    <span className="flex items-center gap-1 rounded-full bg-white/5 px-2.5 py-0.5 text-[11px] text-muted-foreground">
+                      <Heart className="h-3 w-3" />
+                      {post.like_count.toLocaleString()}
+                    </span>
+                  )}
                   {post.is_personal && (
                     <span className="text-[11px] text-muted-foreground">
                       {post.owner_name} • {post.owner_email}

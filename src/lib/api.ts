@@ -542,6 +542,13 @@ export const api = {
     const { posts } = await request<{ posts: ExamplePost[] }>("/example-posts");
     return posts;
   },
+  async extractExamplePost(
+    imageFile: File,
+  ): Promise<{ caption: string; like_count: number | null; platform: Platform | null }> {
+    const formData = new FormData();
+    formData.append("image", imageFile);
+    return requestForm("/example-posts/extract", formData);
+  },
   async createExamplePost(formData: FormData): Promise<ExamplePost> {
     return requestForm("/example-posts", formData);
   },

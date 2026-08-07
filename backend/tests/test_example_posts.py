@@ -1,7 +1,27 @@
+import io
+import json
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
+from PIL import Image
+
+import main
+
+
 def signup(client, email):
     return client.post(
         "/auth/signup", json={"name": "Test", "email": email, "password": "testpass123"}
     )
+
+
+def fake_image_file():
+    # A real, PIL-decodable JPEG -- unlike other tests in this suite, the
+    # extract endpoint validates by actually trying to decode the bytes
+    # (see resize_and_compress_image), so plain placeholder bytes won't do.
+    buf = io.BytesIO()
+    Image.new("RGB", (20, 20), color="blue").save(buf, format="JPEG")
+    buf.seek(0)
+    return {"image": ("screenshot.jpg", buf, "image/jpeg")}
 
 
 def create_personal_example(client):
@@ -162,3 +182,78 @@ def test_example_posts_selection_mode_accepts_likes(client):
     res = client.patch("/me/example-selection-mode", json={"example_selection_mode": "likes"})
     assert res.status_code == 200
     assert res.json()["user"]["example_selection_mode"] == "likes"
+
+
+def test_extract_example_post_returns_parsed_fields(client, monkeypatch):
+    signup(client, "user@test.local")
+
+    fake_response = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(
+                    content=json.dumps(
+                        {"caption": "แคปชั่นทดสอบ", "like_count": 1234, "platform": "instagram"}
+                    )
+                )
+            )
+        ],
+        usage=SimpleNamespace(prompt_tokens=100, completion_tokens=50),
+    )
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = fake_response
+    monkeypatch.setattr(main, "openai_client", fake_client)
+
+    res = client.post("/example-posts/extract", files=fake_image_file())
+    assert res.status_code == 200
+    body = res.json()
+    assert body["caption"] == "แคปชั่นทดสอบ"
+    assert body["like_count"] == 1234
+    assert body["platform"] == "instagram"
+
+
+def test_extract_example_post_ignores_invalid_platform(client, monkeypatch):
+    signup(client, "user@test.local")
+
+    fake_response = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(
+                    content=json.dumps(
+                        {"caption": "test", "like_count": None, "platform": "not-a-real-platform"}
+                    )
+                )
+            )
+        ],
+        usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
+    )
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = fake_response
+    monkeypatch.setattr(main, "openai_client", fake_client)
+
+    res = client.post("/example-posts/extract", files=fake_image_file())
+    assert res.status_code == 200
+    assert res.json()["platform"] is None
+
+
+def test_extract_example_post_rejects_non_image(client, monkeypatch):
+    signup(client, "user@test.local")
+    monkeypatch.setattr(main, "openai_client", MagicMock())
+
+    res = client.post(
+        "/example-posts/extract",
+        files={"image": ("not-a-photo.txt", io.BytesIO(b"just some text"), "text/plain")},
+    )
+    assert res.status_code == 400
+
+
+def test_extract_example_post_requires_auth(client):
+    res = client.post("/example-posts/extract", files=fake_image_file())
+    assert res.status_code == 401
+
+
+def test_extract_example_post_503_when_no_api_key(client):
+    signup(client, "user@test.local")
+    # conftest.py forces OPENAI_API_KEY="" for tests, so openai_client is
+    # already None here without any monkeypatch.
+    res = client.post("/example-posts/extract", files=fake_image_file())
+    assert res.status_code == 503

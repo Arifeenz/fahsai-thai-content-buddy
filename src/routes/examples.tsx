@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -11,10 +11,12 @@ import {
   type Platform,
   type BusinessCategory,
 } from "@/lib/api";
+import { categoryPlatforms, likeCountLabel } from "@/lib/category-platforms";
 import { AppShell, PageHeader, useCurrentUser } from "@/components/app-shell";
 import { useRequireAuth } from "@/lib/auth-guard";
+import { useScreenCapture } from "@/components/screen-capture";
 import { StarRating } from "@/components/star-rating";
-import { ImagePlus, Trash2, Pencil, Facebook, Instagram, MessageCircle, Heart } from "lucide-react";
+import { ImagePlus, Trash2, Pencil, Heart, Camera, Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/examples")({
   head: () => ({
@@ -25,12 +27,6 @@ export const Route = createFileRoute("/examples")({
   }),
   component: ExamplesPage,
 });
-
-const platforms: { key: Platform; icon: any }[] = [
-  { key: "facebook", icon: Facebook },
-  { key: "line", icon: MessageCircle },
-  { key: "instagram", icon: Instagram },
-];
 
 function ExamplesPage() {
   const { ready } = useRequireAuth();
@@ -50,10 +46,25 @@ function ExamplesPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [categoryOption, setCategoryOption] = useState<BusinessCategory | "other" | null>(null);
   const [customCategory, setCustomCategory] = useState("");
+  const [isDraggingImage, setIsDraggingImage] = useState(false);
+  const [extracting, setExtracting] = useState(false);
 
   const effectiveCategoryOption = categoryOption ?? user?.business_category ?? "food_beverage";
   const resolvedCategory =
     effectiveCategoryOption === "other" ? customCategory.trim() : effectiveCategoryOption;
+  const platformsForCategory =
+    categoryPlatforms[effectiveCategoryOption === "other" ? "default" : effectiveCategoryOption];
+
+  // A platform picked while a different category was selected (e.g. LINE OA
+  // under "streamer" before switching to "online_shop") may not exist in the
+  // new category's list -- fall back to that category's first option instead
+  // of leaving a stale, no-longer-offered platform selected.
+  useEffect(() => {
+    if (!platformsForCategory.some((p) => p.key === platform)) {
+      setPlatform(platformsForCategory[0].key);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveCategoryOption]);
 
   function resetForm() {
     setEditingId(null);
@@ -79,6 +90,30 @@ function ExamplesPage() {
     setCategoryOption(isOfficial ? (post.business_category as BusinessCategory) : "other");
     setCustomCategory(isOfficial ? "" : (post.business_category ?? ""));
   }
+
+  // Any of the 3 image-input paths (click-select, drag&drop, screen capture)
+  // funnel through here. Only auto-reads the screenshot for a brand-new
+  // entry -- when editing an existing post the caption/like count already
+  // hold real data the user tuned by hand, so a re-upload there stays
+  // manual to avoid silently clobbering it.
+  async function handleImageAttached(newFile: File) {
+    setFile(newFile);
+    if (editingId) return;
+    setExtracting(true);
+    try {
+      const result = await api.extractExamplePost(newFile);
+      if (result.caption) setCaption(result.caption);
+      if (result.like_count != null) setLikeCount(String(result.like_count));
+      if (result.platform) setPlatform(result.platform);
+      toast.success("อ่านข้อมูลจากภาพให้แล้วค่ะ เช็คความถูกต้องก่อนบันทึกนะคะ");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "อ่านภาพไม่สำเร็จ ลองกรอกเองนะคะ");
+    } finally {
+      setExtracting(false);
+    }
+  }
+
+  const { startScreenCapture, captureDialog } = useScreenCapture(handleImageAttached);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -147,23 +182,6 @@ function ExamplesPage() {
         />
 
         <div className="glass-card mb-6 rounded-2xl p-5">
-          <div className="mb-3 flex gap-2">
-            {platforms.map(({ key, icon: Icon }) => (
-              <button
-                key={key}
-                onClick={() => setPlatform(key)}
-                className={
-                  "flex items-center gap-2 rounded-full border px-4 py-2 text-sm " +
-                  (platform === key
-                    ? "border-teal bg-teal/15 text-teal"
-                    : "border-border text-muted-foreground hover:text-foreground")
-                }
-              >
-                <Icon className="h-4 w-4" />
-                {platformLabel[key]}
-              </button>
-            ))}
-          </div>
           <div className="mb-3 flex flex-wrap gap-2">
             <select
               value={effectiveCategoryOption}
@@ -186,6 +204,23 @@ function ExamplesPage() {
               />
             )}
           </div>
+          <div className="mb-3 flex gap-2">
+            {platformsForCategory.map(({ key, icon: Icon }) => (
+              <button
+                key={key}
+                onClick={() => setPlatform(key)}
+                className={
+                  "flex items-center gap-2 rounded-full border px-4 py-2 text-sm " +
+                  (platform === key
+                    ? "border-teal bg-teal/15 text-teal"
+                    : "border-border text-muted-foreground hover:text-foreground")
+                }
+              >
+                <Icon className="h-4 w-4" />
+                {platformLabel[key]}
+              </button>
+            ))}
+          </div>
           <textarea
             value={caption}
             onChange={(e) => setCaption(e.target.value)}
@@ -198,24 +233,66 @@ function ExamplesPage() {
             min={0}
             value={likeCount}
             onChange={(e) => setLikeCount(e.target.value)}
-            placeholder="ยอดไลค์ของโพสต์นี้ (ถ้าทราบ)"
+            placeholder={likeCountLabel[platform]}
             className="mt-3 w-full rounded-full border border-border bg-input px-4 py-2 text-sm outline-none placeholder:text-muted-foreground focus:border-teal"
           />
+          {!editingId && (
+            <p className="mb-3 text-xs text-muted-foreground">
+              แคปหน้าจอหรือลากรูปโพสต์ที่เจอมาวางได้เลย ให้ AI อ่านแคปชั่น/ยอดไลค์ให้อัตโนมัติ
+              แล้วค่อยเช็ค/แก้ก่อนบันทึก
+            </p>
+          )}
           <div className="mt-3 flex flex-wrap items-center gap-3">
             {editingImageUrl && !file && (
               <img src={editingImageUrl} alt="" className="h-9 w-9 rounded-lg object-cover" />
             )}
-            <label className="flex cursor-pointer items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-muted-foreground hover:text-foreground">
+            <label
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDraggingImage(true);
+              }}
+              onDragLeave={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDraggingImage(false);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDraggingImage(false);
+                const dropped = e.dataTransfer.files?.[0];
+                if (dropped && dropped.type.startsWith("image/")) handleImageAttached(dropped);
+              }}
+              className={
+                "flex cursor-pointer items-center gap-2 rounded-full border px-4 py-2 text-sm transition " +
+                (isDraggingImage
+                  ? "border-teal bg-teal/10 text-teal"
+                  : "border-border text-muted-foreground hover:text-foreground")
+              }
+            >
               <ImagePlus className="h-4 w-4" />
-              {file ? file.name : editingImageUrl ? "เปลี่ยนรูปภาพ" : "แนบรูปภาพ (ถ้ามี)"}
+              {file ? file.name : editingImageUrl ? "เปลี่ยนรูปภาพ" : "แนบ/ลากรูปภาพมาวาง (ถ้ามี)"}
               <input
                 ref={fileInputRef}
                 type="file"
                 accept="image/*"
                 className="hidden"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                onChange={(e) => {
+                  const picked = e.target.files?.[0];
+                  if (picked) handleImageAttached(picked);
+                  e.target.value = "";
+                }}
               />
             </label>
+            <button
+              type="button"
+              onClick={startScreenCapture}
+              className="flex items-center gap-2 rounded-full border border-dashed border-border px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
+            >
+              <Camera className="h-4 w-4" /> จับภาพหน้าจอ
+            </button>
+            {extracting && (
+              <span className="flex items-center gap-1.5 text-xs text-teal">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> กำลังอ่านข้อมูลจากภาพ...
+              </span>
+            )}
             <div className="ml-auto flex gap-2">
               {editingId && (
                 <button
@@ -228,7 +305,7 @@ function ExamplesPage() {
               )}
               <button
                 onClick={() => saveMutation.mutate()}
-                disabled={!caption.trim() || !resolvedCategory || saveMutation.isPending}
+                disabled={!caption.trim() || !resolvedCategory || saveMutation.isPending || extracting}
                 className="btn-gold rounded-full px-6 py-2 text-sm disabled:opacity-60"
               >
                 {editingId ? "บันทึกการแก้ไข" : "เพิ่มตัวอย่าง"}
@@ -236,6 +313,7 @@ function ExamplesPage() {
             </div>
           </div>
         </div>
+        {captureDialog}
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {posts.map((post) => (

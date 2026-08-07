@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import random
@@ -448,6 +449,19 @@ def days_until_next(month: int, day: int, today: date) -> int:
         return (this_year - today).days
     next_year = date(today.year + 1, month, day)
     return (next_year - today).days
+
+
+# This app is Thailand-only, so "today" for calendar/event countdown purposes
+# means the date in Bangkok (UTC+7, no DST), not the server's UTC date --
+# using UTC directly makes every event look one day later than it should
+# for the ~7 hours a day (00:00-07:00 Bangkok time) where the UTC calendar
+# date still lags a day behind Thailand's, since the frontend then adds the
+# backend's day-count onto the browser's own *local* "today".
+BANGKOK_OFFSET = timedelta(hours=7)
+
+
+def bangkok_today() -> date:
+    return (datetime.now(timezone.utc) + BANGKOK_OFFSET).date()
 
 
 def create_session_token(user_id: int) -> str:
@@ -1079,7 +1093,7 @@ def _event_headline(user: dict, event_row: dict) -> str | None:
 @app.get("/events/upcoming")
 def upcoming_event(request: Request):
     user = require_user(request)
-    today = datetime.now(timezone.utc).date()
+    today = bangkok_today()
     nearest = None
     nearest_days = None
     for row in get_all_events():
@@ -1147,7 +1161,7 @@ def get_daily_quote(request: Request):
 @app.get("/events")
 def list_my_events(request: Request):
     user = require_user(request)
-    today = datetime.now(timezone.utc).date()
+    today = bangkok_today()
     hide_global = bool(user["hide_global_events"])
     events = [
         event_to_dict(row, today) for row in list_events_for_user(user["id"], hide_global)
@@ -1164,7 +1178,7 @@ def list_my_events(request: Request):
 def create_my_event(body: EventCreate, request: Request):
     user = require_user(request)
     row = create_event(user["id"], body.name, body.month, body.day)
-    return event_to_dict(row, datetime.now(timezone.utc).date())
+    return event_to_dict(row, bangkok_today())
 
 
 @app.delete("/events/{event_id}")
@@ -1174,6 +1188,98 @@ def delete_my_event(event_id: int, request: Request):
     if not deleted:
         raise HTTPException(status_code=404, detail="Event not found")
     return {"ok": True}
+
+
+@app.post("/example-posts/extract")
+@limiter.limit("15/hour")
+def extract_example_post(request: Request, image: UploadFile = File(...)):
+    # Reads a screenshot of someone else's post and pulls out caption text,
+    # like/heart count, and a platform guess, so the add-example form can be
+    # pre-filled instead of typed by hand -- the user still reviews/edits
+    # before saving, this only removes the transcription step.
+    user = require_user(request)
+
+    contents = image.file.read()
+    if len(contents) > MAX_IMAGE_BYTES:
+        raise HTTPException(status_code=400, detail="ไฟล์รูปภาพใหญ่เกินไป (จำกัด 15MB นะคะ)")
+    resized = resize_and_compress_image(contents)
+    if resized is None:
+        raise HTTPException(status_code=400, detail="ไฟล์ต้องเป็นรูปภาพเท่านั้นนะคะ")
+
+    budget_exceeded = openai_client is not None and get_monthly_openai_spend() >= OPENAI_MONTHLY_BUDGET_USD
+    if openai_client is None or budget_exceeded:
+        # No sensible fallback -- reading arbitrary text/numbers out of a
+        # screenshot needs a real vision model, nothing to template here.
+        if budget_exceeded:
+            log_security_event(
+                "openai_budget_exceeded", f"user:{user['id']}", "/example-posts/extract"
+            )
+        raise HTTPException(
+            status_code=503,
+            detail="ระบบอ่านภาพอัตโนมัติไม่พร้อมใช้งานตอนนี้ ลองกรอกเองก่อนนะคะ",
+        )
+
+    data_url = "data:image/jpeg;base64," + base64.b64encode(resized).decode("ascii")
+    system_prompt = """คุณคือผู้ช่วยอ่านภาพหน้าจอโพสต์โซเชียลมีเดีย จากภาพที่ได้รับ ให้ดึงข้อมูลนี้ออกมา:
+- caption: ข้อความแคปชั่น/เนื้อหาโพสต์ที่เห็นในภาพ เขียนตามที่เห็นจริง (ถ้าอ่านไม่ออกให้เป็นสตริงว่าง "")
+- like_count: จำนวนไลค์/ถูกใจ/หัวใจที่เห็นในภาพ เป็นตัวเลขล้วนเท่านั้น (แปลง "1.2K" เป็น 1200, ถ้าไม่เห็นตัวเลขนี้ในภาพให้เป็น null)
+- platform: แพลตฟอร์มที่คาดว่าภาพนี้มาจาก เลือกได้เฉพาะ facebook, instagram, line, tiktok, youtube เท่านั้น (ถ้าไม่แน่ใจให้เป็น null)
+
+ตอบเป็น JSON เท่านั้น ไม่ต้องมีคำอธิบายอื่น รูปแบบ: {"caption": string, "like_count": number หรือ null, "platform": string หรือ null}"""
+
+    try:
+        response = openai_client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "อ่านภาพนี้แล้วดึงข้อมูลตามรูปแบบที่กำหนด"},
+                        # "high" detail, not "low" like the caption-generation
+                        # calls -- this needs to actually read small on-screen
+                        # text/numbers, not just describe the image generally.
+                        {"type": "image_url", "image_url": {"url": data_url, "detail": "high"}},
+                    ],
+                },
+            ],
+            response_format={"type": "json_object"},
+            max_tokens=800,
+            timeout=20,
+        )
+        parsed = json.loads(response.choices[0].message.content)
+        prompt_tokens = response.usage.prompt_tokens if response.usage else None
+        completion_tokens = response.usage.completion_tokens if response.usage else None
+    except Exception as exc:
+        print(f"[extract_example_post:openai_error] {type(exc).__name__}: {exc}")
+        sentry_sdk.capture_exception(exc)
+        raise HTTPException(status_code=502, detail="อ่านภาพไม่สำเร็จ ลองกรอกเองแทนนะคะ")
+
+    like_count = parsed.get("like_count")
+    like_count = int(like_count) if isinstance(like_count, (int, float)) else None
+    platform = parsed.get("platform")
+    platform = platform if platform in PLATFORM_LABELS else None
+    caption = str(parsed.get("caption") or "")
+
+    estimated_cost_usd = 0.0
+    if prompt_tokens is not None and completion_tokens is not None:
+        estimated_cost_usd = (prompt_tokens / 1_000_000) * OPENAI_INPUT_PRICE_PER_1M + (
+            completion_tokens / 1_000_000
+        ) * OPENAI_OUTPUT_PRICE_PER_1M
+    create_generation_log(
+        user["id"],
+        platform or "unknown",
+        None,
+        "[screenshot extraction]",
+        caption,
+        prompt_tokens,
+        completion_tokens,
+        estimated_cost_usd,
+        system_prompt,
+        mode="extract",
+    )
+
+    return {"caption": caption, "like_count": like_count, "platform": platform}
 
 
 @app.get("/example-posts")
@@ -1952,7 +2058,7 @@ def admin_promote_example_post(post_id: int, request: Request):
 @limiter.limit("60/minute")
 def admin_list_events(request: Request):
     require_admin(request)
-    today = datetime.now(timezone.utc).date()
+    today = bangkok_today()
     return {"events": [event_to_dict(row, today) for row in get_all_events()]}
 
 
@@ -1961,7 +2067,7 @@ def admin_list_events(request: Request):
 def admin_create_event(body: EventWrite, request: Request):
     require_admin(request)
     row = create_event(None, body.name, body.month, body.day, body.suggestion_text)
-    return event_to_dict(row, datetime.now(timezone.utc).date())
+    return event_to_dict(row, bangkok_today())
 
 
 @app.put("/admin/events/{event_id}")
@@ -1971,7 +2077,7 @@ def admin_update_event(event_id: int, body: EventWrite, request: Request):
     row = update_event(event_id, body.name, body.month, body.day, body.suggestion_text)
     if row is None:
         raise HTTPException(status_code=404, detail="Event not found")
-    return event_to_dict(row, datetime.now(timezone.utc).date())
+    return event_to_dict(row, bangkok_today())
 
 
 @app.delete("/admin/events/{event_id}")
