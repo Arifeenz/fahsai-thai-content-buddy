@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -65,6 +65,26 @@ const tones: { key: Tone; label: string }[] = [
   { key: "promo", label: "โปรโมชั่น" },
 ];
 
+const MONTH_LABELS = [
+  "ม.ค.",
+  "ก.พ.",
+  "มี.ค.",
+  "เม.ย.",
+  "พ.ค.",
+  "มิ.ย.",
+  "ก.ค.",
+  "ส.ค.",
+  "ก.ย.",
+  "ต.ค.",
+  "พ.ย.",
+  "ธ.ค.",
+];
+
+function formatThaiDate(iso: string): string {
+  const d = new Date(`${iso}T00:00:00`);
+  return `${d.getDate()} ${MONTH_LABELS[d.getMonth()]} ${d.getFullYear() + 543}`;
+}
+
 const MAX_PHOTOS = 3;
 // JPEG, not PNG: the backend rejects uploads over 5MB *before* it
 // re-compresses them, and a raw PNG screen capture blows past that easily.
@@ -110,6 +130,7 @@ const SHORT_PROMPT_THRESHOLD = 15;
 function CreateContent() {
   const { ready } = useRequireAuth();
   const user = useCurrentUser();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: dna } = useQuery({ queryKey: ["dna"], queryFn: () => api.getDna() });
   const [mode, setMode] = useState<Mode>("idea");
@@ -331,6 +352,11 @@ function CreateContent() {
     });
   }
 
+  function clearRequestedDate() {
+    setScheduleDate("");
+    navigate({ to: "/create", search: { prompt: requestedPrompt }, replace: true });
+  }
+
   function insertChip(insert: string) {
     setPrompt((prev) => (prev.trim() ? `${prev}\n${insert}` : insert));
     requestAnimationFrame(() => {
@@ -485,6 +511,20 @@ function CreateContent() {
     <AppShell>
       <div className="p-6 md:p-8">
         <PageHeader title="สร้างคอนเทนต์" subtitle="บอก FAHSAI สั้นๆ ว่าอยากได้โพสต์แบบไหน" />
+
+        {requestedDate && (
+          <div className="mb-6 flex flex-wrap items-center gap-2 rounded-xl border border-teal/30 bg-teal/10 px-4 py-2.5 text-sm text-teal">
+            <CalendarPlus className="h-4 w-4 shrink-0" />
+            กำลังเตรียมโพสต์สำหรับ {formatThaiDate(requestedDate)}
+            <button
+              type="button"
+              onClick={clearRequestedDate}
+              className="ml-auto shrink-0 text-xs underline hover:text-teal/80"
+            >
+              เปลี่ยนวันที่
+            </button>
+          </div>
+        )}
 
         <div className="grid gap-6 lg:grid-cols-2">
           {/* left: form */}

@@ -256,122 +256,142 @@ function SchedulePage() {
           </Link>
         </div>
 
-        <div className="glass-card rounded-2xl p-4">
-          <div className="grid grid-cols-7 gap-1 pb-2 text-center text-xs font-semibold text-muted-foreground">
-            {WEEKDAY_LABELS.map((w) => (
-              <div key={w}>{w}</div>
-            ))}
-          </div>
-          <div className="grid grid-cols-7 gap-1">
-            {calendarCells.map((cell) => {
-              const group = groupsByDate.get(cell.iso);
-              const hasContent = cell.inMonth && !!group?.items.length;
-              const hasEvent = cell.inMonth && !!group?.eventNames.length;
-              const isToday = cell.iso === todayIso();
-              const isSelected = cell.iso === selectedDate;
-              return (
-                <button
-                  key={cell.iso}
-                  type="button"
-                  disabled={!cell.inMonth}
-                  onClick={() => setSelectedDate(cell.iso)}
-                  aria-current={isToday ? "date" : undefined}
-                  aria-pressed={isSelected}
-                  className={
-                    "flex aspect-square flex-col items-center justify-center gap-1 rounded-xl text-sm transition " +
-                    (!cell.inMonth
-                      ? "text-muted-foreground/25"
-                      : isSelected
-                        ? "bg-teal font-bold text-teal-foreground"
-                        : isToday
-                          ? "font-semibold text-teal ring-1 ring-teal hover:bg-white/5"
-                          : "text-foreground hover:bg-white/5")
-                  }
-                >
-                  <span>{cell.day}</span>
-                  <span className="flex h-1.5 items-center gap-1">
-                    {hasEvent && <span className="h-1.5 w-1.5 rounded-full bg-gold" />}
-                    {hasContent && (
-                      <span
-                        className={
-                          "h-1.5 w-1.5 rounded-full " + (isSelected ? "bg-teal-foreground" : "bg-teal")
-                        }
-                      />
-                    )}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="glass-card mt-4 rounded-2xl p-5">
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <span className="font-bold">{formatThaiDate(selectedGroup.date)}</span>
-            {selectedGroup.isToday && (
-              <span className="rounded-full bg-teal/15 px-2.5 py-0.5 text-[11px] font-semibold text-teal">
-                วันนี้!
-              </span>
-            )}
-            {selectedGroup.eventNames.map((name) => (
-              <span
-                key={name}
-                className="inline-flex items-center gap-1 rounded-full bg-gold/15 px-2.5 py-0.5 text-[11px] text-gold"
-              >
-                <PartyPopper className="h-3 w-3" /> {name}
-              </span>
-            ))}
-          </div>
-
-          {selectedGroup.items.length === 0 ? (
-            <Link
-              to="/create"
-              search={{ date: selectedGroup.date }}
-              className="inline-flex items-center gap-1.5 text-xs text-teal hover:underline"
-            >
-              <CalendarPlus className="h-3.5 w-3.5" /> วางแผนโพสต์สำหรับ{" "}
-              {selectedGroup.isToday ? "วันนี้" : formatThaiDate(selectedGroup.date)}
-            </Link>
-          ) : (
-            <div className="grid gap-2">
-              {selectedGroup.items.map((it) => (
-                <div key={it.id} className="rounded-xl border border-border bg-input/40 p-3">
-                  <div className="mb-1.5 flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-white/5 px-2.5 py-0.5 text-[11px] text-muted-foreground">
-                      {platformLabel[it.platform]}
-                    </span>
-                    <StatusBadge status={it.status} />
-                  </div>
-                  <div className="line-clamp-2 text-sm leading-relaxed">{it.preview}</div>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    {it.status !== "posted" && (
-                      <button
-                        onClick={() => copyAndMarkPosted(it)}
-                        className="btn-gold inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs"
-                      >
-                        <Copy className="h-3.5 w-3.5" /> คัดลอกไปโพสต์
-                      </button>
-                    )}
-                    <input
-                      type="date"
-                      value={it.scheduledDate ?? ""}
-                      onChange={(e) =>
-                        rescheduleMutation.mutate({ id: it.id, date: e.target.value })
-                      }
-                      className="rounded-full border border-border bg-input px-2.5 py-1 text-xs outline-none focus:border-teal"
-                    />
-                    <button
-                      onClick={() => deleteMutation.mutate(it.id)}
-                      title="ลบออกจากตารางโพสต์"
-                      className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground hover:border-destructive hover:text-destructive"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
+        <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr] lg:items-start">
+          <div className="glass-card rounded-2xl p-4">
+            <div className="grid grid-cols-7 gap-1 pb-2 text-center text-xs font-semibold text-muted-foreground">
+              {WEEKDAY_LABELS.map((w) => (
+                <div key={w}>{w}</div>
               ))}
             </div>
-          )}
+            <div className="grid grid-cols-7 gap-1">
+              {calendarCells.map((cell) => {
+                const group = groupsByDate.get(cell.iso);
+                const hasContent = cell.inMonth && !!group?.items.length;
+                const hasEvent = cell.inMonth && !!group?.eventNames.length;
+                const isToday = cell.iso === todayIso();
+                const isSelected = cell.iso === selectedDate;
+                return (
+                  <button
+                    key={cell.iso}
+                    type="button"
+                    disabled={!cell.inMonth}
+                    onClick={() => setSelectedDate(cell.iso)}
+                    aria-current={isToday ? "date" : undefined}
+                    aria-pressed={isSelected}
+                    className={
+                      "flex min-h-[60px] flex-col items-start gap-1 rounded-lg p-1.5 text-left text-xs transition md:min-h-[84px] " +
+                      (!cell.inMonth
+                        ? "text-muted-foreground/25"
+                        : isSelected
+                          ? "bg-teal/10 ring-1 ring-teal"
+                          : "hover:bg-white/5")
+                    }
+                  >
+                    <span
+                      className={
+                        "grid h-5 w-5 shrink-0 place-items-center rounded-full " +
+                        (isToday ? "bg-teal font-bold text-teal-foreground" : "")
+                      }
+                    >
+                      {cell.day}
+                    </span>
+                    {cell.inMonth && (hasEvent || hasContent) && (
+                      <div className="flex w-full min-w-0 flex-col gap-0.5">
+                        <div className="flex gap-1 md:hidden">
+                          {hasEvent && <span className="h-1.5 w-1.5 rounded-full bg-gold" />}
+                          {hasContent && <span className="h-1.5 w-1.5 rounded-full bg-teal" />}
+                        </div>
+                        <div className="hidden md:flex md:flex-col md:gap-0.5">
+                          {group?.eventNames.slice(0, 2).map((name) => (
+                            <span
+                              key={name}
+                              className="truncate rounded bg-gold/20 px-1 py-0.5 text-[10px] leading-tight text-gold"
+                            >
+                              {name}
+                            </span>
+                          ))}
+                          {hasContent && (
+                            <span className="truncate rounded bg-teal/20 px-1 py-0.5 text-[10px] leading-tight text-teal">
+                              มีคอนเทนต์ {group?.items.length} รายการ
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="glass-card rounded-2xl p-5">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <span className="font-bold">{formatThaiDate(selectedGroup.date)}</span>
+              {selectedGroup.isToday && (
+                <span className="rounded-full bg-teal/15 px-2.5 py-0.5 text-[11px] font-semibold text-teal">
+                  วันนี้!
+                </span>
+              )}
+              {selectedGroup.eventNames.map((name) => (
+                <span
+                  key={name}
+                  className="inline-flex items-center gap-1 rounded-full bg-gold/15 px-2.5 py-0.5 text-[11px] text-gold"
+                >
+                  <PartyPopper className="h-3 w-3" /> {name}
+                </span>
+              ))}
+            </div>
+
+            {selectedGroup.items.length === 0 ? (
+              <Link
+                to="/create"
+                search={{ date: selectedGroup.date }}
+                className="inline-flex items-center gap-1.5 text-xs text-teal hover:underline"
+              >
+                <CalendarPlus className="h-3.5 w-3.5" /> วางแผนโพสต์สำหรับ{" "}
+                {selectedGroup.isToday ? "วันนี้" : formatThaiDate(selectedGroup.date)}
+              </Link>
+            ) : (
+              <div className="grid gap-2">
+                {selectedGroup.items.map((it) => (
+                  <div key={it.id} className="rounded-xl border border-border bg-input/40 p-3">
+                    <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-white/5 px-2.5 py-0.5 text-[11px] text-muted-foreground">
+                        {platformLabel[it.platform]}
+                      </span>
+                      <StatusBadge status={it.status} />
+                    </div>
+                    <div className="line-clamp-2 text-sm leading-relaxed">{it.preview}</div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {it.status !== "posted" && (
+                        <button
+                          onClick={() => copyAndMarkPosted(it)}
+                          className="btn-gold inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs"
+                        >
+                          <Copy className="h-3.5 w-3.5" /> คัดลอกไปโพสต์
+                        </button>
+                      )}
+                      <input
+                        type="date"
+                        value={it.scheduledDate ?? ""}
+                        onChange={(e) =>
+                          rescheduleMutation.mutate({ id: it.id, date: e.target.value })
+                        }
+                        className="rounded-full border border-border bg-input px-2.5 py-1 text-xs outline-none focus:border-teal"
+                      />
+                      <button
+                        onClick={() => deleteMutation.mutate(it.id)}
+                        title="ลบออกจากตารางโพสต์"
+                        className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground hover:border-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </AppShell>
