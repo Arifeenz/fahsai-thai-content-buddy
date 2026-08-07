@@ -1487,20 +1487,35 @@ def generate_video_script(body: VideoScriptRequest, request: Request):
     )
     menu_label = DNA_MENU_LABELS.get(user["business_category"], DNA_MENU_LABELS["food_beverage"])
 
+    # Same "actual voice, not just a described personality" reasoning as
+    # /generate -- past captions carry catchphrases/speech patterns that
+    # dna["tone"] alone can't, so a script grounded only in the abstract
+    # personality field reads generic even when that field is filled in.
+    example_post_rows = list_example_posts_for_generation(
+        user["id"], user["business_category"], body.platform, user["example_selection_mode"]
+    )
+    examples_section = ""
+    if example_post_rows:
+        post_captions = "\n---\n".join(p["caption"] for p in example_post_rows)
+        examples_section = f"ตัวอย่างโพสต์ที่ร้านเคยเขียน ใช้เป็นแนวทางน้ำเสียง/มุกที่ร้านนี้ใช้จริง ห้ามก็อปมาตรงๆ:\n{post_captions}"
+
     system_prompt = f"""คุณคือ FAHSAI ผู้ช่วยวางแผนถ่ายวิดีโอสั้น (TikTok/Reels/Shorts) ให้ร้าน SME ไทย เขียนเป็นภาษาไทยเท่านั้น
 
 ข้อมูลร้าน:
 - ประเภทร้าน: {category_label}
 - {menu_label}: {dna["menu"] or "ไม่ระบุ"}
+- จุดขาย/เอกลักษณ์ (USP): {dna["usp"] or "ไม่ระบุ"}
 - บุคลิกแบรนด์: {dna["tone"] or "ไม่ระบุ"}
 - กลุ่มลูกค้าเป้าหมาย: {dna["audience"] or "ไม่ระบุ"}
+
+{examples_section}
 
 แคปชั่นที่จะใช้คู่กับวิดีโอนี้ (ลงแพลตฟอร์ม {platform_label} โทน "{tone_label}"):
 {caption}
 
 จากแคปชั่นนี้ ช่วยวางสคริปวิดีโอสั้นความยาวประมาณ 15-30 วินาที แบ่งเป็นฉาก 2-4 ฉาก แต่ละฉากบอก:
 - ถ่ายอะไร มุมกล้องแบบไหน (เช่น โคลสอัพ, มุมสูง, ถ่ายมือทำ)
-- พูดหรือบรรยายว่าอะไร (บทพูดจริงที่พูดได้เลย ไม่ใช่คำแนะนำลอยๆ)
+- พูดหรือบรรยายว่าอะไร (บทพูดจริงที่พูดได้เลย ไม่ใช่คำแนะนำลอยๆ) ให้สะท้อนจุดขายและบุคลิกของร้านนี้โดยเฉพาะ ไม่ใช่บทพูดทั่วไปที่ร้านไหนก็พูดได้
 
 จบด้วยคำแนะนำสั้นๆ 1-2 ข้อ เช่น เพลงประกอบแนวไหน หรือจังหวะตัดต่อ
 

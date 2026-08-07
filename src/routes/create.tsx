@@ -1,6 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { z } from "zod";
 import {
@@ -111,6 +111,7 @@ function CreateContent() {
   const { ready } = useRequireAuth();
   const user = useCurrentUser();
   const queryClient = useQueryClient();
+  const { data: dna } = useQuery({ queryKey: ["dna"], queryFn: () => api.getDna() });
   const [mode, setMode] = useState<Mode>("idea");
   const [prompt, setPrompt] = useState("");
   const promptRef = useRef<HTMLTextAreaElement>(null);
@@ -146,6 +147,12 @@ function CreateContent() {
 
   const categoryKey: CategoryKey = user?.business_category ?? "default";
   const { date: requestedDate, prompt: requestedPrompt } = Route.useSearch();
+  // Only the fields the video-script prompt actually reads -- if these are
+  // empty the script falls back to "ไม่ระบุ" and reads generic, so nudge
+  // toward filling them in specifically (not the full 5-field DNA form).
+  const dnaMissingForScript = dna
+    ? !dna.usp?.trim() || !dna.tone?.trim() || !dna.audience?.trim()
+    : false;
 
   useEffect(() => {
     if (requestedDate) setScheduleDate(requestedDate);
@@ -814,6 +821,76 @@ function CreateContent() {
                   </span>
                 </div>
 
+                <div className="mt-5 rounded-2xl border border-teal/25 bg-gradient-to-br from-teal/10 via-transparent to-gold/10 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-gold/30 to-teal/30 text-gold">
+                        <Clapperboard className="h-4.5 w-4.5" />
+                      </div>
+                      <div className="text-sm font-semibold">สคริปวิดีโอสั้น</div>
+                    </div>
+                    {!videoScript && (
+                      <button
+                        type="button"
+                        onClick={handleGenerateVideoScript}
+                        disabled={videoScriptLoading}
+                        className="btn-gold inline-flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 text-xs disabled:opacity-60"
+                      >
+                        {videoScriptLoading ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Clapperboard className="h-3.5 w-3.5" />
+                        )}
+                        {videoScriptLoading ? "กำลังวางสคริป..." : "สร้างสคริปวิดีโอสั้น"}
+                      </button>
+                    )}
+                  </div>
+
+                  {videoScript ? (
+                    <>
+                      <textarea
+                        value={videoScript}
+                        onChange={(e) => setVideoScript(e.target.value)}
+                        rows={8}
+                        className="mt-3 w-full resize-none rounded-lg border border-border bg-input p-3 text-sm leading-relaxed outline-none focus:border-teal"
+                      />
+                      <div className="mt-3 flex flex-wrap items-center gap-3">
+                        <button
+                          onClick={async () => {
+                            await navigator.clipboard.writeText(videoScript);
+                            toast.success("คัดลอกสคริปวิดีโอแล้วค่ะ");
+                          }}
+                          className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm hover:bg-white/5"
+                        >
+                          <Copy className="h-4 w-4" /> คัดลอกสคริป
+                        </button>
+                        <button
+                          onClick={handleGenerateVideoScript}
+                          disabled={videoScriptLoading}
+                          className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm hover:bg-white/5 disabled:opacity-60"
+                        >
+                          <RefreshCw className="h-4 w-4" /> วางสคริปใหม่
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="mt-2 pl-12 text-xs text-muted-foreground">
+                        ใช้บุคลิก จุดเด่น และตัวอย่างโพสต์ของร้านคุณช่วยวางบท ให้ได้สคริปที่เป็นเสียงของร้านคุณจริงๆ
+                        ไม่ใช่บทถ่ายวิดีโอทั่วไป
+                      </p>
+                      {dnaMissingForScript && (
+                        <p className="mt-2 pl-12 text-xs text-gold">
+                          <Link to="/brand-dna" className="underline hover:text-gold/80">
+                            เติมอัตลักษณ์แบรนด์ให้ครบ
+                          </Link>{" "}
+                          ก่อน จะได้สคริปที่เป็นตัวคุณมากขึ้น
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+
                 {imagePrompt && (
                   <div className="mt-5 rounded-xl border border-dashed border-border bg-input/40 p-4">
                     <div className="mb-2 text-sm font-semibold">
@@ -877,61 +954,6 @@ function CreateContent() {
                     </div>
                   </div>
                 )}
-
-                <div className="mt-5 rounded-xl border border-dashed border-border bg-input/40 p-4">
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <div className="text-sm font-semibold">สคริปวิดีโอสั้น</div>
-                    {!videoScript && (
-                      <button
-                        type="button"
-                        onClick={handleGenerateVideoScript}
-                        disabled={videoScriptLoading}
-                        className="btn-gold inline-flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 text-xs disabled:opacity-60"
-                      >
-                        {videoScriptLoading ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Clapperboard className="h-3.5 w-3.5" />
-                        )}
-                        {videoScriptLoading ? "กำลังวางสคริป..." : "สร้างสคริปวิดีโอสั้น"}
-                      </button>
-                    )}
-                  </div>
-
-                  {videoScript ? (
-                    <>
-                      <textarea
-                        value={videoScript}
-                        onChange={(e) => setVideoScript(e.target.value)}
-                        rows={8}
-                        className="w-full resize-none rounded-lg border border-border bg-input p-3 text-sm leading-relaxed outline-none focus:border-teal"
-                      />
-                      <div className="mt-3 flex flex-wrap items-center gap-3">
-                        <button
-                          onClick={async () => {
-                            await navigator.clipboard.writeText(videoScript);
-                            toast.success("คัดลอกสคริปวิดีโอแล้วค่ะ");
-                          }}
-                          className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm hover:bg-white/5"
-                        >
-                          <Copy className="h-4 w-4" /> คัดลอกสคริป
-                        </button>
-                        <button
-                          onClick={handleGenerateVideoScript}
-                          disabled={videoScriptLoading}
-                          className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm hover:bg-white/5 disabled:opacity-60"
-                        >
-                          <RefreshCw className="h-4 w-4" /> วางสคริปใหม่
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      ให้ FAHSAI ช่วยแนะนำว่าควรถ่ายฉากไหน มุมกล้องแบบไหน และพูดอะไรบ้าง
-                      สำหรับทำวิดีโอสั้นคู่กับโพสต์นี้
-                    </p>
-                  )}
-                </div>
               </>
             ) : (
               <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-dashed border-border text-center">
