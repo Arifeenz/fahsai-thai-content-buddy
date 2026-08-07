@@ -2,11 +2,20 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { api, platformLabel, type ContentItem } from "@/lib/api";
+import { api, platformLabel, type ContentItem, type EventItem } from "@/lib/api";
 import { AppShell, PageHeader } from "@/components/app-shell";
 import { useRequireAuth } from "@/lib/auth-guard";
+import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer";
 import { StatusBadge } from "./dashboard";
-import { CalendarPlus, ChevronLeft, ChevronRight, Copy, Trash2, PartyPopper } from "lucide-react";
+import {
+  CalendarPlus,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  Trash2,
+  PartyPopper,
+  Sparkles,
+} from "lucide-react";
 
 export const Route = createFileRoute("/schedule")({
   head: () => ({
@@ -54,6 +63,9 @@ const MONTH_FULL_LABELS = [
 // Sunday-first, matching the convention Thai calendars use (unlike the
 // Monday-first ISO week).
 const WEEKDAY_LABELS = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
+// lg breakpoint (Tailwind default) -- below this, a tapped day opens the
+// detail sheet instead of relying on the always-visible desktop panel.
+const DESKTOP_BREAKPOINT_PX = 1024;
 
 function dateToIso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -77,7 +89,7 @@ function formatThaiDate(iso: string): string {
 interface DateGroup {
   date: string;
   isToday: boolean;
-  eventNames: string[];
+  events: EventItem[];
   items: ContentItem[];
 }
 
@@ -129,6 +141,7 @@ function SchedulePage() {
     return d;
   });
   const [selectedDate, setSelectedDate] = useState(() => todayIso());
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
 
   const groupsByDate = useMemo(() => {
     const today = todayIso();
@@ -136,7 +149,7 @@ function SchedulePage() {
     const getGroup = (date: string) => {
       let group = map.get(date);
       if (!group) {
-        group = { date, isToday: date === today, eventNames: [], items: [] };
+        group = { date, isToday: date === today, events: [], items: [] };
         map.set(date, group);
       }
       return group;
@@ -146,7 +159,7 @@ function SchedulePage() {
       getGroup(it.scheduledDate).items.push(it);
     }
     for (const ev of events) {
-      getGroup(addDaysIso(ev.days_until)).eventNames.push(ev.name);
+      getGroup(addDaysIso(ev.days_until)).events.push(ev);
     }
     return map;
   }, [items, events]);
@@ -155,9 +168,16 @@ function SchedulePage() {
   const selectedGroup: DateGroup = groupsByDate.get(selectedDate) ?? {
     date: selectedDate,
     isToday: selectedDate === todayIso(),
-    eventNames: [],
+    events: [],
     items: [],
   };
+  const primaryEvent = selectedGroup.events[0];
+
+  const { data: eventHeadline, isFetching: headlineLoading } = useQuery({
+    queryKey: ["event-headline", primaryEvent?.id],
+    queryFn: () => api.getEventHeadline(primaryEvent!.id),
+    enabled: !!primaryEvent,
+  });
 
   const rescheduleMutation = useMutation({
     mutationFn: ({ id, date }: { id: string; date: string }) => api.updateContentSchedule(id, date),
@@ -200,6 +220,15 @@ function SchedulePage() {
     setViewDate(d);
     setSelectedDate(todayIso());
   }
+  function selectDate(iso: string) {
+    setSelectedDate(iso);
+    // Desktop already shows the panel inline beside the calendar -- only
+    // pop the sheet open on narrow screens where that panel isn't visible
+    // without scrolling.
+    if (typeof window !== "undefined" && window.innerWidth < DESKTOP_BREAKPOINT_PX) {
+      setMobileDetailOpen(true);
+    }
+  }
 
   if (!ready) {
     return (
@@ -210,6 +239,92 @@ function SchedulePage() {
       </AppShell>
     );
   }
+
+  const eventBadges = (
+    <>
+      {selectedGroup.isToday && (
+        <span className="rounded-full bg-teal/15 px-2.5 py-0.5 text-[11px] font-semibold text-teal">
+          วันนี้!
+        </span>
+      )}
+      {selectedGroup.events.map((ev) => (
+        <span
+          key={ev.id}
+          className="inline-flex items-center gap-1 rounded-full bg-gold/15 px-2.5 py-0.5 text-[11px] text-gold"
+        >
+          <PartyPopper className="h-3 w-3" /> {ev.name}
+        </span>
+      ))}
+    </>
+  );
+
+  const headlineBlock = primaryEvent && (
+    <div className="mb-3 rounded-xl border border-dashed border-gold/40 bg-gold/5 p-3">
+      {headlineLoading ? (
+        <p className="text-xs text-muted-foreground">กำลังคิดไอเดียให้อยู่ค่ะ...</p>
+      ) : eventHeadline ? (
+        <>
+          <p className="mb-2 text-sm leading-relaxed">{eventHeadline}</p>
+          <Link
+            to="/create"
+            search={{ date: selectedGroup.date, prompt: eventHeadline }}
+            className="btn-gold inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs"
+          >
+            <Sparkles className="h-3.5 w-3.5" /> ใช้ไอเดียนี้
+          </Link>
+        </>
+      ) : null}
+    </div>
+  );
+
+  const itemsBlock =
+    selectedGroup.items.length === 0 ? (
+      <Link
+        to="/create"
+        search={{ date: selectedGroup.date }}
+        className="inline-flex items-center gap-1.5 text-xs text-teal hover:underline"
+      >
+        <CalendarPlus className="h-3.5 w-3.5" /> วางแผนโพสต์สำหรับ{" "}
+        {selectedGroup.isToday ? "วันนี้" : formatThaiDate(selectedGroup.date)}
+      </Link>
+    ) : (
+      <div className="grid gap-2">
+        {selectedGroup.items.map((it) => (
+          <div key={it.id} className="rounded-xl border border-border bg-input/40 p-3">
+            <div className="mb-1.5 flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-white/5 px-2.5 py-0.5 text-[11px] text-muted-foreground">
+                {platformLabel[it.platform]}
+              </span>
+              <StatusBadge status={it.status} />
+            </div>
+            <div className="line-clamp-2 text-sm leading-relaxed">{it.preview}</div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {it.status !== "posted" && (
+                <button
+                  onClick={() => copyAndMarkPosted(it)}
+                  className="btn-gold inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs"
+                >
+                  <Copy className="h-3.5 w-3.5" /> คัดลอกไปโพสต์
+                </button>
+              )}
+              <input
+                type="date"
+                value={it.scheduledDate ?? ""}
+                onChange={(e) => rescheduleMutation.mutate({ id: it.id, date: e.target.value })}
+                className="rounded-full border border-border bg-input px-2.5 py-1 text-xs outline-none focus:border-teal"
+              />
+              <button
+                onClick={() => deleteMutation.mutate(it.id)}
+                title="ลบออกจากตารางโพสต์"
+                className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground hover:border-destructive hover:text-destructive"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
 
   return (
     <AppShell>
@@ -267,7 +382,7 @@ function SchedulePage() {
               {calendarCells.map((cell) => {
                 const group = groupsByDate.get(cell.iso);
                 const hasContent = cell.inMonth && !!group?.items.length;
-                const hasEvent = cell.inMonth && !!group?.eventNames.length;
+                const hasEvent = cell.inMonth && !!group?.events.length;
                 const isToday = cell.iso === todayIso();
                 const isSelected = cell.iso === selectedDate;
                 return (
@@ -275,7 +390,7 @@ function SchedulePage() {
                     key={cell.iso}
                     type="button"
                     disabled={!cell.inMonth}
-                    onClick={() => setSelectedDate(cell.iso)}
+                    onClick={() => selectDate(cell.iso)}
                     aria-current={isToday ? "date" : undefined}
                     aria-pressed={isSelected}
                     className={
@@ -302,12 +417,12 @@ function SchedulePage() {
                           {hasContent && <span className="h-1.5 w-1.5 rounded-full bg-teal" />}
                         </div>
                         <div className="hidden md:flex md:flex-col md:gap-0.5">
-                          {group?.eventNames.slice(0, 2).map((name) => (
+                          {group?.events.slice(0, 2).map((ev) => (
                             <span
-                              key={name}
+                              key={ev.id}
                               className="truncate rounded bg-gold/20 px-1 py-0.5 text-[10px] leading-tight text-gold"
                             >
-                              {name}
+                              {ev.name}
                             </span>
                           ))}
                           {hasContent && (
@@ -324,75 +439,33 @@ function SchedulePage() {
             </div>
           </div>
 
-          <div className="glass-card rounded-2xl p-5">
+          {/* Desktop: panel sits inline beside the calendar, always visible */}
+          <div className="glass-card hidden rounded-2xl p-5 lg:block">
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <span className="font-bold">{formatThaiDate(selectedGroup.date)}</span>
-              {selectedGroup.isToday && (
-                <span className="rounded-full bg-teal/15 px-2.5 py-0.5 text-[11px] font-semibold text-teal">
-                  วันนี้!
-                </span>
-              )}
-              {selectedGroup.eventNames.map((name) => (
-                <span
-                  key={name}
-                  className="inline-flex items-center gap-1 rounded-full bg-gold/15 px-2.5 py-0.5 text-[11px] text-gold"
-                >
-                  <PartyPopper className="h-3 w-3" /> {name}
-                </span>
-              ))}
+              {eventBadges}
             </div>
-
-            {selectedGroup.items.length === 0 ? (
-              <Link
-                to="/create"
-                search={{ date: selectedGroup.date }}
-                className="inline-flex items-center gap-1.5 text-xs text-teal hover:underline"
-              >
-                <CalendarPlus className="h-3.5 w-3.5" /> วางแผนโพสต์สำหรับ{" "}
-                {selectedGroup.isToday ? "วันนี้" : formatThaiDate(selectedGroup.date)}
-              </Link>
-            ) : (
-              <div className="grid gap-2">
-                {selectedGroup.items.map((it) => (
-                  <div key={it.id} className="rounded-xl border border-border bg-input/40 p-3">
-                    <div className="mb-1.5 flex flex-wrap items-center gap-2">
-                      <span className="rounded-full bg-white/5 px-2.5 py-0.5 text-[11px] text-muted-foreground">
-                        {platformLabel[it.platform]}
-                      </span>
-                      <StatusBadge status={it.status} />
-                    </div>
-                    <div className="line-clamp-2 text-sm leading-relaxed">{it.preview}</div>
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      {it.status !== "posted" && (
-                        <button
-                          onClick={() => copyAndMarkPosted(it)}
-                          className="btn-gold inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs"
-                        >
-                          <Copy className="h-3.5 w-3.5" /> คัดลอกไปโพสต์
-                        </button>
-                      )}
-                      <input
-                        type="date"
-                        value={it.scheduledDate ?? ""}
-                        onChange={(e) =>
-                          rescheduleMutation.mutate({ id: it.id, date: e.target.value })
-                        }
-                        className="rounded-full border border-border bg-input px-2.5 py-1 text-xs outline-none focus:border-teal"
-                      />
-                      <button
-                        onClick={() => deleteMutation.mutate(it.id)}
-                        title="ลบออกจากตารางโพสต์"
-                        className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground hover:border-destructive hover:text-destructive"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            {headlineBlock}
+            {itemsBlock}
           </div>
         </div>
+
+        {/* Mobile: same detail content, surfaced as a sheet on tap instead
+            of requiring a scroll down to a panel below the calendar */}
+        <Drawer open={mobileDetailOpen} onOpenChange={setMobileDetailOpen}>
+          <DrawerContent className="lg:hidden">
+            <div className="px-4 pb-6 pt-2">
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <DrawerTitle className="text-base font-bold">
+                  {formatThaiDate(selectedGroup.date)}
+                </DrawerTitle>
+                {eventBadges}
+              </div>
+              {headlineBlock}
+              {itemsBlock}
+            </div>
+          </DrawerContent>
+        </Drawer>
       </div>
     </AppShell>
   );

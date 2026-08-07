@@ -1319,6 +1319,19 @@ def get_all_events() -> list[dict]:
     return rows
 
 
+def get_event(event_id: int, user_id: int) -> dict | None:
+    # Same access rule as list_events_for_user: global events or ones this
+    # user owns -- so a user can't fetch/generate a headline for someone
+    # else's personal event by guessing an id.
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM events WHERE id = %s AND (user_id IS NULL OR user_id = %s)",
+        (event_id, user_id),
+    ).fetchone()
+    conn.close()
+    return row
+
+
 def list_events_for_user(user_id: int, hide_global: bool = False) -> list[dict]:
     conn = get_connection()
     if hide_global:

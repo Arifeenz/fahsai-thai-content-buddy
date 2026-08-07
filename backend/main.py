@@ -48,6 +48,7 @@ from db import (
     get_avg_days_to_first_content,
     get_brand_dna,
     get_dna_completeness_correlation,
+    get_event,
     get_event_headline,
     get_example_post,
     get_feedback_ratio_by_mode,
@@ -1061,6 +1062,19 @@ def upcoming_event(request: Request):
             "headline": _event_headline(user, nearest),
         }
     }
+
+
+@app.get("/events/{event_id}/headline")
+def get_event_headline_endpoint(event_id: int, request: Request):
+    # Same cache-or-generate helper the dashboard's single nearest-event
+    # card uses, now reachable for any event the calendar shows -- not
+    # just the closest one -- since the calendar is the primary place
+    # users browse events now.
+    user = require_user(request)
+    event_row = get_event(event_id, user["id"])
+    if event_row is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return {"headline": _event_headline(user, event_row)}
 
 
 QUOTE_DISCOURAGED_DAYS = 7

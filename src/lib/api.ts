@@ -390,6 +390,10 @@ export const api = {
     const { event } = await request<{ event: UpcomingEvent | null }>("/events/upcoming");
     return event;
   },
+  async getEventHeadline(eventId: number): Promise<string | null> {
+    const { headline } = await request<{ headline: string | null }>(`/events/${eventId}/headline`);
+    return headline;
+  },
   async getDailyQuote(): Promise<string | null> {
     const { text } = await request<{ text: string | null }>("/quotes/daily");
     return text;
