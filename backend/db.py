@@ -50,6 +50,7 @@ def init_db() -> None:
         conn, "users", "example_selection_mode TEXT NOT NULL DEFAULT 'latest'"
     )
     _add_column_if_missing(conn, "users", "is_demo BOOLEAN NOT NULL DEFAULT FALSE")
+    _add_column_if_missing(conn, "users", "is_active BOOLEAN NOT NULL DEFAULT TRUE")
 
     conn.execute(
         """
@@ -433,6 +434,26 @@ def update_business_category(user_id: int, business_category: str) -> dict | Non
     row = conn.execute(
         "UPDATE users SET business_category = %s WHERE id = %s RETURNING *",
         (business_category, user_id),
+    ).fetchone()
+    conn.commit()
+    conn.close()
+    return row
+
+
+def update_user_role(user_id: int, role: str) -> dict | None:
+    conn = get_connection()
+    row = conn.execute(
+        "UPDATE users SET role = %s WHERE id = %s RETURNING *", (role, user_id)
+    ).fetchone()
+    conn.commit()
+    conn.close()
+    return row
+
+
+def set_user_active(user_id: int, is_active: bool) -> dict | None:
+    conn = get_connection()
+    row = conn.execute(
+        "UPDATE users SET is_active = %s WHERE id = %s RETURNING *", (is_active, user_id)
     ).fetchone()
     conn.commit()
     conn.close()

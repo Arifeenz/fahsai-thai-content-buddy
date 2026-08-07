@@ -84,6 +84,7 @@ from db import (
     set_example_post_rating,
     set_reset_token,
     set_support_ticket_resolved,
+    set_user_active,
     set_verification_token,
     touch_last_login,
     update_business_category,
@@ -95,6 +96,7 @@ from db import (
     update_hide_global_events,
     update_prompt_template,
     update_quote,
+    update_user_role,
     upsert_brand_dna,
     upsert_google_user,
     upsert_social_links,
@@ -432,6 +434,14 @@ class SupportTicketResolveUpdate(BaseModel):
     resolved: bool
 
 
+class UpdateUserRoleRequest(BaseModel):
+    role: Literal["user", "admin"]
+
+
+class SetUserActiveRequest(BaseModel):
+    is_active: bool
+
+
 def days_until_next(month: int, day: int, today: date) -> int:
     this_year = date(today.year, month, day)
     if this_year >= today:
@@ -463,6 +473,12 @@ def require_user(request: Request):
     user = read_session_user(request)
     if user is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
+    if not user["is_active"]:
+        # Blocks every authenticated route immediately, even mid-session --
+        # the JWT itself stays valid, but the user row is re-read on every
+        # request, so a suspension from the admin panel takes effect on the
+        # user's very next call instead of waiting for their session to expire.
+        raise HTTPException(status_code=403, detail="บัญชีนี้ถูกระงับการใช้งาน กรุณาติดต่อผู้ดูแลระบบ")
     return user
 
 
@@ -505,6 +521,9 @@ def admin_user_to_dict(row) -> dict:
         "created_at": to_utc_iso(row["created_at"]),
         "last_login_at": to_utc_iso(row["last_login_at"]),
         "is_demo": bool(row["is_demo"]),
+        "is_active": bool(row["is_active"]),
+        "email_verified": bool(row["email_verified"]),
+        "has_password": row["password_hash"] is not None,
     }
 
 
@@ -633,6 +652,10 @@ def google_login(body: GoogleLoginRequest, response: Response):
     except ValueError:
         raise HTTPException(status_code=401, detail="Invalid Google credential")
 
+    existing = get_user_by_email(claims["email"])
+    if existing is not None and not existing["is_active"]:
+        raise HTTPException(status_code=403, detail="บัญชีนี้ถูกระงับการใช้งาน กรุณาติดต่อผู้ดูแลระบบ")
+
     role = "admin" if claims["email"].lower() in ADMIN_EMAILS else "user"
     user = upsert_google_user(
         google_sub=claims["sub"],
@@ -678,6 +701,8 @@ def login(body: LoginRequest, response: Response, request: Request):
         raise HTTPException(status_code=401, detail="อีเมลหรือรหัสผ่านไม่ถูกต้อง")
     if not bcrypt.checkpw(body.password.encode(), user["password_hash"].encode()):
         raise HTTPException(status_code=401, detail="อีเมลหรือรหัสผ่านไม่ถูกต้อง")
+    if not user["is_active"]:
+        raise HTTPException(status_code=403, detail="บัญชีนี้ถูกระงับการใช้งาน กรุณาติดต่อผู้ดูแลระบบ")
 
     user = touch_last_login(user["id"])
     issue_session_cookie(response, user["id"])
@@ -690,6 +715,8 @@ def demo_login(body: DemoLoginRequest, response: Response, request: Request):
     user = get_demo_user_by_category(body.business_category)
     if user is None:
         raise HTTPException(status_code=404, detail="ไม่พบบัญชีทดลองสำหรับหมวดนี้ค่ะ")
+    if not user["is_active"]:
+        raise HTTPException(status_code=403, detail="บัญชีนี้ถูกระงับการใช้งาน กรุณาติดต่อผู้ดูแลระบบ")
     user = touch_last_login(user["id"])
     issue_session_cookie(response, user["id"])
     return {"user": user_to_dict(user)}
@@ -1656,6 +1683,47 @@ def admin_list_users(request: Request, page: int = 1, page_size: int = 20, searc
         "page": page,
         "page_size": page_size,
     }
+
+
+@app.get("/admin/users/{user_id}")
+@limiter.limit("60/minute")
+def admin_get_user(user_id: int, request: Request):
+    require_admin(request)
+    user = get_user_by_id(user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="ไม่พบผู้ใช้นี้ค่ะ")
+    content = list_content_for_user(user_id)
+    return {
+        "user": admin_user_to_dict(user),
+        "content_count": len(content),
+        "recent_content": [content_to_dict(row) for row in content[:10]],
+    }
+
+
+@app.patch("/admin/users/{user_id}/role")
+@limiter.limit("30/minute")
+def admin_update_user_role(user_id: int, body: UpdateUserRoleRequest, request: Request):
+    admin = require_admin(request)
+    if user_id == admin["id"] and body.role != "admin":
+        raise HTTPException(status_code=400, detail="ไม่สามารถถอดสิทธิ์แอดมินของตัวเองได้")
+    user = get_user_by_id(user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="ไม่พบผู้ใช้นี้ค่ะ")
+    updated = update_user_role(user_id, body.role)
+    return {"user": admin_user_to_dict(updated)}
+
+
+@app.patch("/admin/users/{user_id}/active")
+@limiter.limit("30/minute")
+def admin_set_user_active(user_id: int, body: SetUserActiveRequest, request: Request):
+    admin = require_admin(request)
+    if user_id == admin["id"] and not body.is_active:
+        raise HTTPException(status_code=400, detail="ไม่สามารถระงับบัญชีของตัวเองได้")
+    user = get_user_by_id(user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="ไม่พบผู้ใช้นี้ค่ะ")
+    updated = set_user_active(user_id, body.is_active)
+    return {"user": admin_user_to_dict(updated)}
 
 
 @app.get("/admin/content")

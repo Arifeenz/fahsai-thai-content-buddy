@@ -55,6 +55,14 @@ export interface AdminUser {
   created_at: string;
   last_login_at?: string;
   is_demo: boolean;
+  is_active: boolean;
+  email_verified: boolean;
+  has_password: boolean;
+}
+export interface AdminUserDetail {
+  user: AdminUser;
+  content_count: number;
+  recent_content: ContentItem[];
 }
 export interface PromptTemplate {
   id: number;
@@ -448,6 +456,21 @@ export const api = {
       page_size: number;
     }>(`/admin/users?${qs.toString()}`);
     return { items: users, total, page: p, page_size };
+  },
+  async adminGetUser(id: number): Promise<AdminUserDetail> {
+    return request(`/admin/users/${id}`);
+  },
+  async adminUpdateUserRole(id: number, role: Role): Promise<{ user: AdminUser }> {
+    return request(`/admin/users/${id}/role`, {
+      method: "PATCH",
+      body: JSON.stringify({ role }),
+    });
+  },
+  async adminSetUserActive(id: number, isActive: boolean): Promise<{ user: AdminUser }> {
+    return request(`/admin/users/${id}/active`, {
+      method: "PATCH",
+      body: JSON.stringify({ is_active: isActive }),
+    });
   },
   async adminListContent(page = 1, pageSize = 20): Promise<Paginated<AdminContentItem>> {
     const {
