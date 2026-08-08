@@ -40,6 +40,7 @@ TABLES = [
     "security_events",
     "events",
     "prompt_templates",
+    "platform_tips",
     "content_items",
     "brand_dna",
     "quotes",

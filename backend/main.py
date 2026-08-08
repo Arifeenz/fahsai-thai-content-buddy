@@ -34,12 +34,14 @@ from db import (
     create_example_post,
     create_follower_snapshot,
     create_generation_log,
+    create_platform_tip,
     create_prompt_template,
     create_quote,
     create_support_ticket,
     delete_content_item,
     delete_event,
     delete_example_post,
+    delete_platform_tip,
     delete_prompt_template,
     delete_quote,
     ensure_demo_users,
@@ -55,6 +57,7 @@ from db import (
     get_feedback_ratio_by_mode,
     get_monthly_openai_spend,
     get_demo_user_by_category,
+    get_platform_tip,
     get_random_quote,
     get_retention_stats,
     get_social_links,
@@ -72,6 +75,7 @@ from db import (
     list_example_posts_for_user,
     list_follower_snapshots_for_user,
     list_generation_logs,
+    list_platform_tips,
     list_prompt_templates,
     list_quotes,
     list_security_events,
@@ -95,6 +99,7 @@ from db import (
     update_example_post,
     update_example_selection_mode,
     update_hide_global_events,
+    update_platform_tip,
     update_prompt_template,
     update_quote,
     update_user_role,
@@ -382,6 +387,15 @@ class PromptTemplateWrite(BaseModel):
     template_text: str
 
 
+class PlatformTipWrite(BaseModel):
+    business_category: str | None = None
+    platform: str
+    caption_tip: str | None = None
+    hashtag_tip: str | None = None
+    media_tip: str | None = None
+    mistake_tip: str | None = None
+
+
 class BrandDnaWrite(BaseModel):
     history: str = ""
     menu: str = ""
@@ -624,6 +638,19 @@ def template_to_dict(row) -> dict:
         "platform": row["platform"],
         "tone": row["tone"],
         "template_text": row["template_text"],
+        "updated_at": to_utc_iso(row["updated_at"]),
+    }
+
+
+def platform_tip_to_dict(row) -> dict:
+    return {
+        "id": row["id"],
+        "business_category": row["business_category"],
+        "platform": row["platform"],
+        "caption_tip": row["caption_tip"],
+        "hashtag_tip": row["hashtag_tip"],
+        "media_tip": row["media_tip"],
+        "mistake_tip": row["mistake_tip"],
         "updated_at": to_utc_iso(row["updated_at"]),
     }
 
@@ -1916,6 +1943,68 @@ def admin_update_prompt_template(template_id: int, body: PromptTemplateWrite, re
 def admin_delete_prompt_template(template_id: int, request: Request):
     require_admin(request)
     delete_prompt_template(template_id)
+    return {"ok": True}
+
+
+@app.get("/platform-tips")
+@limiter.limit("60/minute")
+def get_platform_tip_route(platform: str, request: Request):
+    user = require_user(request)
+    if platform not in PLATFORM_LABELS:
+        raise HTTPException(status_code=400, detail="ไม่รู้จักแพลตฟอร์มนี้")
+    row = get_platform_tip(user["business_category"], platform)
+    if row is None:
+        return None
+    return platform_tip_to_dict(row)
+
+
+@app.get("/admin/platform-tips")
+@limiter.limit("60/minute")
+def admin_list_platform_tips(request: Request):
+    require_admin(request)
+    return {"tips": [platform_tip_to_dict(row) for row in list_platform_tips()]}
+
+
+@app.post("/admin/platform-tips")
+@limiter.limit("60/minute")
+def admin_create_platform_tip(body: PlatformTipWrite, request: Request):
+    admin = require_admin(request)
+    row = create_platform_tip(
+        body.business_category,
+        body.platform,
+        body.caption_tip,
+        body.hashtag_tip,
+        body.media_tip,
+        body.mistake_tip,
+        admin["id"],
+    )
+    return platform_tip_to_dict(row)
+
+
+@app.put("/admin/platform-tips/{tip_id}")
+@limiter.limit("60/minute")
+def admin_update_platform_tip(tip_id: int, body: PlatformTipWrite, request: Request):
+    admin = require_admin(request)
+    row = update_platform_tip(
+        tip_id,
+        body.business_category,
+        body.platform,
+        body.caption_tip,
+        body.hashtag_tip,
+        body.media_tip,
+        body.mistake_tip,
+        admin["id"],
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Tip not found")
+    return platform_tip_to_dict(row)
+
+
+@app.delete("/admin/platform-tips/{tip_id}")
+@limiter.limit("60/minute")
+def admin_delete_platform_tip(tip_id: int, request: Request):
+    require_admin(request)
+    delete_platform_tip(tip_id)
     return {"ok": True}
 
 

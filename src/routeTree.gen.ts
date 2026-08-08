@@ -28,6 +28,7 @@ import { Route as AdminEventsRouteImport } from './routes/admin.events'
 import { Route as AdminExamplesRouteImport } from './routes/admin.examples'
 import { Route as AdminGenerationsRouteImport } from './routes/admin.generations'
 import { Route as AdminKpiRouteImport } from './routes/admin.kpi'
+import { Route as AdminPlatformTipsRouteImport } from './routes/admin.platform-tips'
 import { Route as AdminQuotesRouteImport } from './routes/admin.quotes'
 import { Route as AdminSecurityRouteImport } from './routes/admin.security'
 import { Route as AdminSupportRouteImport } from './routes/admin.support'
@@ -129,6 +130,11 @@ const AdminKpiRoute = AdminKpiRouteImport.update({
   path: '/kpi',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminPlatformTipsRoute = AdminPlatformTipsRouteImport.update({
+  id: '/platform-tips',
+  path: '/platform-tips',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminQuotesRoute = AdminQuotesRouteImport.update({
   id: '/quotes',
   path: '/quotes',
@@ -174,6 +180,7 @@ export interface FileRoutesByFullPath {
   '/admin/examples': typeof AdminExamplesRoute
   '/admin/generations': typeof AdminGenerationsRoute
   '/admin/kpi': typeof AdminKpiRoute
+  '/admin/platform-tips': typeof AdminPlatformTipsRoute
   '/admin/quotes': typeof AdminQuotesRoute
   '/admin/security': typeof AdminSecurityRoute
   '/admin/support': typeof AdminSupportRoute
@@ -199,6 +206,7 @@ export interface FileRoutesByTo {
   '/admin/examples': typeof AdminExamplesRoute
   '/admin/generations': typeof AdminGenerationsRoute
   '/admin/kpi': typeof AdminKpiRoute
+  '/admin/platform-tips': typeof AdminPlatformTipsRoute
   '/admin/quotes': typeof AdminQuotesRoute
   '/admin/security': typeof AdminSecurityRoute
   '/admin/support': typeof AdminSupportRoute
@@ -226,6 +234,7 @@ export interface FileRoutesById {
   '/admin/examples': typeof AdminExamplesRoute
   '/admin/generations': typeof AdminGenerationsRoute
   '/admin/kpi': typeof AdminKpiRoute
+  '/admin/platform-tips': typeof AdminPlatformTipsRoute
   '/admin/quotes': typeof AdminQuotesRoute
   '/admin/security': typeof AdminSecurityRoute
   '/admin/support': typeof AdminSupportRoute
@@ -254,6 +263,7 @@ export interface FileRouteTypes {
     | '/admin/examples'
     | '/admin/generations'
     | '/admin/kpi'
+    | '/admin/platform-tips'
     | '/admin/quotes'
     | '/admin/security'
     | '/admin/support'
@@ -279,6 +289,7 @@ export interface FileRouteTypes {
     | '/admin/examples'
     | '/admin/generations'
     | '/admin/kpi'
+    | '/admin/platform-tips'
     | '/admin/quotes'
     | '/admin/security'
     | '/admin/support'
@@ -305,6 +316,7 @@ export interface FileRouteTypes {
     | '/admin/examples'
     | '/admin/generations'
     | '/admin/kpi'
+    | '/admin/platform-tips'
     | '/admin/quotes'
     | '/admin/security'
     | '/admin/support'
@@ -464,6 +476,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminKpiRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/platform-tips': {
+      id: '/admin/platform-tips'
+      path: '/platform-tips'
+      fullPath: '/admin/platform-tips'
+      preLoaderRoute: typeof AdminPlatformTipsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/quotes': {
       id: '/admin/quotes'
       path: '/quotes'
@@ -508,6 +527,7 @@ interface AdminRouteChildren {
   AdminExamplesRoute: typeof AdminExamplesRoute
   AdminGenerationsRoute: typeof AdminGenerationsRoute
   AdminKpiRoute: typeof AdminKpiRoute
+  AdminPlatformTipsRoute: typeof AdminPlatformTipsRoute
   AdminQuotesRoute: typeof AdminQuotesRoute
   AdminSecurityRoute: typeof AdminSecurityRoute
   AdminSupportRoute: typeof AdminSupportRoute
@@ -522,6 +542,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminExamplesRoute: AdminExamplesRoute,
   AdminGenerationsRoute: AdminGenerationsRoute,
   AdminKpiRoute: AdminKpiRoute,
+  AdminPlatformTipsRoute: AdminPlatformTipsRoute,
   AdminQuotesRoute: AdminQuotesRoute,
   AdminSecurityRoute: AdminSecurityRoute,
   AdminSupportRoute: AdminSupportRoute,

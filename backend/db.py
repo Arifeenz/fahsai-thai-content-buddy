@@ -81,6 +81,22 @@ def init_db() -> None:
 
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS platform_tips (
+            id SERIAL PRIMARY KEY,
+            business_category TEXT,
+            platform TEXT NOT NULL,
+            caption_tip TEXT,
+            hashtag_tip TEXT,
+            media_tip TEXT,
+            mistake_tip TEXT,
+            updated_by INTEGER REFERENCES users(id),
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS brand_dna (
             user_id INTEGER NOT NULL REFERENCES users(id),
             doc_type TEXT NOT NULL,
@@ -322,6 +338,8 @@ def init_db() -> None:
             "ขอบคุณทุกคนที่ติดตามช่องนะครับ วันนี้มาพร้อมคลิปใหม่ กดดูกันได้เลย",
         ],
     )
+
+    _seed_platform_tips_if_missing(conn)
 
     conn.commit()
     conn.close()
@@ -991,6 +1009,151 @@ def delete_prompt_template(template_id: int) -> None:
     conn.execute("DELETE FROM prompt_templates WHERE id = %s", (template_id,))
     conn.commit()
     conn.close()
+
+
+def list_platform_tips(business_category: str | None = None, platform: str | None = None) -> list[dict]:
+    conn = get_connection()
+    query = "SELECT * FROM platform_tips WHERE 1=1"
+    params: list[str] = []
+    if business_category:
+        query += " AND (business_category = %s OR business_category IS NULL)"
+        params.append(business_category)
+    if platform:
+        query += " AND platform = %s"
+        params.append(platform)
+    query += " ORDER BY platform, business_category NULLS FIRST"
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return rows
+
+
+def get_platform_tip(business_category: str | None, platform: str) -> dict | None:
+    conn = get_connection()
+    row = None
+    if business_category:
+        row = conn.execute(
+            "SELECT * FROM platform_tips WHERE platform = %s AND business_category = %s",
+            (platform, business_category),
+        ).fetchone()
+    if row is None:
+        row = conn.execute(
+            "SELECT * FROM platform_tips WHERE platform = %s AND business_category IS NULL",
+            (platform,),
+        ).fetchone()
+    conn.close()
+    return row
+
+
+def create_platform_tip(
+    business_category: str | None,
+    platform: str,
+    caption_tip: str | None,
+    hashtag_tip: str | None,
+    media_tip: str | None,
+    mistake_tip: str | None,
+    updated_by: int,
+) -> dict:
+    conn = get_connection()
+    row = conn.execute(
+        """
+        INSERT INTO platform_tips
+            (business_category, platform, caption_tip, hashtag_tip, media_tip, mistake_tip, updated_by)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        RETURNING *
+        """,
+        (business_category, platform, caption_tip, hashtag_tip, media_tip, mistake_tip, updated_by),
+    ).fetchone()
+    conn.commit()
+    conn.close()
+    return row
+
+
+def update_platform_tip(
+    tip_id: int,
+    business_category: str | None,
+    platform: str,
+    caption_tip: str | None,
+    hashtag_tip: str | None,
+    media_tip: str | None,
+    mistake_tip: str | None,
+    updated_by: int,
+) -> dict | None:
+    conn = get_connection()
+    row = conn.execute(
+        """
+        UPDATE platform_tips
+        SET business_category = %s, platform = %s, caption_tip = %s, hashtag_tip = %s,
+            media_tip = %s, mistake_tip = %s, updated_by = %s, updated_at = CURRENT_TIMESTAMP
+        WHERE id = %s
+        RETURNING *
+        """,
+        (business_category, platform, caption_tip, hashtag_tip, media_tip, mistake_tip, updated_by, tip_id),
+    ).fetchone()
+    conn.commit()
+    conn.close()
+    return row
+
+
+def delete_platform_tip(tip_id: int) -> None:
+    conn = get_connection()
+    conn.execute("DELETE FROM platform_tips WHERE id = %s", (tip_id,))
+    conn.commit()
+    conn.close()
+
+
+# Seed data straight from the Aug 2026 platform-research brief so the tip
+# card has real content on day one; admins can edit/override per category
+# from /admin/platform-tips afterwards.
+_PLATFORM_TIP_SEED: dict[str, tuple[str, str, str, str]] = {
+    "facebook": (
+        "แคปชั่นสั้น 40-80 ตัวอักษรได้ engagement สูงสุด ยาวเกิน 125 ตัวอักษรจะโดนตัด 'ดูเพิ่มเติม'",
+        "ใส่แฮชแท็กแค่ 1 อันพอ ใส่เยอะยิ่งเสีย engagement",
+        "วิดีโอแนวตั้ง 9:16 แบบ Reels ยาว 15-30 วิ ให้ผลดีที่สุด",
+        "อย่าใส่ลิงก์ในเนื้อโพสต์ ทำ reach ลด 70-80% ให้ใส่ลิงก์ในคอมเมนต์แรกแทน",
+    ),
+    "instagram": (
+        "ประโยคแรกสำคัญสุด เพราะจะโดนตัดเหลือ 125 ตัวอักษรก่อนขึ้น 'ดูเพิ่มเติม'",
+        "ใส่ได้สูงสุด 5 แฮชแท็ก ผสมแท็กกว้างกับแท็กเฉพาะกลุ่ม",
+        "Reels 7-15 วิได้อัตราดูจบสูงสุด ส่วน Carousel จุดหวานคือ 8-10 สไลด์",
+        "อย่ารีโพสต์คลิปที่มีลายน้ำ TikTok ติดมา ระบบจะกดการมองเห็นในหน้า Explore",
+    ),
+    "tiktok": (
+        "แคปชั่นสั้น เป็นกันเอง คีย์เวิร์ดควรซ้ำทั้งข้อความบนจอ เสียงพากย์ และแคปชั่น",
+        "ใส่ 2-4 แฮชแท็ก เลี่ยง #fyp #viral เพราะอิ่มตัวจนไม่ช่วยอะไร",
+        "3 วินาทีแรกต้องดึงคนดูให้อยู่ต่อ ความยาวที่ทำผลงานดีอยู่ราว 21-34 วิ",
+        "อย่าโพสต์คลิปซ้ำหรือรีโพสต์ เสีย reach รอบแรกไป 40-60%",
+    ),
+    "youtube": (
+        "ชื่อคลิปใส่คีย์เวิร์ดในตัวอักษรแรก 35-40 ตัวก่อนโดนตัด คำอธิบายเขียนยาว 200-500 คำ",
+        "ใส่ 3-5 แฮชแท็กในช่องคำอธิบาย ไม่ใช่ในชื่อคลิป",
+        "Shorts ยาวไม่เกิน 60 วิ ต้องรักษาอัตราดูจบ 50-65% ส่วนวิดีโอยาวภาพปก/ชื่อคลิปมีผลกับอัตราคลิกมาก",
+        "อย่าตั้งชื่อ/ภาพปกเกินจริง ระบบตรวจจับคลิกเบตได้ ถ้าคนดูไม่จบจะโดนกดอันดับ",
+    ),
+    "line": (
+        "ข้อความสั้น กระชับ ได้ใจความในบรรทัดแรก เพราะขึ้นแจ้งเตือนบนมือถือ",
+        "LINE OA ไม่มีระบบแฮชแท็ก เน้นคำเรียกร้องให้ทำ (CTA) ชัดเจนแทน",
+        "รูปภาพหรือ Rich Message ที่มีปุ่มกดชัดเจนช่วยเพิ่มอัตราคลิก",
+        "อย่าส่งบรอดแคสต์ถี่เกินไป ลูกค้าจะบล็อกบัญชี ควรเว้นระยะและเลือกช่วงเวลาที่เหมาะสม",
+    ),
+}
+
+
+def _seed_platform_tips_if_missing(conn: psycopg.Connection) -> None:
+    count = conn.execute("SELECT COUNT(*) AS n FROM platform_tips").fetchone()["n"]
+    if count > 0:
+        return
+    rows = [
+        (platform, caption, hashtag, media, mistake)
+        for platform, (caption, hashtag, media, mistake) in _PLATFORM_TIP_SEED.items()
+    ]
+    conn.cursor().executemany(
+        """
+        INSERT INTO platform_tips (business_category, platform, caption_tip, hashtag_tip, media_tip, mistake_tip)
+        VALUES (NULL, %s, %s, %s, %s, %s)
+        """,
+        rows,
+    )
+    conn.commit()
 
 
 def create_example_post(

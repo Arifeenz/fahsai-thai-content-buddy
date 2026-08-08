@@ -72,6 +72,16 @@ export interface PromptTemplate {
   template_text: string;
   updated_at: string;
 }
+export interface PlatformTip {
+  id: number;
+  business_category?: BusinessCategory;
+  platform: Platform;
+  caption_tip: string | null;
+  hashtag_tip: string | null;
+  media_tip: string | null;
+  mistake_tip: string | null;
+  updated_at: string;
+}
 export interface Paginated<T> {
   items: T[];
   total: number;
@@ -503,6 +513,26 @@ export const api = {
   },
   async adminDeletePromptTemplate(id: number): Promise<void> {
     await request(`/admin/prompt-templates/${id}`, { method: "DELETE" });
+  },
+
+  async getPlatformTip(platform: Platform): Promise<PlatformTip | null> {
+    return request(`/platform-tips?platform=${platform}`);
+  },
+  async adminListPlatformTips(): Promise<PlatformTip[]> {
+    const { tips } = await request<{ tips: PlatformTip[] }>("/admin/platform-tips");
+    return tips;
+  },
+  async adminCreatePlatformTip(data: Omit<PlatformTip, "id" | "updated_at">): Promise<PlatformTip> {
+    return request("/admin/platform-tips", { method: "POST", body: JSON.stringify(data) });
+  },
+  async adminUpdatePlatformTip(
+    id: number,
+    data: Omit<PlatformTip, "id" | "updated_at">,
+  ): Promise<PlatformTip> {
+    return request(`/admin/platform-tips/${id}`, { method: "PUT", body: JSON.stringify(data) });
+  },
+  async adminDeletePlatformTip(id: number): Promise<void> {
+    await request(`/admin/platform-tips/${id}`, { method: "DELETE" });
   },
 
   async adminListEvents(): Promise<EventItem[]> {

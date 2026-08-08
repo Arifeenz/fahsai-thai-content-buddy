@@ -27,6 +27,8 @@ import {
   Loader2,
   Clapperboard,
   CalendarPlus,
+  Lightbulb,
+  ChevronDown,
 } from "lucide-react";
 
 export const Route = createFileRoute("/create")({
@@ -146,6 +148,11 @@ function CreateContent() {
   const [contentId, setContentId] = useState<string | null>(null);
   const [approved, setApproved] = useState(false);
   const [showShortPromptWarning, setShowShortPromptWarning] = useState(false);
+  const [tipOpen, setTipOpen] = useState(false);
+  const { data: platformTip } = useQuery({
+    queryKey: ["platform-tip", platform],
+    queryFn: () => api.getPlatformTip(platform),
+  });
 
   const categoryKey: CategoryKey = user?.business_category ?? "default";
   const { date: requestedDate, prompt: requestedPrompt } = Route.useSearch();
@@ -535,6 +542,41 @@ function CreateContent() {
                 ))}
               </div>
             </div>
+
+            {platformTip && (
+              <div className="mt-3 overflow-hidden rounded-xl border border-teal/25 bg-teal/[0.06]">
+                <button
+                  type="button"
+                  onClick={() => setTipOpen((v) => !v)}
+                  className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-sm text-teal"
+                >
+                  <Lightbulb className="h-4 w-4 shrink-0" />
+                  <span className="flex-1 font-medium">เคล็ดลับ {platformLabel[platform]}</span>
+                  <ChevronDown
+                    className={
+                      "h-4 w-4 shrink-0 transition-transform " + (tipOpen ? "rotate-180" : "")
+                    }
+                  />
+                </button>
+                {tipOpen && (
+                  <ul className="space-y-1.5 border-t border-teal/15 px-3.5 py-3 text-sm leading-relaxed text-foreground/90">
+                    {[
+                      platformTip.caption_tip,
+                      platformTip.hashtag_tip,
+                      platformTip.media_tip,
+                      platformTip.mistake_tip,
+                    ]
+                      .filter((t): t is string => !!t)
+                      .map((t, i) => (
+                        <li key={i} className="flex gap-2">
+                          <span className="text-teal">•</span>
+                          <span>{t}</span>
+                        </li>
+                      ))}
+                  </ul>
+                )}
+              </div>
+            )}
 
             <div className="mt-5">
               <div className="mb-2 text-sm font-semibold">สไตล์การเขียน</div>

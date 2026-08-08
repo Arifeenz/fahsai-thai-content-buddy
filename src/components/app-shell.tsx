@@ -21,6 +21,7 @@ import {
   LifeBuoy,
   Heart,
   MoreHorizontal,
+  Lightbulb,
 } from "lucide-react";
 import { toast } from "sonner";
 import logo from "@/assets/fahsai-logo.png";
@@ -52,6 +53,7 @@ const adminNavItems = [
   { to: "/admin/content", label: "คอนเทนต์ทั้งหมด", icon: FileText },
   { to: "/admin/templates", label: "Prompt Templates", icon: MessageSquareText },
   { to: "/admin/examples", label: "ตัวอย่างโพสต์", icon: Images },
+  { to: "/admin/platform-tips", label: "เคล็ดลับแพลตฟอร์ม", icon: Lightbulb },
   { to: "/admin/generations", label: "ประวัติการสร้าง", icon: History },
   { to: "/admin/kpi", label: "KPI", icon: LineChart },
   { to: "/admin/events", label: "วันสำคัญ", icon: CalendarDays },
