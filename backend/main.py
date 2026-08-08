@@ -559,6 +559,36 @@ def require_admin(request: Request):
     return user
 
 
+# A team member's own account row stays essentially blank (no
+# business_category, no content) -- every endpoint that reads or writes shop
+# data must resolve to the *owner's* row instead, or a team member would
+# effectively be generating into an empty, disconnected shop of their own.
+# Personal actions (password, own profile) intentionally keep using the
+# logged-in `user` directly and never call this.
+def resolve_effective_owner(user: dict) -> dict:
+    membership = get_team_membership(user["id"])
+    if membership is None:
+        # Always re-fetch rather than returning `user` as-is: callers often
+        # pass in a dict fetched before a write earlier in the same request
+        # (e.g. update-then-return-profile handlers), and returning that
+        # stale copy silently discards the write for every non-team-member.
+        return get_user_by_id(user["id"]) or user
+    owner = get_user_by_id(membership["owner_user_id"])
+    return owner if owner is not None else user
+
+
+# Hides the relevant nav item client-side too, but that's cosmetic -- this is
+# the actual enforcement. Pass one page key, or several when a resource (like
+# content_items) is legitimately reachable from more than one page.
+def require_page_access(user: dict, *pages: str) -> None:
+    membership = get_team_membership(user["id"])
+    if membership is None:
+        return
+    allowed = set(membership["allowed_pages"].split(",")) if membership["allowed_pages"] else set()
+    if not allowed.intersection(pages):
+        raise HTTPException(status_code=403, detail="คุณไม่มีสิทธิ์เข้าถึงส่วนนี้ค่ะ")
+
+
 def to_utc_iso(timestamp: datetime | None) -> str | None:
     # Postgres TIMESTAMP columns have no timezone marker; they're always UTC,
     # so mark it explicitly for correct parsing by JS Date on the frontend.
@@ -566,16 +596,23 @@ def to_utc_iso(timestamp: datetime | None) -> str | None:
 
 
 def user_to_dict(row) -> dict:
+    # A team member's own row has no real business_category or
+    # example_selection_mode -- these two are shop-level in practice (they
+    # drive what /generate produces for the whole team), so the profile
+    # shown to a team member reflects the owner's values here, not their own
+    # blank ones. Identity fields (name/email/etc.) and hide_global_events
+    # (a personal calendar display preference) stay the real logged-in user's.
+    shop = resolve_effective_owner(row)
     return {
         "name": row["name"],
         "email": row["email"],
         "picture": row["picture"],
         "role": row["role"],
-        "business_category": row["business_category"],
+        "business_category": shop["business_category"],
         "last_login_at": to_utc_iso(row["last_login_at"]),
         "hide_global_events": bool(row["hide_global_events"]),
         "email_verified": bool(row["email_verified"]),
-        "example_selection_mode": row["example_selection_mode"],
+        "example_selection_mode": shop["example_selection_mode"],
         "has_password": row["password_hash"] is not None,
         "is_demo": bool(row["is_demo"]),
     }
@@ -862,8 +899,13 @@ def update_calendar_preference(body: CalendarPreferenceWrite, request: Request):
 @app.patch("/me/example-selection-mode")
 def update_example_selection_mode_route(body: ExampleSelectionModeWrite, request: Request):
     user = require_user(request)
-    updated = update_example_selection_mode(user["id"], body.example_selection_mode)
-    return {"user": user_to_dict(updated)}
+    # Shop-level in practice (it drives what /generate produces for the
+    # whole team), so it's written onto the owner's row, not the caller's --
+    # otherwise a team member's change here would silently have no effect,
+    # since /generate itself already reads the owner's setting.
+    owner = resolve_effective_owner(user)
+    update_example_selection_mode(owner["id"], body.example_selection_mode)
+    return {"user": user_to_dict(user)}
 
 
 @app.post("/auth/logout")
@@ -943,14 +985,18 @@ def change_password(body: ChangePasswordRequest, request: Request):
 @app.get("/content")
 def get_my_content(request: Request):
     user = require_user(request)
-    return {"items": [content_to_dict(row) for row in list_content_for_user(user["id"])]}
+    require_page_access(user, "create", "library", "schedule")
+    owner = resolve_effective_owner(user)
+    return {"items": [content_to_dict(row) for row in list_content_for_user(owner["id"])]}
 
 
 @app.post("/content")
 def post_my_content(body: ContentItemCreate, request: Request):
     user = require_user(request)
+    require_page_access(user, "create", "library", "schedule")
+    owner = resolve_effective_owner(user)
     row = create_content_item(
-        user["id"], body.platform, body.preview, body.status, body.mode, body.scheduled_date
+        owner["id"], body.platform, body.preview, body.status, body.mode, body.scheduled_date
     )
     return content_to_dict(row)
 
@@ -958,7 +1004,9 @@ def post_my_content(body: ContentItemCreate, request: Request):
 @app.patch("/content/{content_id}/feedback")
 def update_content_feedback(content_id: int, body: ContentFeedbackUpdate, request: Request):
     user = require_user(request)
-    row = set_content_feedback(content_id, user["id"], body.feedback)
+    require_page_access(user, "create", "library", "schedule")
+    owner = resolve_effective_owner(user)
+    row = set_content_feedback(content_id, owner["id"], body.feedback)
     if row is None:
         raise HTTPException(status_code=404, detail="Content not found")
     return content_to_dict(row)
@@ -969,7 +1017,9 @@ def update_content_schedule_endpoint(
     content_id: int, body: ContentScheduleUpdate, request: Request
 ):
     user = require_user(request)
-    row = update_content_schedule(content_id, user["id"], body.scheduled_date)
+    require_page_access(user, "create", "library", "schedule")
+    owner = resolve_effective_owner(user)
+    row = update_content_schedule(content_id, owner["id"], body.scheduled_date)
     if row is None:
         raise HTTPException(status_code=404, detail="Content not found")
     return content_to_dict(row)
@@ -978,8 +1028,10 @@ def update_content_schedule_endpoint(
 @app.patch("/content/{content_id}")
 def update_content_endpoint(content_id: int, body: ContentItemUpdate, request: Request):
     user = require_user(request)
+    require_page_access(user, "create", "library", "schedule")
+    owner = resolve_effective_owner(user)
     row = update_content_item(
-        content_id, user["id"], body.preview, body.status, body.scheduled_date
+        content_id, owner["id"], body.preview, body.status, body.scheduled_date
     )
     if row is None:
         raise HTTPException(status_code=404, detail="Content not found")
@@ -989,7 +1041,9 @@ def update_content_endpoint(content_id: int, body: ContentItemUpdate, request: R
 @app.patch("/content/{content_id}/mark-posted")
 def mark_content_posted_endpoint(content_id: int, request: Request):
     user = require_user(request)
-    row = mark_content_posted(content_id, user["id"])
+    require_page_access(user, "create", "library", "schedule")
+    owner = resolve_effective_owner(user)
+    row = mark_content_posted(content_id, owner["id"])
     if row is None:
         raise HTTPException(status_code=404, detail="Content not found")
     return content_to_dict(row)
@@ -998,7 +1052,9 @@ def mark_content_posted_endpoint(content_id: int, request: Request):
 @app.patch("/content/{content_id}/post-url")
 def update_content_post_url_endpoint(content_id: int, body: ContentPostUrlUpdate, request: Request):
     user = require_user(request)
-    row = update_content_post_url(content_id, user["id"], body.post_url)
+    require_page_access(user, "create", "library", "schedule")
+    owner = resolve_effective_owner(user)
+    row = update_content_post_url(content_id, owner["id"], body.post_url)
     if row is None:
         raise HTTPException(status_code=404, detail="Content not found")
     return content_to_dict(row)
@@ -1007,13 +1063,17 @@ def update_content_post_url_endpoint(content_id: int, body: ContentPostUrlUpdate
 @app.get("/content/top")
 def get_my_top_content(request: Request):
     user = require_user(request)
-    return {"items": [content_to_dict(row) for row in list_top_content_for_user(user["id"])]}
+    require_page_access(user, "create", "library", "schedule")
+    owner = resolve_effective_owner(user)
+    return {"items": [content_to_dict(row) for row in list_top_content_for_user(owner["id"])]}
 
 
 @app.delete("/content/{content_id}")
 def delete_content_endpoint(content_id: int, request: Request):
     user = require_user(request)
-    deleted = delete_content_item(content_id, user["id"])
+    require_page_access(user, "create", "library", "schedule")
+    owner = resolve_effective_owner(user)
+    deleted = delete_content_item(content_id, owner["id"])
     if not deleted:
         raise HTTPException(status_code=404, detail="Content not found")
     return {"ok": True}
@@ -1022,7 +1082,8 @@ def delete_content_endpoint(content_id: int, request: Request):
 @app.get("/stats")
 def get_my_stats(request: Request):
     user = require_user(request)
-    items = list_content_for_user(user["id"])
+    owner = resolve_effective_owner(user)
+    items = list_content_for_user(owner["id"])
     now = datetime.now(timezone.utc)
     new_posts = sum(
         1
@@ -1056,40 +1117,50 @@ def get_my_stats(request: Request):
 @app.get("/brand-dna")
 def get_brand_dna_endpoint(request: Request):
     user = require_user(request)
-    return get_brand_dna(user["id"])
+    require_page_access(user, "brand-dna")
+    owner = resolve_effective_owner(user)
+    return get_brand_dna(owner["id"])
 
 
 @app.put("/brand-dna")
 def put_brand_dna_endpoint(body: BrandDnaWrite, request: Request):
     user = require_user(request)
-    return upsert_brand_dna(user["id"], body.model_dump())
+    require_page_access(user, "brand-dna")
+    owner = resolve_effective_owner(user)
+    return upsert_brand_dna(owner["id"], body.model_dump())
 
 
 @app.get("/social-links")
 def get_social_links_endpoint(request: Request):
     user = require_user(request)
-    return get_social_links(user["id"])
+    require_page_access(user, "brand-dna")
+    owner = resolve_effective_owner(user)
+    return get_social_links(owner["id"])
 
 
 @app.put("/social-links")
 def put_social_links_endpoint(body: SocialLinksWrite, request: Request):
     user = require_user(request)
-    return upsert_social_links(user["id"], body.model_dump())
+    require_page_access(user, "brand-dna")
+    owner = resolve_effective_owner(user)
+    return upsert_social_links(owner["id"], body.model_dump())
 
 
 @app.post("/follower-snapshot")
 def create_my_follower_snapshot(body: FollowerSnapshotCreate, request: Request):
     user = require_user(request)
-    row = create_follower_snapshot(user["id"], body.platform, body.follower_count)
+    owner = resolve_effective_owner(user)
+    row = create_follower_snapshot(owner["id"], body.platform, body.follower_count)
     return follower_snapshot_to_dict(row)
 
 
 @app.get("/follower-snapshot")
 def list_my_follower_snapshots(request: Request):
     user = require_user(request)
+    owner = resolve_effective_owner(user)
     return {
         "snapshots": [
-            follower_snapshot_to_dict(row) for row in list_follower_snapshots_for_user(user["id"])
+            follower_snapshot_to_dict(row) for row in list_follower_snapshots_for_user(owner["id"])
         ]
     }
 
@@ -1227,6 +1298,8 @@ def accept_team_invite_endpoint(body: TeamAcceptRequest, response: Response, req
 @limiter.limit("15/hour")
 def draft_brand_dna(body: BrandDnaDraftRequest, request: Request):
     user = require_user(request)
+    require_page_access(user, "brand-dna")
+    owner = resolve_effective_owner(user)
     text = body.text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="กรุณาเล่าเรื่องร้านก่อนนะคะ")
@@ -1241,7 +1314,7 @@ def draft_brand_dna(body: BrandDnaDraftRequest, request: Request):
         )
 
     menu_draft_hint = DNA_MENU_DRAFT_HINTS.get(
-        user["business_category"], DNA_MENU_DRAFT_HINTS["food_beverage"]
+        owner["business_category"], DNA_MENU_DRAFT_HINTS["food_beverage"]
     )
     system_prompt = f"""คุณคือ FAHSAI ผู้ช่วยจัดระเบียบข้อมูลร้านให้เจ้าของร้าน SME ไทย
 อ่านข้อความที่ร้านเล่ามาให้ฟัง แล้วแยกใส่ 5 หมวดนี้ เขียนเป็นภาษาไทยเท่านั้น:
@@ -1329,6 +1402,7 @@ def _event_headline(user: dict, event_row: dict) -> str | None:
 @app.get("/events/upcoming")
 def upcoming_event(request: Request):
     user = require_user(request)
+    owner = resolve_effective_owner(user)
     today = bangkok_today()
     nearest = None
     nearest_days = None
@@ -1344,7 +1418,7 @@ def upcoming_event(request: Request):
             "name": nearest["name"],
             "days_until": nearest_days,
             "suggestion_text": nearest["suggestion_text"],
-            "headline": _event_headline(user, nearest),
+            "headline": _event_headline(owner, nearest),
         }
     }
 
@@ -1356,10 +1430,11 @@ def get_event_headline_endpoint(event_id: int, request: Request):
     # just the closest one -- since the calendar is the primary place
     # users browse events now.
     user = require_user(request)
-    event_row = get_event(event_id, user["id"])
+    owner = resolve_effective_owner(user)
+    event_row = get_event(event_id, owner["id"])
     if event_row is None:
         raise HTTPException(status_code=404, detail="Event not found")
-    return {"headline": _event_headline(user, event_row)}
+    return {"headline": _event_headline(owner, event_row)}
 
 
 QUOTE_DISCOURAGED_DAYS = 7
@@ -1369,7 +1444,8 @@ QUOTE_CELEBRATION_GOOD_RATE = 0.7
 @app.get("/quotes/daily")
 def get_daily_quote(request: Request):
     user = require_user(request)
-    items = list_content_for_user(user["id"])
+    owner = resolve_effective_owner(user)
+    items = list_content_for_user(owner["id"])
     now = datetime.now(timezone.utc)
 
     posted_at = [
@@ -1397,10 +1473,11 @@ def get_daily_quote(request: Request):
 @app.get("/events")
 def list_my_events(request: Request):
     user = require_user(request)
+    owner = resolve_effective_owner(user)
     today = bangkok_today()
     hide_global = bool(user["hide_global_events"])
     events = [
-        event_to_dict(row, today) for row in list_events_for_user(user["id"], hide_global)
+        event_to_dict(row, today) for row in list_events_for_user(owner["id"], hide_global)
     ]
     events.sort(key=lambda e: e["days_until"])
     # No cap here -- the /schedule calendar needs every event regardless of
@@ -1413,14 +1490,16 @@ def list_my_events(request: Request):
 @app.post("/events")
 def create_my_event(body: EventCreate, request: Request):
     user = require_user(request)
-    row = create_event(user["id"], body.name, body.month, body.day)
+    owner = resolve_effective_owner(user)
+    row = create_event(owner["id"], body.name, body.month, body.day)
     return event_to_dict(row, bangkok_today())
 
 
 @app.delete("/events/{event_id}")
 def delete_my_event(event_id: int, request: Request):
     user = require_user(request)
-    deleted = delete_event(event_id, user["id"])
+    owner = resolve_effective_owner(user)
+    deleted = delete_event(event_id, owner["id"])
     if not deleted:
         raise HTTPException(status_code=404, detail="Event not found")
     return {"ok": True}
@@ -1434,6 +1513,7 @@ def extract_example_post(request: Request, image: UploadFile = File(...)):
     # pre-filled instead of typed by hand -- the user still reviews/edits
     # before saving, this only removes the transcription step.
     user = require_user(request)
+    require_page_access(user, "examples")
 
     contents = image.file.read()
     if len(contents) > MAX_IMAGE_BYTES:
@@ -1521,7 +1601,9 @@ def extract_example_post(request: Request, image: UploadFile = File(...)):
 @app.get("/example-posts")
 def list_my_example_posts(request: Request):
     user = require_user(request)
-    return {"posts": [example_post_to_dict(row) for row in list_example_posts_for_user(user["id"])]}
+    require_page_access(user, "examples")
+    owner = resolve_effective_owner(user)
+    return {"posts": [example_post_to_dict(row) for row in list_example_posts_for_user(owner["id"])]}
 
 
 @app.post("/example-posts")
@@ -1534,9 +1616,11 @@ def create_my_example_post(
     like_count: int | None = Form(None),
 ):
     user = require_user(request)
-    image_url = upload_example_image(image, user["id"])
+    require_page_access(user, "examples")
+    owner = resolve_effective_owner(user)
+    image_url = upload_example_image(image, owner["id"])
     row = create_example_post(
-        user["id"], business_category, platform, caption, image_url, user["id"], like_count
+        owner["id"], business_category, platform, caption, image_url, user["id"], like_count
     )
     return example_post_to_dict(row)
 
@@ -1544,7 +1628,9 @@ def create_my_example_post(
 @app.delete("/example-posts/{post_id}")
 def delete_my_example_post(post_id: int, request: Request):
     user = require_user(request)
-    deleted = delete_example_post(post_id, user["id"])
+    require_page_access(user, "examples")
+    owner = resolve_effective_owner(user)
+    deleted = delete_example_post(post_id, owner["id"])
     if not deleted:
         raise HTTPException(status_code=404, detail="Example post not found")
     return {"ok": True}
@@ -1561,16 +1647,18 @@ def update_my_example_post(
     like_count: int | None = Form(None),
 ):
     user = require_user(request)
+    require_page_access(user, "examples")
+    owner = resolve_effective_owner(user)
     existing = get_example_post(post_id)
-    if existing is None or existing["user_id"] != user["id"]:
+    if existing is None or existing["user_id"] != owner["id"]:
         raise HTTPException(status_code=404, detail="Example post not found")
     image_url = (
-        upload_example_image(image, user["id"])
+        upload_example_image(image, owner["id"])
         if image is not None and image.filename
         else existing["image_url"]
     )
     row = update_example_post(
-        post_id, user["id"], business_category, platform, caption, image_url, like_count
+        post_id, owner["id"], business_category, platform, caption, image_url, like_count
     )
     if row is None:
         raise HTTPException(status_code=404, detail="Example post not found")
@@ -1580,7 +1668,9 @@ def update_my_example_post(
 @app.patch("/example-posts/{post_id}/rating")
 def rate_my_example_post(post_id: int, body: ExamplePostRatingWrite, request: Request):
     user = require_user(request)
-    row = set_example_post_rating(post_id, user["id"], body.rating)
+    require_page_access(user, "examples")
+    owner = resolve_effective_owner(user)
+    row = set_example_post_rating(post_id, owner["id"], body.rating)
     if row is None:
         raise HTTPException(status_code=404, detail="Example post not found")
     return example_post_to_dict(row)
@@ -1636,7 +1726,9 @@ DNA_MENU_DRAFT_HINTS = {
 @limiter.limit("15/hour")
 def generate_content(body: GenerateRequest, request: Request):
     user = require_user(request)
-    templates = list_prompt_templates(business_category=user["business_category"], platform=body.platform)
+    require_page_access(user, "create")
+    owner = resolve_effective_owner(user)
+    templates = list_prompt_templates(business_category=owner["business_category"], platform=body.platform)
 
     budget_exceeded = openai_client is not None and get_monthly_openai_spend() >= OPENAI_MONTHLY_BUDGET_USD
     if openai_client is None or budget_exceeded:
@@ -1656,8 +1748,8 @@ def generate_content(body: GenerateRequest, request: Request):
             # at all", so without this guard a user with no category picked
             # yet would widen to every template in the table, not "closest
             # match for their business."
-            if user["business_category"]:
-                templates = list_prompt_templates(business_category=user["business_category"])
+            if owner["business_category"]:
+                templates = list_prompt_templates(business_category=owner["business_category"])
         if not templates:
             raise HTTPException(
                 status_code=404,
@@ -1668,7 +1760,7 @@ def generate_content(body: GenerateRequest, request: Request):
             user["id"], body.platform, body.tone, body.prompt, chosen["template_text"], mode="idea"
         )
         content_row = save_generated_draft(
-            user["id"], body.platform, chosen["template_text"], "idea", body.content_id
+            owner["id"], body.platform, chosen["template_text"], "idea", body.content_id
         )
         return {
             "caption": chosen["template_text"],
@@ -1677,10 +1769,10 @@ def generate_content(body: GenerateRequest, request: Request):
             "content_id": content_row["id"],
         }
 
-    dna = get_brand_dna(user["id"])
+    dna = get_brand_dna(owner["id"])
     style_examples = "\n---\n".join(t["template_text"] for t in templates[:3])
     example_post_rows = list_example_posts_for_generation(
-        user["id"], user["business_category"], body.platform, user["example_selection_mode"]
+        owner["id"], owner["business_category"], body.platform, owner["example_selection_mode"]
     )
     if example_post_rows:
         post_captions = "\n---\n".join(p["caption"] for p in example_post_rows)
@@ -1701,9 +1793,9 @@ def generate_content(body: GenerateRequest, request: Request):
     )
     tone_label = TONE_LABELS.get(body.tone or "", body.tone or "เป็นกันเอง")
     category_label = BUSINESS_CATEGORY_LABELS.get(
-        user["business_category"], user["business_category"] or "ไม่ระบุ"
+        owner["business_category"], owner["business_category"] or "ไม่ระบุ"
     )
-    menu_label = DNA_MENU_LABELS.get(user["business_category"], DNA_MENU_LABELS["food_beverage"])
+    menu_label = DNA_MENU_LABELS.get(owner["business_category"], DNA_MENU_LABELS["food_beverage"])
     examples_section = (
         f"ตัวอย่างโพสต์ที่ร้านเคยเขียน ใช้เป็นแนวทางโทนเสียงเท่านั้น ห้ามก็อปมาตรงๆ:\n{style_examples}"
         if style_examples
@@ -1779,7 +1871,7 @@ def generate_content(body: GenerateRequest, request: Request):
         system_prompt,
         mode="idea",
     )
-    content_row = save_generated_draft(user["id"], body.platform, caption, "idea", body.content_id)
+    content_row = save_generated_draft(owner["id"], body.platform, caption, "idea", body.content_id)
     return {
         "caption": caption,
         "image_prompt": image_prompt,
@@ -1800,11 +1892,13 @@ def generate_from_image(
     images: list[UploadFile] = File(...),
 ):
     user = require_user(request)
+    require_page_access(user, "create")
+    owner = resolve_effective_owner(user)
     if len(images) > MAX_GENERATE_IMAGES:
         raise HTTPException(
             status_code=400, detail=f"แนบได้สูงสุด {MAX_GENERATE_IMAGES} รูปนะคะ"
         )
-    image_urls = [url for img in images if (url := upload_example_image(img, user["id"]))]
+    image_urls = [url for img in images if (url := upload_example_image(img, owner["id"]))]
 
     budget_exceeded = openai_client is not None and get_monthly_openai_spend() >= OPENAI_MONTHLY_BUDGET_USD
     if openai_client is None or budget_exceeded:
@@ -1818,16 +1912,16 @@ def generate_from_image(
             detail="ฟีเจอร์เขียนจากรูปภาพต้องใช้ AI ช่วย ตอนนี้ยังไม่พร้อมใช้งาน ลองใหม่ภายหลังนะคะ",
         )
 
-    dna = get_brand_dna(user["id"])
+    dna = get_brand_dna(owner["id"])
     platform_label = PLATFORM_LABELS.get(platform, platform)
     platform_style_hint = PLATFORM_STYLE_HINTS.get(
         platform, f"{platform_label} เขียนให้เหมาะกับแพลตฟอร์มนี้"
     )
     tone_label = TONE_LABELS.get(tone or "", tone or "เป็นกันเอง")
     category_label = BUSINESS_CATEGORY_LABELS.get(
-        user["business_category"], user["business_category"] or "ไม่ระบุ"
+        owner["business_category"], owner["business_category"] or "ไม่ระบุ"
     )
-    menu_label = DNA_MENU_LABELS.get(user["business_category"], DNA_MENU_LABELS["food_beverage"])
+    menu_label = DNA_MENU_LABELS.get(owner["business_category"], DNA_MENU_LABELS["food_beverage"])
     context_line = f"\nบริบทเพิ่มเติมจากร้าน: {context}" if context.strip() else ""
 
     system_prompt = f"""คุณคือ FAHSAI ผู้ช่วยเขียนโพสต์โซเชียลมีเดียให้ร้าน SME ไทย เขียนเป็นภาษาไทยเท่านั้น
@@ -1890,7 +1984,7 @@ def generate_from_image(
         system_prompt,
         mode="photo",
     )
-    content_row = save_generated_draft(user["id"], platform, caption, "photo", content_id)
+    content_row = save_generated_draft(owner["id"], platform, caption, "photo", content_id)
     return {"caption": caption, "image_urls": image_urls, "content_id": content_row["id"]}
 
 
@@ -1898,6 +1992,8 @@ def generate_from_image(
 @limiter.limit("15/hour")
 def generate_video_script(body: VideoScriptRequest, request: Request):
     user = require_user(request)
+    require_page_access(user, "create")
+    owner = resolve_effective_owner(user)
     caption = body.caption.strip()
     if not caption:
         raise HTTPException(status_code=400, detail="ต้องมีแคปชั่นก่อนถึงจะสร้างสคริปวิดีโอได้ค่ะ")
@@ -1914,20 +2010,20 @@ def generate_video_script(body: VideoScriptRequest, request: Request):
             detail="ระบบสร้างสคริปวิดีโอไม่พร้อมใช้งานตอนนี้ ลองใหม่ภายหลังนะคะ",
         )
 
-    dna = get_brand_dna(user["id"])
+    dna = get_brand_dna(owner["id"])
     platform_label = PLATFORM_LABELS.get(body.platform, body.platform)
     tone_label = TONE_LABELS.get(body.tone or "", body.tone or "เป็นกันเอง")
     category_label = BUSINESS_CATEGORY_LABELS.get(
-        user["business_category"], user["business_category"] or "ไม่ระบุ"
+        owner["business_category"], owner["business_category"] or "ไม่ระบุ"
     )
-    menu_label = DNA_MENU_LABELS.get(user["business_category"], DNA_MENU_LABELS["food_beverage"])
+    menu_label = DNA_MENU_LABELS.get(owner["business_category"], DNA_MENU_LABELS["food_beverage"])
 
     # Same "actual voice, not just a described personality" reasoning as
     # /generate -- past captions carry catchphrases/speech patterns that
     # dna["tone"] alone can't, so a script grounded only in the abstract
     # personality field reads generic even when that field is filled in.
     example_post_rows = list_example_posts_for_generation(
-        user["id"], user["business_category"], body.platform, user["example_selection_mode"]
+        owner["id"], owner["business_category"], body.platform, owner["example_selection_mode"]
     )
     examples_section = ""
     if example_post_rows:
@@ -2204,9 +2300,11 @@ def admin_delete_prompt_template(template_id: int, request: Request):
 @limiter.limit("60/minute")
 def get_platform_tip_route(platform: str, request: Request):
     user = require_user(request)
+    require_page_access(user, "create")
+    owner = resolve_effective_owner(user)
     if platform not in PLATFORM_LABELS:
         raise HTTPException(status_code=400, detail="ไม่รู้จักแพลตฟอร์มนี้")
-    row = get_platform_tip(user["business_category"], platform)
+    row = get_platform_tip(owner["business_category"], platform)
     if row is None:
         return None
     return platform_tip_to_dict(row)
