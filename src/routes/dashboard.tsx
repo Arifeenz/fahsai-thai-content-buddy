@@ -12,6 +12,7 @@ import {
   type DnaDocType,
   type Platform,
 } from "@/lib/api";
+import { type CategoryKey } from "@/lib/category-platforms";
 import { AppShell, PageHeader, useCurrentUser } from "@/components/app-shell";
 import { useRequireAuth } from "@/lib/auth-guard";
 import {
@@ -48,6 +49,14 @@ const MONTH_LABELS = [
   "ธ.ค.",
 ];
 
+const eventNamePlaceholder: Record<CategoryKey, string> = {
+  food_beverage: "เพิ่มวันสำคัญของร้าน เช่น ครบรอบร้าน",
+  online_shop: "เพิ่มวันสำคัญของร้าน เช่น ครบรอบร้าน",
+  fortune_telling: "เพิ่มวันสำคัญ เช่น ครบรอบเปิดให้บริการ",
+  streamer: "เพิ่มวันสำคัญของช่อง เช่น ครบรอบช่อง, วันเกิดแอดมิน",
+  default: "เพิ่มวันสำคัญ เช่น ครบรอบร้าน",
+};
+
 // Matches schedule.tsx's addDaysIso -- both need to turn an event's
 // days_until into the same target date string for the /create?date=
 // link to land on the date schedule.tsx groups it under.
@@ -60,6 +69,7 @@ function addDaysIso(daysFromToday: number): string {
 function EventsCalendarCard() {
   const queryClient = useQueryClient();
   const user = useCurrentUser();
+  const categoryKey: CategoryKey = user?.business_category ?? "default";
   const { data: events = [] } = useQuery({ queryKey: ["events"], queryFn: () => api.listEvents() });
   const [name, setName] = useState("");
   const [month, setMonth] = useState(1);
@@ -95,7 +105,7 @@ function EventsCalendarCard() {
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <CalendarDays className="h-4 w-4 text-teal" />
-          <h2 className="text-sm font-bold">วันสำคัญที่ใกล้ถึง</h2>
+          <h2 className="text-sm font-bold">วันสำคัญที่ใกล้จะมาถึง</h2>
         </div>
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
           ซ่อนวันของระบบ
@@ -149,7 +159,7 @@ function EventsCalendarCard() {
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="เพิ่มวันสำคัญของร้าน เช่น ครบรอบร้าน"
+          placeholder={eventNamePlaceholder[categoryKey]}
           className="min-w-0 flex-1 rounded-full border border-border bg-input px-3 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-teal"
         />
         <select
