@@ -362,10 +362,11 @@ export const api = {
     caption: string,
     platform: Platform,
     tone: Tone,
+    character?: string,
   ): Promise<{ video_script: string }> {
     return request("/generate-video-script", {
       method: "POST",
-      body: JSON.stringify({ caption, platform, tone }),
+      body: JSON.stringify({ caption, platform, tone, character: character || undefined }),
     });
   },
 

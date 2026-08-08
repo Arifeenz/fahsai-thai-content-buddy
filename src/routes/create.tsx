@@ -154,6 +154,7 @@ function CreateContent() {
   const [imagePromptTh, setImagePromptTh] = useState<string | null>(null);
   const [videoScript, setVideoScript] = useState<string | null>(null);
   const [videoScriptLoading, setVideoScriptLoading] = useState(false);
+  const [videoCharacter, setVideoCharacter] = useState("");
   const [scheduleDate, setScheduleDate] = useState("");
   const [scheduling, setScheduling] = useState(false);
   const [contentId, setContentId] = useState<string | null>(null);
@@ -302,7 +303,7 @@ function CreateContent() {
     setVideoScriptLoading(true);
     const t = toast.loading("กำลังวางสคริปวิดีโอให้อยู่ค่ะ...");
     try {
-      const res = await api.generateVideoScript(caption, platform, tone);
+      const res = await api.generateVideoScript(caption, platform, tone, videoCharacter);
       setVideoScript(res.video_script);
       toast.success("ได้สคริปวิดีโอแล้วค่ะ ✨", { id: t });
     } catch {
@@ -849,6 +850,15 @@ function CreateContent() {
                       </button>
                     )}
                   </div>
+
+                  {!videoScript && (
+                    <input
+                      value={videoCharacter}
+                      onChange={(e) => setVideoCharacter(e.target.value)}
+                      placeholder="ตัวละคร/สไตล์การพูดหน้ากล้อง เพิ่มเติม (ถ้ามี) เช่น ชื่อเรียก คำพูดติดปาก"
+                      className="mt-3 w-full rounded-full border border-border bg-input px-3.5 py-2 pl-12 text-sm outline-none placeholder:text-muted-foreground focus:border-teal"
+                    />
+                  )}
 
                   {videoScript ? (
                     <>

@@ -361,6 +361,7 @@ class VideoScriptRequest(BaseModel):
     caption: str
     platform: str
     tone: str | None = None
+    character: str | None = None
 
 
 class ContentItemCreate(BaseModel):
@@ -1767,6 +1768,14 @@ def generate_video_script(body: VideoScriptRequest, request: Request):
         post_captions = "\n---\n".join(p["caption"] for p in example_post_rows)
         examples_section = f"ตัวอย่างโพสต์ที่ร้านเคยเขียน ใช้เป็นแนวทางน้ำเสียง/มุกที่ร้านนี้ใช้จริง ห้ามก็อปมาตรงๆ:\n{post_captions}"
 
+    # Optional, one-off input from the script-generation UI itself rather
+    # than brand_dna -- concrete on-camera detail (a name, a catchphrase, a
+    # mannerism) that the abstract "บุคลิกแบรนด์" adjectives don't capture,
+    # without asking users to fill in yet another permanent DNA field.
+    character_line = (
+        f"- ตัวละคร/สไตล์การพูดหน้ากล้อง: {body.character.strip()}\n" if body.character and body.character.strip() else ""
+    )
+
     system_prompt = f"""คุณคือ FAHSAI ผู้ช่วยวางแผนถ่ายวิดีโอสั้น (TikTok/Reels/Shorts) ให้ร้าน SME ไทย เขียนเป็นภาษาไทยเท่านั้น
 
 ข้อมูลร้าน:
@@ -1775,7 +1784,7 @@ def generate_video_script(body: VideoScriptRequest, request: Request):
 - จุดขาย/เอกลักษณ์ (USP): {dna["usp"] or "ไม่ระบุ"}
 - บุคลิกแบรนด์: {dna["tone"] or "ไม่ระบุ"}
 - กลุ่มลูกค้าเป้าหมาย: {dna["audience"] or "ไม่ระบุ"}
-
+{character_line}
 {examples_section}
 
 แคปชั่นที่จะใช้คู่กับวิดีโอนี้ (ลงแพลตฟอร์ม {platform_label} โทน "{tone_label}"):
@@ -1783,7 +1792,7 @@ def generate_video_script(body: VideoScriptRequest, request: Request):
 
 จากแคปชั่นนี้ ช่วยวางสคริปวิดีโอสั้นความยาวประมาณ 15-30 วินาที แบ่งเป็นฉาก 2-4 ฉาก แต่ละฉากบอก:
 - ถ่ายอะไร มุมกล้องแบบไหน (เช่น โคลสอัพ, มุมสูง, ถ่ายมือทำ)
-- พูดหรือบรรยายว่าอะไร (บทพูดจริงที่พูดได้เลย ไม่ใช่คำแนะนำลอยๆ) ให้สะท้อนจุดขายและบุคลิกของร้านนี้โดยเฉพาะ ไม่ใช่บทพูดทั่วไปที่ร้านไหนก็พูดได้
+- พูดหรือบรรยายว่าอะไร (บทพูดจริงที่พูดได้เลย ไม่ใช่คำแนะนำลอยๆ) ให้สะท้อนจุดขายและบุคลิกของร้านนี้โดยเฉพาะ (ถ้ามีข้อมูลตัวละคร/สไตล์การพูดหน้ากล้อง ให้ยึดตามนั้นด้วย) ไม่ใช่บทพูดทั่วไปที่ร้านไหนก็พูดได้
 
 จบด้วยคำแนะนำสั้นๆ 1-2 ข้อ เช่น เพลงประกอบแนวไหน หรือจังหวะตัดต่อ
 
