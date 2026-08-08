@@ -28,6 +28,7 @@ from slowapi.util import get_remote_address
 from supabase import create_client
 
 from db import (
+    admin_verify_content_likes,
     create_content_item,
     create_email_user,
     create_event,
@@ -80,6 +81,9 @@ from db import (
     list_quotes,
     list_security_events,
     list_support_tickets,
+    list_top_content_by_category,
+    list_top_content_for_user,
+    list_top_users_by_follower_growth_by_category,
     log_security_event,
     mark_content_posted,
     promote_example_post_to_global,
@@ -94,6 +98,7 @@ from db import (
     touch_last_login,
     update_business_category,
     update_content_item,
+    update_content_post_url,
     update_content_schedule,
     update_event,
     update_example_post,
@@ -380,6 +385,14 @@ class ContentItemUpdate(BaseModel):
     scheduled_date: str | None = None
 
 
+class ContentPostUrlUpdate(BaseModel):
+    post_url: str | None = None
+
+
+class ContentVerifyLikes(BaseModel):
+    like_count: int
+
+
 class PromptTemplateWrite(BaseModel):
     business_category: str | None = None
     platform: str
@@ -564,6 +577,9 @@ def content_to_dict(row) -> dict:
         "feedback": row["feedback"],
         "createdAt": row["created_at"].date().isoformat() if row["created_at"] else None,
         "scheduledDate": row["scheduled_date"].isoformat() if row["scheduled_date"] else None,
+        "postUrl": row["post_url"],
+        "verifiedLikeCount": row["verified_like_count"],
+        "verifiedAt": to_utc_iso(row["verified_at"]),
     }
 
 
@@ -586,7 +602,18 @@ def admin_content_to_dict(row) -> dict:
     d = content_to_dict(row)
     d["owner_name"] = row["owner_name"]
     d["owner_email"] = row["owner_email"]
+    d["owner_category"] = row["owner_category"]
     return d
+
+
+def top_growth_user_to_dict(row) -> dict:
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "email": row["email"],
+        "business_category": row["business_category"],
+        "total_growth": row["total_growth"],
+    }
 
 
 def example_post_to_dict(row) -> dict:
@@ -917,6 +944,21 @@ def mark_content_posted_endpoint(content_id: int, request: Request):
     if row is None:
         raise HTTPException(status_code=404, detail="Content not found")
     return content_to_dict(row)
+
+
+@app.patch("/content/{content_id}/post-url")
+def update_content_post_url_endpoint(content_id: int, body: ContentPostUrlUpdate, request: Request):
+    user = require_user(request)
+    row = update_content_post_url(content_id, user["id"], body.post_url)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Content not found")
+    return content_to_dict(row)
+
+
+@app.get("/content/top")
+def get_my_top_content(request: Request):
+    user = require_user(request)
+    return {"items": [content_to_dict(row) for row in list_top_content_for_user(user["id"])]}
 
 
 @app.delete("/content/{content_id}")
@@ -1853,6 +1895,17 @@ def admin_list_users(request: Request, page: int = 1, page_size: int = 20, searc
     }
 
 
+@app.get("/admin/users/top-growth-by-category")
+@limiter.limit("60/minute")
+def admin_top_growth_by_category(request: Request):
+    require_admin(request)
+    return {
+        "items": [
+            top_growth_user_to_dict(row) for row in list_top_users_by_follower_growth_by_category()
+        ]
+    }
+
+
 @app.get("/admin/users/{user_id}")
 @limiter.limit("60/minute")
 def admin_get_user(user_id: int, request: Request):
@@ -1907,6 +1960,23 @@ def admin_get_all_content(request: Request, page: int = 1, page_size: int = 20):
         "page": page,
         "page_size": page_size,
     }
+
+
+@app.patch("/admin/content/{content_id}/verify")
+@limiter.limit("60/minute")
+def admin_verify_content_likes_endpoint(content_id: int, body: ContentVerifyLikes, request: Request):
+    admin = require_admin(request)
+    row = admin_verify_content_likes(content_id, body.like_count, admin["id"])
+    if row is None:
+        raise HTTPException(status_code=404, detail="Content not found")
+    return content_to_dict(row)
+
+
+@app.get("/admin/content/top-by-category")
+@limiter.limit("60/minute")
+def admin_top_content_by_category(request: Request):
+    require_admin(request)
+    return {"items": [admin_content_to_dict(row) for row in list_top_content_by_category()]}
 
 
 @app.get("/admin/prompt-templates")

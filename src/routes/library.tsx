@@ -1,11 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { api, platformLabel, type ContentStatus, type Platform } from "@/lib/api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { api, platformLabel, type ContentItem, type ContentStatus, type Platform } from "@/lib/api";
 import { AppShell, PageHeader } from "@/components/app-shell";
 import { useRequireAuth } from "@/lib/auth-guard";
 import { ContentFeedbackControl, StatusBadge } from "./dashboard";
-import { Search } from "lucide-react";
+import { Search, Trophy, Link2 } from "lucide-react";
 
 export const Route = createFileRoute("/library")({
   head: () => ({
@@ -34,6 +35,75 @@ const platformFilters: { key: "all" | Platform; label: string }[] = [
   { key: "line", label: "LINE OA" },
   { key: "instagram", label: "Instagram" },
 ];
+
+function TopContentSection() {
+  const { data: topItems = [] } = useQuery({
+    queryKey: ["content", "top"],
+    queryFn: () => api.getMyTopContent(),
+  });
+
+  if (topItems.length === 0) return null;
+
+  return (
+    <div className="glass-card mb-4 rounded-2xl p-5">
+      <div className="mb-3 flex items-center gap-2">
+        <Trophy className="h-4 w-4 text-gold" />
+        <h2 className="text-sm font-bold">คอนเทนต์ยอดนิยมของคุณ</h2>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-3">
+        {topItems.map((it, i) => (
+          <div key={it.id} className="rounded-xl border border-border bg-input/30 p-3">
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-[11px] font-bold text-gold">#{i + 1}</span>
+              <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] text-muted-foreground">
+                {platformLabel[it.platform]}
+              </span>
+            </div>
+            <div className="line-clamp-2 text-xs leading-relaxed">{it.preview}</div>
+            <div className="mt-1.5 text-[11px] font-semibold text-success">
+              {it.verifiedLikeCount?.toLocaleString("th-TH")} ไลค์
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PostUrlField({ item }: { item: ContentItem }) {
+  const queryClient = useQueryClient();
+  const [value, setValue] = useState(item.postUrl ?? "");
+  const mutation = useMutation({
+    mutationFn: (postUrl: string) => api.updateContentPostUrl(item.id, postUrl.trim() || null),
+    onSuccess: () => {
+      toast.success("บันทึกลิงก์แล้วค่ะ");
+      queryClient.invalidateQueries({ queryKey: ["content"] });
+    },
+    onError: () => toast.error("บันทึกลิงก์ไม่สำเร็จ ลองอีกครั้งนะคะ"),
+  });
+
+  if (item.status !== "posted") return null;
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      <Link2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      <input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={() => {
+          if (value.trim() !== (item.postUrl ?? "")) mutation.mutate(value);
+        }}
+        placeholder="วางลิงก์โพสต์จริง (ถ้ามี) ให้ทีมงานช่วยตรวจยอดไลค์ให้"
+        className="min-w-0 flex-1 rounded-full border border-border bg-input px-3 py-1 text-xs outline-none placeholder:text-muted-foreground focus:border-teal"
+      />
+      {item.verifiedLikeCount != null && (
+        <span className="shrink-0 rounded-full bg-success/15 px-2 py-0.5 text-[11px] text-success">
+          {item.verifiedLikeCount.toLocaleString("th-TH")} ไลค์ (ยืนยันแล้ว)
+        </span>
+      )}
+    </div>
+  );
+}
 
 function Library() {
   const { ready } = useRequireAuth();
@@ -70,6 +140,8 @@ function Library() {
     <AppShell>
       <div className="p-6 md:p-8">
         <PageHeader title="คลังคอนเทนต์" subtitle="โพสต์ทั้งหมดของร้านคุณ" />
+
+        <TopContentSection />
 
         <div className="glass-card mb-4 flex flex-wrap items-center gap-3 rounded-2xl p-4">
           <div className="relative min-w-0 flex-1">
@@ -128,6 +200,7 @@ function Library() {
                 <div className="mt-2">
                   <ContentFeedbackControl item={it} />
                 </div>
+                <PostUrlField item={it} />
               </div>
               <StatusBadge status={it.status} />
             </div>

@@ -189,6 +189,10 @@ def init_db() -> None:
     _add_column_if_missing(conn, "content_items", "feedback TEXT")
     _add_column_if_missing(conn, "content_items", "mode TEXT")
     _add_column_if_missing(conn, "content_items", "scheduled_date DATE")
+    _add_column_if_missing(conn, "content_items", "post_url TEXT")
+    _add_column_if_missing(conn, "content_items", "verified_like_count INTEGER")
+    _add_column_if_missing(conn, "content_items", "verified_at TIMESTAMP")
+    _add_column_if_missing(conn, "content_items", "verified_by INTEGER REFERENCES users(id)")
 
     conn.execute(
         """
@@ -936,7 +940,8 @@ def list_all_content(page: int = 1, page_size: int = 20) -> tuple[list[dict], in
     total = conn.execute("SELECT COUNT(*) AS n FROM content_items").fetchone()["n"]
     rows = conn.execute(
         """
-        SELECT content_items.*, users.name AS owner_name, users.email AS owner_email
+        SELECT content_items.*, users.name AS owner_name, users.email AS owner_email,
+               users.business_category AS owner_category
         FROM content_items
         JOIN users ON users.id = content_items.user_id
         ORDER BY content_items.created_at DESC
@@ -946,6 +951,123 @@ def list_all_content(page: int = 1, page_size: int = 20) -> tuple[list[dict], in
     ).fetchall()
     conn.close()
     return rows, total
+
+
+def update_content_post_url(content_id: int, user_id: int, post_url: str | None) -> dict | None:
+    conn = get_connection()
+    row = conn.execute(
+        "UPDATE content_items SET post_url = %s WHERE id = %s AND user_id = %s RETURNING *",
+        (post_url, content_id, user_id),
+    ).fetchone()
+    conn.commit()
+    conn.close()
+    return row
+
+
+def admin_verify_content_likes(content_id: int, like_count: int, admin_id: int) -> dict | None:
+    conn = get_connection()
+    row = conn.execute(
+        """
+        UPDATE content_items
+        SET verified_like_count = %s, verified_at = CURRENT_TIMESTAMP, verified_by = %s
+        WHERE id = %s
+        RETURNING *
+        """,
+        (like_count, admin_id, content_id),
+    ).fetchone()
+    conn.commit()
+    conn.close()
+    return row
+
+
+def list_top_content_for_user(user_id: int, limit: int = 3) -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT * FROM content_items
+        WHERE user_id = %s AND verified_like_count IS NOT NULL
+        ORDER BY verified_like_count DESC
+        LIMIT %s
+        """,
+        (user_id, limit),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def list_top_content_by_category(limit_per_category: int = 3) -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT * FROM (
+            SELECT
+                content_items.*,
+                users.name AS owner_name,
+                users.email AS owner_email,
+                users.business_category AS owner_category,
+                ROW_NUMBER() OVER (
+                    PARTITION BY users.business_category
+                    ORDER BY content_items.verified_like_count DESC
+                ) AS rn
+            FROM content_items
+            JOIN users ON users.id = content_items.user_id
+            WHERE content_items.verified_like_count IS NOT NULL
+              AND users.business_category IS NOT NULL
+        ) ranked
+        WHERE rn <= %s
+        ORDER BY owner_category, rn
+        """,
+        (limit_per_category,),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+# Growth per user is (latest snapshot - earliest snapshot) summed across
+# whichever platforms they've logged, so a user who only ever logged once
+# (no real range to measure) naturally drops out rather than reading as
+# zero growth.
+def list_top_users_by_follower_growth_by_category(limit_per_category: int = 3) -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        WITH first_snap AS (
+            SELECT DISTINCT ON (user_id, platform) user_id, platform, follower_count AS first_count
+            FROM follower_snapshots
+            ORDER BY user_id, platform, recorded_at ASC
+        ),
+        last_snap AS (
+            SELECT DISTINCT ON (user_id, platform) user_id, platform, follower_count AS last_count
+            FROM follower_snapshots
+            ORDER BY user_id, platform, recorded_at DESC
+        ),
+        growth AS (
+            SELECT f.user_id, SUM(l.last_count - f.first_count) AS total_growth
+            FROM first_snap f
+            JOIN last_snap l ON l.user_id = f.user_id AND l.platform = f.platform
+            GROUP BY f.user_id
+        ),
+        ranked AS (
+            SELECT
+                users.id,
+                users.name,
+                users.email,
+                users.business_category,
+                growth.total_growth,
+                ROW_NUMBER() OVER (
+                    PARTITION BY users.business_category
+                    ORDER BY growth.total_growth DESC
+                ) AS rn
+            FROM growth
+            JOIN users ON users.id = growth.user_id
+            WHERE users.business_category IS NOT NULL AND growth.total_growth > 0
+        )
+        SELECT * FROM ranked WHERE rn <= %s ORDER BY business_category, rn
+        """,
+        (limit_per_category,),
+    ).fetchall()
+    conn.close()
+    return rows
 
 
 def list_prompt_templates(

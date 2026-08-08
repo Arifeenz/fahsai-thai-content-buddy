@@ -23,10 +23,21 @@ export interface ContentItem {
   feedback: ContentFeedback | null;
   createdAt: string;
   scheduledDate: string | null;
+  postUrl: string | null;
+  verifiedLikeCount: number | null;
+  verifiedAt: string | null;
 }
 export interface AdminContentItem extends ContentItem {
   owner_name: string;
   owner_email: string;
+  owner_category: BusinessCategory | null;
+}
+export interface TopGrowthUser {
+  id: number;
+  name: string;
+  email: string;
+  business_category: BusinessCategory;
+  total_growth: number;
 }
 export interface DnaDocument {
   doc_type: DnaDocType;
@@ -384,6 +395,16 @@ export const api = {
   async markContentPosted(id: string): Promise<ContentItem> {
     return request(`/content/${id}/mark-posted`, { method: "PATCH" });
   },
+  async updateContentPostUrl(id: string, postUrl: string | null): Promise<ContentItem> {
+    return request(`/content/${id}/post-url`, {
+      method: "PATCH",
+      body: JSON.stringify({ post_url: postUrl }),
+    });
+  },
+  async getMyTopContent(): Promise<ContentItem[]> {
+    const { items } = await request<{ items: ContentItem[] }>("/content/top");
+    return items;
+  },
   async deleteContent(id: string): Promise<void> {
     await request(`/content/${id}`, { method: "DELETE" });
   },
@@ -495,6 +516,24 @@ export const api = {
       page_size: number;
     }>(`/admin/content?page=${page}&page_size=${pageSize}`);
     return { items, total, page: p, page_size };
+  },
+  async adminVerifyContentLikes(id: string, likeCount: number): Promise<AdminContentItem> {
+    return request(`/admin/content/${id}/verify`, {
+      method: "PATCH",
+      body: JSON.stringify({ like_count: likeCount }),
+    });
+  },
+  async adminGetTopContentByCategory(): Promise<AdminContentItem[]> {
+    const { items } = await request<{ items: AdminContentItem[] }>(
+      "/admin/content/top-by-category",
+    );
+    return items;
+  },
+  async adminGetTopGrowthByCategory(): Promise<TopGrowthUser[]> {
+    const { items } = await request<{ items: TopGrowthUser[] }>(
+      "/admin/users/top-growth-by-category",
+    );
+    return items;
   },
   async adminListPromptTemplates(): Promise<PromptTemplate[]> {
     const { templates } = await request<{ templates: PromptTemplate[] }>("/admin/prompt-templates");
