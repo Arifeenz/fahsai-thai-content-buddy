@@ -28,6 +28,7 @@ from slowapi.util import get_remote_address
 from supabase import create_client
 
 from db import (
+    accept_team_invite,
     admin_verify_content_likes,
     create_content_item,
     create_email_user,
@@ -61,6 +62,7 @@ from db import (
     get_monthly_openai_spend,
     get_demo_user_by_category,
     get_pending_invite,
+    get_pending_invite_by_token,
     get_platform_tip,
     get_random_quote,
     get_retention_stats,
@@ -180,6 +182,7 @@ SESSION_COOKIE = "fahsai_session"
 SESSION_TTL = timedelta(days=7)
 VERIFICATION_TOKEN_TTL = timedelta(hours=24)
 RESET_TOKEN_TTL = timedelta(hours=1)
+TEAM_INVITE_TTL = timedelta(days=7)
 
 
 def resize_and_compress_image(contents: bytes) -> bytes | None:
@@ -476,6 +479,12 @@ VALID_TEAM_PAGES = {"create", "examples", "schedule", "library", "brand-dna"}
 class TeamInviteCreate(BaseModel):
     email: str
     allowed_pages: list[str] = []
+
+
+class TeamAcceptRequest(BaseModel):
+    token: str
+    name: str | None = None
+    password: str | None = None
 
 
 class SupportTicketResolveUpdate(BaseModel):
@@ -1149,7 +1158,8 @@ def invite_team_member(body: TeamInviteCreate, request: Request):
 
     allowed_pages = [p for p in body.allowed_pages if p in VALID_TEAM_PAGES]
     token = secrets.token_urlsafe(32)
-    invite = create_team_invite(owner["id"], email, ",".join(allowed_pages), token)
+    expires_at = (datetime.now(timezone.utc) + TEAM_INVITE_TTL).strftime("%Y-%m-%d %H:%M:%S")
+    invite = create_team_invite(owner["id"], email, ",".join(allowed_pages), token, expires_at)
 
     accept_link = f"{FRONTEND_ORIGIN}/join-team?token={token}"
     send_email(
@@ -1168,6 +1178,49 @@ def revoke_my_team_invite(invite_id: int, request: Request):
     if not ok:
         raise HTTPException(status_code=404, detail="ไม่พบคำเชิญนี้ค่ะ")
     return {"ok": True}
+
+
+@app.post("/team/accept")
+@limiter.limit("10/hour")
+def accept_team_invite_endpoint(body: TeamAcceptRequest, response: Response, request: Request):
+    invite = get_pending_invite_by_token(body.token)
+    if invite is None:
+        raise HTTPException(status_code=400, detail="ลิงก์เชิญไม่ถูกต้องหรือหมดอายุแล้วนะคะ")
+
+    owner = get_user_by_id(invite["owner_user_id"])
+    if owner is None:
+        raise HTTPException(status_code=400, detail="ไม่พบบัญชีเจ้าของทีมแล้วค่ะ")
+
+    # Re-check everything at accept-time too -- conditions can change during
+    # the days a token stays valid (team fills up, owner joins another team,
+    # invited email fills in their own shop data in the meantime, etc).
+    if get_team_membership(owner["id"]) is not None:
+        raise HTTPException(status_code=400, detail="คำเชิญนี้ใช้ไม่ได้แล้วค่ะ")
+    if 1 + count_team_members(owner["id"]) >= 3:
+        raise HTTPException(status_code=400, detail="ทีมนี้เต็มแล้วค่ะ ติดต่อเจ้าของร้านนะคะ")
+
+    existing_user = get_user_by_email(invite["invited_email"])
+    if existing_user is not None:
+        if existing_user["role"] == "admin":
+            raise HTTPException(status_code=400, detail="บัญชีนี้เป็นแอดมิน เข้าร่วมทีมไม่ได้ค่ะ")
+        if get_team_membership(existing_user["id"]) is not None:
+            raise HTTPException(status_code=400, detail="บัญชีนี้อยู่ทีมอื่นอยู่แล้วค่ะ")
+        if not is_account_empty(existing_user["id"]):
+            raise HTTPException(
+                status_code=400, detail="บัญชีนี้มีข้อมูลร้านของตัวเองอยู่แล้ว เข้าร่วมทีมไม่ได้ค่ะ"
+            )
+        member = existing_user
+    else:
+        if not body.name or not body.name.strip():
+            raise HTTPException(status_code=400, detail="กรุณากรอกชื่อค่ะ")
+        if not body.password or len(body.password) < 8:
+            raise HTTPException(status_code=400, detail="รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร")
+        password_hash = bcrypt.hashpw(body.password.encode(), bcrypt.gensalt()).decode()
+        member = create_email_user(invite["invited_email"], password_hash, body.name.strip(), "user")
+
+    accept_team_invite(invite["id"], owner["id"], member["id"], invite["allowed_pages"])
+    issue_session_cookie(response, member["id"])
+    return {"user": user_to_dict(member), "owner_name": owner["name"]}
 
 
 @app.post("/brand-dna/draft")

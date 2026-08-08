@@ -237,6 +237,7 @@ def init_db() -> None:
         )
         """
     )
+    _add_column_if_missing(conn, "team_invites", "expires_at TIMESTAMP")
 
     conn.execute(
         """
@@ -471,19 +472,50 @@ def get_pending_invite(owner_user_id: int, email: str) -> dict | None:
     return row
 
 
-def create_team_invite(owner_user_id: int, email: str, allowed_pages: str, token: str) -> dict:
+def create_team_invite(
+    owner_user_id: int, email: str, allowed_pages: str, token: str, expires_at: str
+) -> dict:
     conn = get_connection()
     row = conn.execute(
         """
-        INSERT INTO team_invites (owner_user_id, invited_email, allowed_pages, token)
-        VALUES (%s, %s, %s, %s)
+        INSERT INTO team_invites (owner_user_id, invited_email, allowed_pages, token, expires_at)
+        VALUES (%s, %s, %s, %s, %s)
         RETURNING *
         """,
-        (owner_user_id, email, allowed_pages, token),
+        (owner_user_id, email, allowed_pages, token, expires_at),
     ).fetchone()
     conn.commit()
     conn.close()
     return row
+
+
+def get_pending_invite_by_token(token: str) -> dict | None:
+    conn = get_connection()
+    row = conn.execute(
+        """
+        SELECT * FROM team_invites
+        WHERE token = %s AND status = 'pending' AND expires_at >= CURRENT_TIMESTAMP
+        """,
+        (token,),
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def accept_team_invite(
+    invite_id: int, owner_user_id: int, member_user_id: int, allowed_pages: str
+) -> None:
+    conn = get_connection()
+    conn.execute(
+        "INSERT INTO team_members (owner_user_id, member_user_id, allowed_pages) VALUES (%s, %s, %s)",
+        (owner_user_id, member_user_id, allowed_pages),
+    )
+    conn.execute(
+        "UPDATE team_invites SET status = 'accepted', accepted_at = CURRENT_TIMESTAMP WHERE id = %s",
+        (invite_id,),
+    )
+    conn.commit()
+    conn.close()
 
 
 def list_team_invites(owner_user_id: int) -> list[dict]:
