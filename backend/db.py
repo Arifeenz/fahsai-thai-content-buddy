@@ -225,6 +225,33 @@ def init_db() -> None:
 
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS team_invites (
+            id SERIAL PRIMARY KEY,
+            owner_user_id INTEGER NOT NULL REFERENCES users(id),
+            invited_email TEXT NOT NULL,
+            allowed_pages TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending',
+            token TEXT NOT NULL UNIQUE,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            accepted_at TIMESTAMP
+        )
+        """
+    )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS team_members (
+            id SERIAL PRIMARY KEY,
+            owner_user_id INTEGER NOT NULL REFERENCES users(id),
+            member_user_id INTEGER NOT NULL UNIQUE REFERENCES users(id),
+            allowed_pages TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS support_tickets (
             id SERIAL PRIMARY KEY,
             user_id INTEGER NOT NULL REFERENCES users(id),
@@ -399,6 +426,101 @@ def get_user_by_email(email: str) -> dict | None:
     row = conn.execute("SELECT * FROM users WHERE email = %s", (email,)).fetchone()
     conn.close()
     return row
+
+
+def is_account_empty(user_id: int) -> bool:
+    conn = get_connection()
+    content_count = conn.execute(
+        "SELECT COUNT(*) AS n FROM content_items WHERE user_id = %s", (user_id,)
+    ).fetchone()["n"]
+    example_count = conn.execute(
+        "SELECT COUNT(*) AS n FROM example_posts WHERE user_id = %s", (user_id,)
+    ).fetchone()["n"]
+    dna_count = conn.execute(
+        "SELECT COUNT(*) AS n FROM brand_dna WHERE user_id = %s AND content != ''", (user_id,)
+    ).fetchone()["n"]
+    conn.close()
+    return content_count == 0 and example_count == 0 and dna_count == 0
+
+
+def count_team_members(owner_user_id: int) -> int:
+    conn = get_connection()
+    n = conn.execute(
+        "SELECT COUNT(*) AS n FROM team_members WHERE owner_user_id = %s", (owner_user_id,)
+    ).fetchone()["n"]
+    conn.close()
+    return n
+
+
+def get_team_membership(user_id: int) -> dict | None:
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM team_members WHERE member_user_id = %s", (user_id,)
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def get_pending_invite(owner_user_id: int, email: str) -> dict | None:
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM team_invites WHERE owner_user_id = %s AND invited_email = %s AND status = 'pending'",
+        (owner_user_id, email),
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def create_team_invite(owner_user_id: int, email: str, allowed_pages: str, token: str) -> dict:
+    conn = get_connection()
+    row = conn.execute(
+        """
+        INSERT INTO team_invites (owner_user_id, invited_email, allowed_pages, token)
+        VALUES (%s, %s, %s, %s)
+        RETURNING *
+        """,
+        (owner_user_id, email, allowed_pages, token),
+    ).fetchone()
+    conn.commit()
+    conn.close()
+    return row
+
+
+def list_team_invites(owner_user_id: int) -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM team_invites WHERE owner_user_id = %s ORDER BY created_at DESC",
+        (owner_user_id,),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def list_team_members(owner_user_id: int) -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT team_members.*, users.name AS member_name, users.email AS member_email
+        FROM team_members
+        JOIN users ON users.id = team_members.member_user_id
+        WHERE team_members.owner_user_id = %s
+        ORDER BY team_members.created_at
+        """,
+        (owner_user_id,),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def revoke_team_invite(invite_id: int, owner_user_id: int) -> bool:
+    conn = get_connection()
+    row = conn.execute(
+        "UPDATE team_invites SET status = 'revoked' WHERE id = %s AND owner_user_id = %s AND status = 'pending' RETURNING id",
+        (invite_id, owner_user_id),
+    ).fetchone()
+    conn.commit()
+    conn.close()
+    return row is not None
 
 
 def create_email_user(email: str, password_hash: str, name: str, role: str) -> dict:

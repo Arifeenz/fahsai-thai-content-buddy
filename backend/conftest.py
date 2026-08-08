@@ -44,6 +44,8 @@ TABLES = [
     "content_items",
     "brand_dna",
     "quotes",
+    "team_invites",
+    "team_members",
     "users",
 ]
 

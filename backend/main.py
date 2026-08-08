@@ -39,6 +39,8 @@ from db import (
     create_prompt_template,
     create_quote,
     create_support_ticket,
+    create_team_invite,
+    count_team_members,
     delete_content_item,
     delete_event,
     delete_example_post,
@@ -58,14 +60,17 @@ from db import (
     get_feedback_ratio_by_mode,
     get_monthly_openai_spend,
     get_demo_user_by_category,
+    get_pending_invite,
     get_platform_tip,
     get_random_quote,
     get_retention_stats,
     get_social_links,
+    get_team_membership,
     get_user_by_email,
     get_user_by_id,
     get_user_by_reset_token,
     init_db,
+    is_account_empty,
     list_all_content,
     list_all_example_posts,
     list_all_users,
@@ -81,12 +86,15 @@ from db import (
     list_quotes,
     list_security_events,
     list_support_tickets,
+    list_team_invites,
+    list_team_members,
     list_top_content_by_category,
     list_top_content_for_user,
     list_top_users_by_follower_growth_by_category,
     log_security_event,
     mark_content_posted,
     promote_example_post_to_global,
+    revoke_team_invite,
     reset_password as db_reset_password,
     save_event_headline,
     set_content_feedback,
@@ -459,6 +467,17 @@ class SupportTicketCreate(BaseModel):
     user_agent: str | None = None
 
 
+# Matches the sidebar's user-facing nav sections -- "settings" is deliberately
+# excluded since it's personal (password, notifications) and always visible
+# to every team member regardless of what the owner grants.
+VALID_TEAM_PAGES = {"create", "examples", "schedule", "library", "brand-dna"}
+
+
+class TeamInviteCreate(BaseModel):
+    email: str
+    allowed_pages: list[str] = []
+
+
 class SupportTicketResolveUpdate(BaseModel):
     resolved: bool
 
@@ -649,6 +668,26 @@ def support_ticket_to_dict(row) -> dict:
         "created_at": to_utc_iso(row["created_at"]),
         "user_name": row["user_name"] if "user_name" in row else None,
         "user_email": row["user_email"] if "user_email" in row else None,
+    }
+
+
+def team_invite_to_dict(row) -> dict:
+    return {
+        "id": row["id"],
+        "invited_email": row["invited_email"],
+        "allowed_pages": [p for p in row["allowed_pages"].split(",") if p],
+        "status": row["status"],
+        "created_at": to_utc_iso(row["created_at"]),
+    }
+
+
+def team_member_to_dict(row) -> dict:
+    return {
+        "id": row["id"],
+        "member_name": row["member_name"],
+        "member_email": row["member_email"],
+        "allowed_pages": [p for p in row["allowed_pages"].split(",") if p],
+        "created_at": to_utc_iso(row["created_at"]),
     }
 
 
@@ -1055,6 +1094,80 @@ def create_my_support_ticket(body: SupportTicketCreate, request: Request):
         raise HTTPException(status_code=400, detail="กรุณาอธิบายปัญหาก่อนนะคะ")
     row = create_support_ticket(user["id"], message, body.user_agent)
     return support_ticket_to_dict(row)
+
+
+@app.get("/team")
+def get_my_team(request: Request):
+    user = require_user(request)
+    return {
+        "members": [team_member_to_dict(row) for row in list_team_members(user["id"])],
+        "invites": [
+            team_invite_to_dict(row)
+            for row in list_team_invites(user["id"])
+            if row["status"] == "pending"
+        ],
+    }
+
+
+@app.post("/team/invite")
+@limiter.limit("10/hour")
+def invite_team_member(body: TeamInviteCreate, request: Request):
+    owner = require_user(request)
+    email = body.email.strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail="กรุณากรอกอีเมลค่ะ")
+    if email == owner["email"].lower():
+        raise HTTPException(status_code=400, detail="เชิญตัวเองเข้าทีมไม่ได้ค่ะ")
+
+    # A team member can't sub-invite -- only the account that owns the shop's
+    # data may grow the team, otherwise "who's the owner" gets ambiguous.
+    if get_team_membership(owner["id"]) is not None:
+        raise HTTPException(
+            status_code=400, detail="บัญชีนี้เป็นทีมงานของร้านอื่นอยู่แล้ว เชิญคนเพิ่มไม่ได้ค่ะ"
+        )
+
+    current_size = 1 + count_team_members(owner["id"])
+    if current_size >= 3:
+        raise HTTPException(status_code=400, detail="ทีมเต็มแล้วค่ะ (สูงสุด 3 คนรวมเจ้าของร้าน)")
+
+    existing_user = get_user_by_email(email)
+    if existing_user is not None:
+        if existing_user["role"] == "admin":
+            raise HTTPException(status_code=400, detail="เชิญบัญชีแอดมินเข้าทีมไม่ได้ค่ะ")
+        if get_team_membership(existing_user["id"]) is not None:
+            raise HTTPException(status_code=400, detail="อีเมลนี้เป็นทีมงานของร้านอื่นอยู่แล้วค่ะ")
+        # Merging an account that already has its own shop data would
+        # silently orphan that data behind someone else's team -- refuse
+        # rather than guess what the person would have wanted.
+        if not is_account_empty(existing_user["id"]):
+            raise HTTPException(
+                status_code=400, detail="อีเมลนี้มีข้อมูลร้านของตัวเองอยู่แล้ว เชิญเข้าทีมไม่ได้ค่ะ"
+            )
+
+    if get_pending_invite(owner["id"], email) is not None:
+        raise HTTPException(status_code=400, detail="เชิญอีเมลนี้ไปแล้ว กำลังรอการตอบรับอยู่ค่ะ")
+
+    allowed_pages = [p for p in body.allowed_pages if p in VALID_TEAM_PAGES]
+    token = secrets.token_urlsafe(32)
+    invite = create_team_invite(owner["id"], email, ",".join(allowed_pages), token)
+
+    accept_link = f"{FRONTEND_ORIGIN}/join-team?token={token}"
+    send_email(
+        email,
+        f"{owner['name']} เชิญคุณเข้าร่วมทีมบน FAHSAI",
+        f'<p>{owner["name"]} เชิญให้คุณเข้ามาช่วยดูแลคอนเทนต์ของร้านบน FAHSAI</p>'
+        f'<p><a href="{accept_link}">{accept_link}</a></p>',
+    )
+    return team_invite_to_dict(invite)
+
+
+@app.delete("/team/invite/{invite_id}")
+def revoke_my_team_invite(invite_id: int, request: Request):
+    user = require_user(request)
+    ok = revoke_team_invite(invite_id, user["id"])
+    if not ok:
+        raise HTTPException(status_code=404, detail="ไม่พบคำเชิญนี้ค่ะ")
+    return {"ok": True}
 
 
 @app.post("/brand-dna/draft")
