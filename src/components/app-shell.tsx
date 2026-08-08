@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import logo from "@/assets/fahsai-logo.png";
-import { api } from "@/lib/api";
+import { api, type TeamPage } from "@/lib/api";
 import { useState, type ReactNode } from "react";
 import { Drawer, DrawerContent, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer";
 
@@ -88,11 +88,33 @@ function mobileNavGridClass(columnCount: number): string {
   }
 }
 
+// Nav paths that map to a gate-able team page -- "/dashboard" and
+// "/settings" are deliberately absent here, so they stay visible to every
+// team member regardless of what the owner granted them.
+const NAV_PAGE_KEYS: Record<string, TeamPage> = {
+  "/brand-dna": "brand-dna",
+  "/create": "create",
+  "/schedule": "schedule",
+  "/examples": "examples",
+  "/library": "library",
+};
+
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
   const user = useCurrentUser();
-  const items = user?.role === "admin" ? adminNavItems : userNavItems;
+  const allItems = user?.role === "admin" ? adminNavItems : userNavItems;
+  // A restricted team member (allowed_pages is a real array, not null) only
+  // sees nav items for pages the owner granted -- this is purely cosmetic,
+  // the backend enforces the same restriction independently of what's shown.
+  const allowedPages = user?.allowed_pages;
+  const items =
+    allowedPages != null
+      ? allItems.filter((item) => {
+          const pageKey = NAV_PAGE_KEYS[item.to];
+          return pageKey === undefined || allowedPages.includes(pageKey);
+        })
+      : allItems;
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [resending, setResending] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);

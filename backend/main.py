@@ -603,6 +603,7 @@ def user_to_dict(row) -> dict:
     # blank ones. Identity fields (name/email/etc.) and hide_global_events
     # (a personal calendar display preference) stay the real logged-in user's.
     shop = resolve_effective_owner(row)
+    membership = get_team_membership(row["id"])
     return {
         "name": row["name"],
         "email": row["email"],
@@ -615,6 +616,12 @@ def user_to_dict(row) -> dict:
         "example_selection_mode": shop["example_selection_mode"],
         "has_password": row["password_hash"] is not None,
         "is_demo": bool(row["is_demo"]),
+        # None means "not a team member, full access" -- the frontend nav
+        # only needs to filter when this is an actual list.
+        "allowed_pages": (
+            [p for p in membership["allowed_pages"].split(",") if p] if membership else None
+        ),
+        "team_owner_name": shop["name"] if membership else None,
     }
 
 
@@ -1249,6 +1256,23 @@ def revoke_my_team_invite(invite_id: int, request: Request):
     if not ok:
         raise HTTPException(status_code=404, detail="ไม่พบคำเชิญนี้ค่ะ")
     return {"ok": True}
+
+
+@app.get("/team/invite/{token}")
+def get_team_invite_info(token: str):
+    # Public (no auth) -- the token itself, only ever delivered via the
+    # invite email, is what authorizes viewing this. Needed so the
+    # join-team page can decide whether to show a signup form or a plain
+    # confirm button before the person has any session at all.
+    invite = get_pending_invite_by_token(token)
+    if invite is None:
+        raise HTTPException(status_code=400, detail="ลิงก์เชิญไม่ถูกต้องหรือหมดอายุแล้วนะคะ")
+    owner = get_user_by_id(invite["owner_user_id"])
+    return {
+        "invited_email": invite["invited_email"],
+        "owner_name": owner["name"] if owner else None,
+        "needs_signup": get_user_by_email(invite["invited_email"]) is None,
+    }
 
 
 @app.post("/team/accept")

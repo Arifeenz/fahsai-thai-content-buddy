@@ -44,6 +44,7 @@ export interface DnaDocument {
   content: string;
 }
 export type SocialLinks = Record<SocialPlatform, string>;
+export type TeamPage = "create" | "examples" | "schedule" | "library" | "brand-dna";
 export interface AuthUser {
   name: string;
   email: string;
@@ -56,6 +57,27 @@ export interface AuthUser {
   example_selection_mode: ExampleSelectionMode;
   has_password: boolean;
   is_demo: boolean;
+  allowed_pages: TeamPage[] | null;
+  team_owner_name: string | null;
+}
+export interface TeamMember {
+  id: number;
+  member_name: string;
+  member_email: string;
+  allowed_pages: TeamPage[];
+  created_at: string;
+}
+export interface TeamInvite {
+  id: number;
+  invited_email: string;
+  allowed_pages: TeamPage[];
+  status: string;
+  created_at: string;
+}
+export interface TeamInviteInfo {
+  invited_email: string;
+  owner_name: string | null;
+  needs_signup: boolean;
 }
 export interface AdminUser {
   id: number;
@@ -333,6 +355,32 @@ export const api = {
     return request("/support-tickets", {
       method: "POST",
       body: JSON.stringify({ message, user_agent: navigator.userAgent }),
+    });
+  },
+
+  async getTeam(): Promise<{ members: TeamMember[]; invites: TeamInvite[] }> {
+    return request("/team");
+  },
+  async inviteTeamMember(email: string, allowedPages: TeamPage[]): Promise<TeamInvite> {
+    return request("/team/invite", {
+      method: "POST",
+      body: JSON.stringify({ email, allowed_pages: allowedPages }),
+    });
+  },
+  async revokeTeamInvite(id: number): Promise<void> {
+    await request(`/team/invite/${id}`, { method: "DELETE" });
+  },
+  async getTeamInviteInfo(token: string): Promise<TeamInviteInfo> {
+    return request(`/team/invite/${token}`);
+  },
+  async acceptTeamInvite(
+    token: string,
+    name?: string,
+    password?: string,
+  ): Promise<{ user: AuthUser; owner_name: string }> {
+    return request("/team/accept", {
+      method: "POST",
+      body: JSON.stringify({ token, name, password }),
     });
   },
 

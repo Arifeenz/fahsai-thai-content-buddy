@@ -330,3 +330,57 @@ def test_accept_fails_when_team_already_full(client):
         "/team/accept", json={"token": token, "name": "New Person", "password": "testpass123"}
     )
     assert res.status_code == 400
+
+
+def test_invite_info_for_new_email_needs_signup(client):
+    signup(client, "owner@test.local")
+    client.post("/team/invite", json={"email": "newperson@test.local", "allowed_pages": []})
+    token = get_invite_token("newperson@test.local")
+    client.cookies.clear()
+
+    res = client.get(f"/team/invite/{token}")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["invited_email"] == "newperson@test.local"
+    assert body["owner_name"] == "Test"
+    assert body["needs_signup"] is True
+
+
+def test_invite_info_for_existing_empty_account_does_not_need_signup(client):
+    signup(client, "empty@test.local")
+    client.cookies.clear()
+    signup(client, "owner@test.local")
+    client.post("/team/invite", json={"email": "empty@test.local", "allowed_pages": []})
+    token = get_invite_token("empty@test.local")
+    client.cookies.clear()
+
+    res = client.get(f"/team/invite/{token}")
+    assert res.status_code == 200
+    assert res.json()["needs_signup"] is False
+
+
+def test_invite_info_404_for_invalid_token(client):
+    res = client.get("/team/invite/not-a-real-token")
+    assert res.status_code == 400
+
+
+def test_auth_me_allowed_pages_null_for_non_member(client):
+    signup(client, "owner@test.local")
+    res = client.get("/auth/me")
+    body = res.json()["user"]
+    assert body["allowed_pages"] is None
+    assert body["team_owner_name"] is None
+
+
+def test_auth_me_allowed_pages_for_member(client):
+    signup(client, "owner@test.local")
+    owner = db.get_user_by_email("owner@test.local")
+    client.cookies.clear()
+    signup(client, "member@test.local")
+    member = db.get_user_by_email("member@test.local")
+    add_team_member(owner["id"], member["id"], "create,examples")
+
+    res = client.get("/auth/me")
+    body = res.json()["user"]
+    assert set(body["allowed_pages"]) == {"create", "examples"}
+    assert body["team_owner_name"] == "Test"

@@ -15,6 +15,7 @@ import { Route as BrandDnaRouteImport } from './routes/brand-dna'
 import { Route as CreateRouteImport } from './routes/create'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as ExamplesRouteImport } from './routes/examples'
+import { Route as JoinTeamRouteImport } from './routes/join-team'
 import { Route as LibraryRouteImport } from './routes/library'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
@@ -63,6 +64,11 @@ const DashboardRoute = DashboardRouteImport.update({
 const ExamplesRoute = ExamplesRouteImport.update({
   id: '/examples',
   path: '/examples',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const JoinTeamRoute = JoinTeamRouteImport.update({
+  id: '/join-team',
+  path: '/join-team',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LibraryRoute = LibraryRouteImport.update({
@@ -168,6 +174,7 @@ export interface FileRoutesByFullPath {
   '/create': typeof CreateRoute
   '/dashboard': typeof DashboardRoute
   '/examples': typeof ExamplesRoute
+  '/join-team': typeof JoinTeamRoute
   '/library': typeof LibraryRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
@@ -194,6 +201,7 @@ export interface FileRoutesByTo {
   '/create': typeof CreateRoute
   '/dashboard': typeof DashboardRoute
   '/examples': typeof ExamplesRoute
+  '/join-team': typeof JoinTeamRoute
   '/library': typeof LibraryRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
@@ -222,6 +230,7 @@ export interface FileRoutesById {
   '/create': typeof CreateRoute
   '/dashboard': typeof DashboardRoute
   '/examples': typeof ExamplesRoute
+  '/join-team': typeof JoinTeamRoute
   '/library': typeof LibraryRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
@@ -251,6 +260,7 @@ export interface FileRouteTypes {
     | '/create'
     | '/dashboard'
     | '/examples'
+    | '/join-team'
     | '/library'
     | '/login'
     | '/reset-password'
@@ -277,6 +287,7 @@ export interface FileRouteTypes {
     | '/create'
     | '/dashboard'
     | '/examples'
+    | '/join-team'
     | '/library'
     | '/login'
     | '/reset-password'
@@ -304,6 +315,7 @@ export interface FileRouteTypes {
     | '/create'
     | '/dashboard'
     | '/examples'
+    | '/join-team'
     | '/library'
     | '/login'
     | '/reset-password'
@@ -332,6 +344,7 @@ export interface RootRouteChildren {
   CreateRoute: typeof CreateRoute
   DashboardRoute: typeof DashboardRoute
   ExamplesRoute: typeof ExamplesRoute
+  JoinTeamRoute: typeof JoinTeamRoute
   LibraryRoute: typeof LibraryRoute
   LoginRoute: typeof LoginRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
@@ -383,6 +396,13 @@ declare module '@tanstack/react-router' {
       path: '/examples'
       fullPath: '/examples'
       preLoaderRoute: typeof ExamplesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/join-team': {
+      id: '/join-team'
+      path: '/join-team'
+      fullPath: '/join-team'
+      preLoaderRoute: typeof JoinTeamRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/library': {
@@ -560,6 +580,7 @@ const rootRouteChildren: RootRouteChildren = {
   CreateRoute: CreateRoute,
   DashboardRoute: DashboardRoute,
   ExamplesRoute: ExamplesRoute,
+  JoinTeamRoute: JoinTeamRoute,
   LibraryRoute: LibraryRoute,
   LoginRoute: LoginRoute,
   ResetPasswordRoute: ResetPasswordRoute,
