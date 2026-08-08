@@ -149,6 +149,60 @@ def test_generate_rating_mode_prefers_higher_rated_examples(client, monkeypatch)
     assert "ตัวอย่างเรตติ้ง low" not in system_prompt
 
 
+def test_generate_returns_only_own_examples_in_used_examples(client, monkeypatch):
+    signup(client, "admin@test.local")
+    res = client.post(
+        "/admin/example-posts",
+        data={
+            "business_category": "food_beverage",
+            "platform": "facebook",
+            "caption": "ตัวอย่างกลางจาก admin",
+        },
+    )
+    assert res.status_code == 200
+    client.cookies.clear()
+
+    signup(client, "user@test.local")
+    res = client.patch("/me", json={"business_category": "food_beverage"})
+    assert res.status_code == 200
+    res = client.post(
+        "/example-posts",
+        data={
+            "business_category": "food_beverage",
+            "platform": "facebook",
+            "caption": "ตัวอย่างของฉันเอง",
+        },
+    )
+    assert res.status_code == 200
+    own_id = res.json()["id"]
+
+    fake_response = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(
+                    content=json.dumps({"caption": "แคปชั่นทดสอบ", "image_prompt": "test"})
+                )
+            )
+        ],
+        usage=SimpleNamespace(prompt_tokens=100, completion_tokens=50),
+    )
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = fake_response
+    monkeypatch.setattr(main, "openai_client", fake_client)
+
+    res = client.post(
+        "/generate", json={"prompt": "โปรโมชั่นหน้าร้อน", "platform": "facebook", "tone": "friendly"}
+    )
+    assert res.status_code == 200
+    used = res.json()["used_examples"]
+    assert used == [{"id": own_id, "caption": "ตัวอย่างของฉันเอง", "platform": "facebook"}]
+
+    # the admin-curated global example still informs the prompt itself --
+    # it's just not echoed back as something *this* user can go edit
+    system_prompt = fake_client.chat.completions.create.call_args.kwargs["messages"][0]["content"]
+    assert "ตัวอย่างกลางจาก admin" in system_prompt
+
+
 def test_generate_falls_back_to_any_platform_template_for_category_when_exact_platform_missing(
     client,
 ):

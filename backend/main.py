@@ -1520,6 +1520,14 @@ def generate_content(body: GenerateRequest, request: Request):
         style_examples = (
             f"{style_examples}\n---\n{post_captions}" if style_examples else post_captions
         )
+    # Only the user's own examples are surfaced back to them -- admin-curated
+    # global examples were also consulted, but showing those alongside would
+    # be confusing (the user never wrote them and can't edit them from here).
+    used_examples = [
+        {"id": p["id"], "caption": p["caption"], "platform": p["platform"]}
+        for p in example_post_rows
+        if p["user_id"] is not None
+    ]
     platform_label = PLATFORM_LABELS.get(body.platform, body.platform)
     platform_style_hint = PLATFORM_STYLE_HINTS.get(
         body.platform, f"{platform_label} เขียนให้เหมาะกับแพลตฟอร์มนี้"
@@ -1610,6 +1618,7 @@ def generate_content(body: GenerateRequest, request: Request):
         "image_prompt": image_prompt,
         "image_prompt_th": image_prompt_th,
         "content_id": content_row["id"],
+        "used_examples": used_examples,
     }
 
 

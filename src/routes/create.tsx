@@ -31,6 +31,7 @@ import {
   Lightbulb,
   ChevronDown,
   Dna,
+  BookOpen,
 } from "lucide-react";
 
 export const Route = createFileRoute("/create")({
@@ -159,6 +160,10 @@ function CreateContent() {
   const [approved, setApproved] = useState(false);
   const [showShortPromptWarning, setShowShortPromptWarning] = useState(false);
   const [tipOpen, setTipOpen] = useState(false);
+  const [usedExamples, setUsedExamples] = useState<
+    { id: number; caption: string; platform: Platform }[]
+  >([]);
+  const [usedExamplesOpen, setUsedExamplesOpen] = useState(false);
   const { data: platformTip } = useQuery({
     queryKey: ["platform-tip", platform],
     queryFn: () => api.getPlatformTip(platform),
@@ -260,6 +265,7 @@ function CreateContent() {
         setImagePrompt(null);
         setImagePromptTh(null);
         setContentId(res.content_id);
+        setUsedExamples([]);
       } else {
         const res = await api.generate({
           businessId: "me",
@@ -273,6 +279,7 @@ function CreateContent() {
         setImagePrompt(res.image_prompt);
         setImagePromptTh(res.image_prompt_th);
         setContentId(res.content_id);
+        setUsedExamples(res.used_examples ?? []);
       }
       toast.success("โพสต์ใหม่พร้อมแล้วค่ะ ลองดูได้เลย", { id: t });
     } catch (err) {
@@ -760,6 +767,42 @@ function CreateContent() {
                     </button>
                   )}
                 </div>
+
+                {usedExamples.length > 0 && (
+                  <div className="mt-3 overflow-hidden rounded-xl border border-border bg-input/30">
+                    <button
+                      type="button"
+                      onClick={() => setUsedExamplesOpen((v) => !v)}
+                      className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-sm text-muted-foreground hover:text-foreground"
+                    >
+                      <BookOpen className="h-4 w-4 shrink-0" />
+                      <span className="flex-1 font-medium">
+                        อ้างอิงจากตัวอย่างที่คุณเคยเขียน ({usedExamples.length})
+                      </span>
+                      <ChevronDown
+                        className={
+                          "h-4 w-4 shrink-0 transition-transform " +
+                          (usedExamplesOpen ? "rotate-180" : "")
+                        }
+                      />
+                    </button>
+                    {usedExamplesOpen && (
+                      <div className="space-y-2 border-t border-border px-3.5 py-3">
+                        {usedExamples.map((ex) => (
+                          <div key={ex.id} className="line-clamp-2 text-xs text-muted-foreground">
+                            {ex.caption}
+                          </div>
+                        ))}
+                        <Link
+                          to="/examples"
+                          className="inline-block text-xs text-teal hover:underline"
+                        >
+                          แก้ไขตัวอย่าง →
+                        </Link>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4">
                   <input

@@ -341,6 +341,7 @@ export const api = {
     image_prompt: string | null;
     image_prompt_th: string | null;
     content_id: string;
+    used_examples?: { id: number; caption: string; platform: Platform }[];
   }> {
     return request("/generate", {
       method: "POST",
