@@ -29,6 +29,11 @@ export function useScreenCapture(onCaptured: (file: File) => void) {
     null,
   );
   const [cropDragStart, setCropDragStart] = useState<{ x: number; y: number } | null>(null);
+  // The video element has a stream attached but needs a beat to actually
+  // start decoding frames before videoWidth/videoHeight are non-zero --
+  // clicking "ถ่ายภาพ" before that point used to silently no-op with zero
+  // feedback, which read as the whole capture flow being stuck.
+  const [videoReady, setVideoReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const capturedImgRef = useRef<HTMLImageElement>(null);
   const captureStreamRef = useRef<MediaStream | null>(null);
@@ -67,6 +72,7 @@ export function useScreenCapture(onCaptured: (file: File) => void) {
       setCapturedUrl(null);
       setCapturedBlob(null);
       setCropRect(null);
+      setVideoReady(false);
       setCaptureOpen(true);
     } catch (err) {
       if (err instanceof DOMException && err.name === "NotAllowedError") return;
@@ -76,7 +82,10 @@ export function useScreenCapture(onCaptured: (file: File) => void) {
 
   function takeSnapshot() {
     const video = videoRef.current;
-    if (!video || video.videoWidth === 0) return;
+    if (!video || video.videoWidth === 0) {
+      toast.error("วิดีโอยังโหลดไม่เสร็จ รอสักครู่แล้วลองใหม่นะคะ");
+      return;
+    }
     const canvas = document.createElement("canvas");
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
@@ -202,7 +211,14 @@ export function useScreenCapture(onCaptured: (file: File) => void) {
 
         {!capturedUrl ? (
           <div className="overflow-hidden rounded-xl border border-border bg-black">
-            <video ref={videoRef} autoPlay muted playsInline className="w-full" />
+            <video
+              ref={videoRef}
+              autoPlay
+              muted
+              playsInline
+              onLoadedMetadata={() => setVideoReady(true)}
+              className="w-full"
+            />
           </div>
         ) : (
           <div
@@ -245,9 +261,10 @@ export function useScreenCapture(onCaptured: (file: File) => void) {
               <button
                 type="button"
                 onClick={takeSnapshot}
-                className="btn-gold inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm"
+                disabled={!videoReady}
+                className="btn-gold inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <Camera className="h-4 w-4" /> ถ่ายภาพ
+                <Camera className="h-4 w-4" /> {videoReady ? "ถ่ายภาพ" : "กำลังโหลด..."}
               </button>
             </>
           ) : (
