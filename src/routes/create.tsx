@@ -7,6 +7,7 @@ import {
   api,
   exampleSelectionModeLabel,
   platformLabel,
+  type DnaDocType,
   type ExampleSelectionMode,
   type Platform,
   type Tone,
@@ -29,6 +30,7 @@ import {
   CalendarPlus,
   Lightbulb,
   ChevronDown,
+  Dna,
 } from "lucide-react";
 
 export const Route = createFileRoute("/create")({
@@ -121,12 +123,20 @@ const categoryChips: Record<CategoryKey, { label: string; insert: string }[]> = 
 
 const SHORT_PROMPT_THRESHOLD = 15;
 
+// Mirrors dashboard.tsx's completion check -- this banner specifically
+// targets users who never touched brand DNA at all (0 filled), since that's
+// the case that makes /generate fall back to a generic, brand-less prompt.
+// Dashboard's own card already nudges the "started but not finished" case.
+const DNA_KEYS: DnaDocType[] = ["history", "menu", "usp", "tone", "audience"];
+
 function CreateContent() {
   const { ready } = useRequireAuth();
   const user = useCurrentUser();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: dna } = useQuery({ queryKey: ["dna"], queryFn: () => api.getDna() });
+  const dnaFilledCount = dna ? DNA_KEYS.filter((k) => dna[k]?.trim()).length : null;
+  const [dnaBannerDismissed, setDnaBannerDismissed] = useState(false);
   const [mode, setMode] = useState<Mode>("idea");
   const [prompt, setPrompt] = useState("");
   const promptRef = useRef<HTMLTextAreaElement>(null);
@@ -356,6 +366,32 @@ function CreateContent() {
     <AppShell>
       <div className="p-6 md:p-8">
         <PageHeader title="สร้างคอนเทนต์" subtitle="บอก FAHSAI สั้นๆ ว่าอยากได้โพสต์แบบไหน" />
+
+        {dnaFilledCount === 0 && !dnaBannerDismissed && (
+          <div className="mb-6 flex items-start gap-3 rounded-xl border border-gold/30 bg-gold/10 px-4 py-3 text-sm">
+            <Dna className="mt-0.5 h-4 w-4 shrink-0 text-gold" />
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold text-gold">ยังไม่ได้กรอกอัตลักษณ์แบรนด์เลยนะคะ</div>
+              <div className="mt-0.5 text-muted-foreground">
+                กรอกไว้ก่อน ให้ AI เขียนโพสต์ได้ตรงกับร้านคุณมากขึ้น ไม่ใช่โพสต์ทั่วไป
+              </div>
+            </div>
+            <Link
+              to="/brand-dna"
+              className="shrink-0 rounded-full bg-gold px-3.5 py-1.5 text-xs font-semibold text-background hover:brightness-110"
+            >
+              กรอกเลย
+            </Link>
+            <button
+              type="button"
+              onClick={() => setDnaBannerDismissed(true)}
+              className="shrink-0 text-muted-foreground hover:text-foreground"
+              aria-label="ปิด"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
 
         {requestedDate && (
           <div className="mb-6 flex flex-wrap items-center gap-2 rounded-xl border border-teal/30 bg-teal/10 px-4 py-2.5 text-sm text-teal">
