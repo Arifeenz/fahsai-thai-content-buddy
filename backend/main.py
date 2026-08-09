@@ -2253,11 +2253,18 @@ def admin_set_user_active(user_id: int, body: SetUserActiveRequest, request: Req
 
 @app.get("/admin/content")
 @limiter.limit("60/minute")
-def admin_get_all_content(request: Request, page: int = 1, page_size: int = 20):
+def admin_get_all_content(
+    request: Request,
+    page: int = 1,
+    page_size: int = 20,
+    search: str | None = None,
+    status: str | None = None,
+    platform: str | None = None,
+):
     require_admin(request)
     page = max(page, 1)
     page_size = min(max(page_size, 1), 100)
-    rows, total = list_all_content(page, page_size)
+    rows, total = list_all_content(page, page_size, search, status, platform)
     return {
         "items": [admin_content_to_dict(row) for row in rows],
         "total": total,

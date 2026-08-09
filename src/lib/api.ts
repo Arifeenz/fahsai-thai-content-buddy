@@ -553,7 +553,15 @@ export const api = {
       body: JSON.stringify({ is_active: isActive }),
     });
   },
-  async adminListContent(page = 1, pageSize = 20): Promise<Paginated<AdminContentItem>> {
+  async adminListContent(
+    page = 1,
+    pageSize = 20,
+    filters?: { search?: string; status?: ContentStatus; platform?: Platform },
+  ): Promise<Paginated<AdminContentItem>> {
+    const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+    if (filters?.search) params.set("search", filters.search);
+    if (filters?.status) params.set("status", filters.status);
+    if (filters?.platform) params.set("platform", filters.platform);
     const {
       items,
       total,
@@ -564,7 +572,7 @@ export const api = {
       total: number;
       page: number;
       page_size: number;
-    }>(`/admin/content?page=${page}&page_size=${pageSize}`);
+    }>(`/admin/content?${params.toString()}`);
     return { items, total, page: p, page_size };
   },
   async adminVerifyContentLikes(id: string, likeCount: number): Promise<AdminContentItem> {

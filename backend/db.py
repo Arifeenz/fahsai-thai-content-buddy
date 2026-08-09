@@ -1089,19 +1089,46 @@ def list_content_for_user(user_id: int) -> list[dict]:
     return rows
 
 
-def list_all_content(page: int = 1, page_size: int = 20) -> tuple[list[dict], int]:
+def list_all_content(
+    page: int = 1,
+    page_size: int = 20,
+    search: str | None = None,
+    status: str | None = None,
+    platform: str | None = None,
+) -> tuple[list[dict], int]:
     conn = get_connection()
-    total = conn.execute("SELECT COUNT(*) AS n FROM content_items").fetchone()["n"]
+    where = []
+    params: list = []
+    if search:
+        where.append("(content_items.preview ILIKE %s OR users.name ILIKE %s OR users.email ILIKE %s)")
+        like = f"%{search}%"
+        params.extend([like, like, like])
+    if status:
+        where.append("content_items.status = %s")
+        params.append(status)
+    if platform:
+        where.append("content_items.platform = %s")
+        params.append(platform)
+    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+    total = conn.execute(
+        f"""
+        SELECT COUNT(*) AS n FROM content_items
+        JOIN users ON users.id = content_items.user_id
+        {where_sql}
+        """,
+        params,
+    ).fetchone()["n"]
     rows = conn.execute(
-        """
+        f"""
         SELECT content_items.*, users.name AS owner_name, users.email AS owner_email,
                users.business_category AS owner_category
         FROM content_items
         JOIN users ON users.id = content_items.user_id
+        {where_sql}
         ORDER BY content_items.created_at DESC
         LIMIT %s OFFSET %s
         """,
-        (page_size, (page - 1) * page_size),
+        (*params, page_size, (page - 1) * page_size),
     ).fetchall()
     conn.close()
     return rows, total

@@ -123,6 +123,56 @@ def test_admin_top_growth_by_category_orders_by_growth(client):
     assert matched["business_category"] == "streamer"
 
 
+def test_admin_content_search_filters_by_preview_text(client):
+    signup(client, "admin@test.local")
+    client.cookies.clear()
+    signup(client, "creator@test.local")
+    client.post("/content", json={"platform": "facebook", "preview": "โปรโมชั่นกาแฟ", "status": "draft"})
+    client.post("/content", json={"platform": "facebook", "preview": "ข่าวสารร้าน", "status": "draft"})
+
+    as_admin(client)
+    res = client.get("/admin/content", params={"search": "กาแฟ"})
+    assert res.status_code == 200
+    items = res.json()["items"]
+    assert len(items) == 1
+    assert "กาแฟ" in items[0]["preview"]
+
+
+def test_admin_content_search_matches_owner_email(client):
+    signup(client, "admin@test.local")
+    client.cookies.clear()
+    signup(client, "findme@test.local")
+    client.post("/content", json={"platform": "facebook", "preview": "hello", "status": "draft"})
+
+    as_admin(client)
+    res = client.get("/admin/content", params={"search": "findme"})
+    assert res.status_code == 200
+    items = res.json()["items"]
+    assert len(items) == 1
+    assert items[0]["owner_email"] == "findme@test.local"
+
+
+def test_admin_content_filters_by_status_and_platform(client):
+    signup(client, "admin@test.local")
+    client.cookies.clear()
+    signup(client, "creator@test.local")
+    client.post("/content", json={"platform": "facebook", "preview": "draft post", "status": "draft"})
+    client.post("/content", json={"platform": "instagram", "preview": "posted post", "status": "posted"})
+
+    as_admin(client)
+    res = client.get("/admin/content", params={"status": "posted"})
+    assert res.status_code == 200
+    items = res.json()["items"]
+    assert len(items) == 1
+    assert items[0]["status"] == "posted"
+
+    res = client.get("/admin/content", params={"platform": "instagram"})
+    assert res.status_code == 200
+    items = res.json()["items"]
+    assert len(items) == 1
+    assert items[0]["platform"] == "instagram"
+
+
 def test_top_growth_excludes_single_snapshot_users(client):
     signup(client, "admin@test.local")
     client.cookies.clear()

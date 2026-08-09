@@ -6,7 +6,7 @@ import { api, platformLabel, type ContentItem, type ContentStatus, type Platform
 import { AppShell, PageHeader } from "@/components/app-shell";
 import { useRequireAuth } from "@/lib/auth-guard";
 import { ContentFeedbackControl, StatusBadge } from "./dashboard";
-import { Search, Trophy, Link2 } from "lucide-react";
+import { Search, Trophy, Link2, Copy, Trash2, ChevronDown, ChevronUp } from "lucide-react";
 
 export const Route = createFileRoute("/library")({
   head: () => ({
@@ -105,6 +105,77 @@ function PostUrlField({ item }: { item: ContentItem }) {
   );
 }
 
+function ContentCard({ item }: { item: ContentItem }) {
+  const queryClient = useQueryClient();
+  const [expanded, setExpanded] = useState(false);
+
+  const deleteMutation = useMutation({
+    mutationFn: () => api.deleteContent(item.id),
+    onSuccess: () => {
+      toast.success("ลบโพสต์แล้วค่ะ");
+      queryClient.invalidateQueries({ queryKey: ["content"] });
+    },
+    onError: () => toast.error("ลบไม่สำเร็จ ลองอีกครั้งนะคะ"),
+  });
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(item.preview);
+      toast.success("คัดลอกข้อความแล้วค่ะ");
+    } catch {
+      toast.error("คัดลอกไม่สำเร็จ ลองอีกครั้งนะคะ");
+    }
+  }
+
+  return (
+    <div className="glass-card grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 rounded-2xl p-4 md:p-5">
+      <div className="min-w-0">
+        <div className="mb-1.5 flex flex-wrap items-center gap-2">
+          <span className="rounded-full bg-white/5 px-2.5 py-0.5 text-[11px] text-muted-foreground">
+            {platformLabel[item.platform]}
+          </span>
+          <span className="text-[11px] text-muted-foreground">{item.createdAt}</span>
+        </div>
+        <div className={"text-sm leading-relaxed " + (expanded ? "" : "line-clamp-2")}>
+          {item.preview}
+        </div>
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-1 flex items-center gap-0.5 text-[11px] text-teal hover:underline"
+        >
+          {expanded ? (
+            <>
+              ย่อ <ChevronUp className="h-3 w-3" />
+            </>
+          ) : (
+            <>
+              ดูเพิ่มเติม <ChevronDown className="h-3 w-3" />
+            </>
+          )}
+        </button>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <ContentFeedbackControl item={item} />
+          <button
+            onClick={handleCopy}
+            className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+          >
+            <Copy className="h-3.5 w-3.5" /> คัดลอก
+          </button>
+          <button
+            onClick={() => deleteMutation.mutate()}
+            disabled={deleteMutation.isPending}
+            className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-destructive disabled:opacity-60"
+          >
+            <Trash2 className="h-3.5 w-3.5" /> ลบ
+          </button>
+        </div>
+        <PostUrlField item={item} />
+      </div>
+      <StatusBadge status={item.status} />
+    </div>
+  );
+}
+
 function Library() {
   const { ready } = useRequireAuth();
   const { data: items = [] } = useQuery({
@@ -185,25 +256,7 @@ function Library() {
 
         <div className="grid gap-3">
           {filtered.map((it) => (
-            <div
-              key={it.id}
-              className="glass-card grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 rounded-2xl p-4 md:p-5"
-            >
-              <div className="min-w-0">
-                <div className="mb-1.5 flex flex-wrap items-center gap-2">
-                  <span className="rounded-full bg-white/5 px-2.5 py-0.5 text-[11px] text-muted-foreground">
-                    {platformLabel[it.platform]}
-                  </span>
-                  <span className="text-[11px] text-muted-foreground">{it.createdAt}</span>
-                </div>
-                <div className="line-clamp-2 text-sm leading-relaxed">{it.preview}</div>
-                <div className="mt-2">
-                  <ContentFeedbackControl item={it} />
-                </div>
-                <PostUrlField item={it} />
-              </div>
-              <StatusBadge status={it.status} />
-            </div>
+            <ContentCard key={it.id} item={it} />
           ))}
           {filtered.length === 0 && (
             <div className="glass-card rounded-2xl p-10 text-center text-sm text-muted-foreground">
