@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api, platformLabel, type ContentItem, type ContentStatus, type Platform } from "@/lib/api";
@@ -108,6 +108,14 @@ function PostUrlField({ item }: { item: ContentItem }) {
 function ContentCard({ item }: { item: ContentItem }) {
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(false);
+  const [isTruncated, setIsTruncated] = useState(false);
+  const textRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = textRef.current;
+    if (!el || expanded) return;
+    setIsTruncated(el.scrollHeight > el.clientHeight + 1);
+  }, [item.preview, expanded]);
 
   const deleteMutation = useMutation({
     mutationFn: () => api.deleteContent(item.id),
@@ -136,23 +144,28 @@ function ContentCard({ item }: { item: ContentItem }) {
           </span>
           <span className="text-[11px] text-muted-foreground">{item.createdAt}</span>
         </div>
-        <div className={"text-sm leading-relaxed " + (expanded ? "" : "line-clamp-2")}>
+        <div
+          ref={textRef}
+          className={"text-sm leading-relaxed " + (expanded ? "" : "line-clamp-2")}
+        >
           {item.preview}
         </div>
-        <button
-          onClick={() => setExpanded((v) => !v)}
-          className="mt-1 flex items-center gap-0.5 text-[11px] text-teal hover:underline"
-        >
-          {expanded ? (
-            <>
-              ย่อ <ChevronUp className="h-3 w-3" />
-            </>
-          ) : (
-            <>
-              ดูเพิ่มเติม <ChevronDown className="h-3 w-3" />
-            </>
-          )}
-        </button>
+        {(isTruncated || expanded) && (
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            className="mt-1 flex items-center gap-0.5 text-[11px] text-teal hover:underline"
+          >
+            {expanded ? (
+              <>
+                ย่อ <ChevronUp className="h-3 w-3" />
+              </>
+            ) : (
+              <>
+                ดูเพิ่มเติม <ChevronDown className="h-3 w-3" />
+              </>
+            )}
+          </button>
+        )}
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <ContentFeedbackControl item={item} />
           <button

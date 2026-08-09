@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -182,6 +182,14 @@ function VerifyLikesField({ item }: { item: AdminContentItem }) {
 
 function AdminContentCard({ item }: { item: AdminContentItem }) {
   const [expanded, setExpanded] = useState(false);
+  const [isTruncated, setIsTruncated] = useState(false);
+  const textRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = textRef.current;
+    if (!el || expanded) return;
+    setIsTruncated(el.scrollHeight > el.clientHeight + 1);
+  }, [item.preview, expanded]);
 
   return (
     <div className="glass-card grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 rounded-2xl p-4">
@@ -200,23 +208,28 @@ function AdminContentCard({ item }: { item: AdminContentItem }) {
           )}
           <span className="text-[11px] text-muted-foreground">{item.createdAt}</span>
         </div>
-        <div className={"text-sm leading-relaxed " + (expanded ? "" : "line-clamp-2")}>
+        <div
+          ref={textRef}
+          className={"text-sm leading-relaxed " + (expanded ? "" : "line-clamp-2")}
+        >
           {item.preview}
         </div>
-        <button
-          onClick={() => setExpanded((v) => !v)}
-          className="mt-1 flex items-center gap-0.5 text-[11px] text-teal hover:underline"
-        >
-          {expanded ? (
-            <>
-              ย่อ <ChevronUp className="h-3 w-3" />
-            </>
-          ) : (
-            <>
-              ดูเพิ่มเติม <ChevronDown className="h-3 w-3" />
-            </>
-          )}
-        </button>
+        {(isTruncated || expanded) && (
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            className="mt-1 flex items-center gap-0.5 text-[11px] text-teal hover:underline"
+          >
+            {expanded ? (
+              <>
+                ย่อ <ChevronUp className="h-3 w-3" />
+              </>
+            ) : (
+              <>
+                ดูเพิ่มเติม <ChevronDown className="h-3 w-3" />
+              </>
+            )}
+          </button>
+        )}
         {item.status === "posted" && (
           <div className="mt-2 flex flex-wrap items-center gap-3">
             {item.postUrl ? (
