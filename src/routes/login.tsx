@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api, businessCategoryLabel, type BusinessCategory } from "@/lib/api";
@@ -51,15 +51,27 @@ function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [agreedToPolicy, setAgreedToPolicy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [forgotSubmitted, setForgotSubmitted] = useState(false);
   const [demoLoading, setDemoLoading] = useState<BusinessCategory | null>(null);
   const googleButtonRef = useRef<HTMLDivElement>(null);
+  // The Google callback below is registered once (empty-ish dep array) and
+  // reads this on every credential response, so a ref is required — a plain
+  // closure over agreedToPolicy would stay stuck at its value from setup time.
+  const agreedToPolicyRef = useRef(agreedToPolicy);
+  useEffect(() => {
+    agreedToPolicyRef.current = agreedToPolicy;
+  }, [agreedToPolicy]);
 
   useEffect(() => {
     if (!GOOGLE_CLIENT_ID) return;
 
     async function handleCredentialResponse(response: { credential: string }) {
+      if (!agreedToPolicyRef.current) {
+        toast.error("กรุณายอมรับนโยบายความเป็นส่วนตัวและข้อกำหนดการใช้งานก่อนเข้าสู่ระบบด้วย Google");
+        return;
+      }
       setLoading(true);
       const t = toast.loading("กำลังเข้าสู่ระบบให้อยู่ค่ะ...");
       try {
@@ -167,6 +179,10 @@ function LoginPage() {
       toast.error("รหัสผ่านไม่ตรงกัน");
       return;
     }
+    if (!agreedToPolicy) {
+      toast.error("กรุณายอมรับนโยบายความเป็นส่วนตัวและข้อกำหนดการใช้งานก่อนสมัครสมาชิก");
+      return;
+    }
     setLoading(true);
     const t = toast.loading("กำลังสมัครสมาชิกให้อยู่ค่ะ...");
     try {
@@ -222,7 +238,45 @@ function LoginPage() {
 
         {mode === "google" && (
           <>
-            <div className="mt-8 flex w-full justify-center" ref={googleButtonRef} />
+            <label className="mt-8 flex items-start gap-2 px-1 text-left text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={agreedToPolicy}
+                onChange={(e) => setAgreedToPolicy(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-border accent-teal"
+              />
+              <span>
+                ฉันได้อ่านและยอมรับ{" "}
+                <Link
+                  to="/privacy"
+                  target="_blank"
+                  className="text-teal underline underline-offset-4 hover:text-teal/80"
+                >
+                  นโยบายความเป็นส่วนตัว
+                </Link>{" "}
+                และ{" "}
+                <Link
+                  to="/terms"
+                  target="_blank"
+                  className="text-teal underline underline-offset-4 hover:text-teal/80"
+                >
+                  ข้อกำหนดการใช้งาน
+                </Link>
+              </span>
+            </label>
+            <div className="relative mt-3 flex w-full justify-center">
+              <div className="flex w-full justify-center" ref={googleButtonRef} />
+              {!agreedToPolicy && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    toast.error("กรุณาติ๊กยอมรับนโยบายความเป็นส่วนตัวและข้อกำหนดการใช้งานก่อนนะคะ")
+                  }
+                  aria-label="ติ๊กยอมรับนโยบายก่อนเข้าสู่ระบบด้วย Google"
+                  className="absolute inset-0 cursor-not-allowed"
+                />
+              )}
+            </div>
             {loading && (
               <p className="mt-3 text-sm text-muted-foreground">กำลังเข้าสู่ระบบให้อยู่ค่ะ...</p>
             )}
@@ -321,8 +375,34 @@ function LoginPage() {
               placeholder="ยืนยันรหัสผ่าน"
               className="w-full rounded-full border border-border bg-input px-5 py-3 text-base outline-none placeholder:text-muted-foreground focus:border-teal"
             />
+            <label className="flex items-start gap-2 px-1 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={agreedToPolicy}
+                onChange={(e) => setAgreedToPolicy(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-border accent-teal"
+              />
+              <span>
+                ฉันได้อ่านและยอมรับ{" "}
+                <Link
+                  to="/privacy"
+                  target="_blank"
+                  className="text-teal underline underline-offset-4 hover:text-teal/80"
+                >
+                  นโยบายความเป็นส่วนตัว
+                </Link>{" "}
+                และ{" "}
+                <Link
+                  to="/terms"
+                  target="_blank"
+                  className="text-teal underline underline-offset-4 hover:text-teal/80"
+                >
+                  ข้อกำหนดการใช้งาน
+                </Link>
+              </span>
+            </label>
             <button
-              disabled={loading}
+              disabled={loading || !agreedToPolicy}
               className="btn-gold w-full rounded-full px-6 py-3.5 text-base disabled:opacity-60"
             >
               สมัครสมาชิก
@@ -414,12 +494,12 @@ function LoginPage() {
         </div>
 
         <div className="mt-10 flex justify-center gap-6 text-xs text-muted-foreground">
-          <a href="#" className="underline underline-offset-4">
+          <Link to="/privacy" className="underline underline-offset-4">
             นโยบายความเป็นส่วนตัว
-          </a>
-          <a href="#" className="underline underline-offset-4">
+          </Link>
+          <Link to="/terms" className="underline underline-offset-4">
             ข้อกำหนดการใช้งาน
-          </a>
+          </Link>
         </div>
       </div>
     </div>

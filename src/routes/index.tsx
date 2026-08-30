@@ -297,12 +297,12 @@ function LandingPage() {
             </a>
           </div>
           <div className="mt-8 flex justify-center gap-6 text-xs text-muted-foreground">
-            <a href="#" className="underline underline-offset-4">
+            <Link to="/privacy" className="underline underline-offset-4">
               นโยบายความเป็นส่วนตัว
-            </a>
-            <a href="#" className="underline underline-offset-4">
+            </Link>
+            <Link to="/terms" className="underline underline-offset-4">
               ข้อกำหนดการใช้งาน
-            </a>
+            </Link>
           </div>
         </div>
       </section>
