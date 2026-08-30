@@ -44,6 +44,32 @@ function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback;
 }
 
+const POLICY_AGREED_STORAGE_KEY = "fahsai_policy_agreed";
+
+// Remembered per-browser (not per-account) so a returning user isn't asked
+// to re-tick "I agree" on every single Google login — only actually new
+// signups (fresh browser, no local record) see the gate.
+function readStoredPolicyAgreement(): boolean {
+  try {
+    return localStorage.getItem(POLICY_AGREED_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function storePolicyAgreement(agreed: boolean): void {
+  try {
+    if (agreed) {
+      localStorage.setItem(POLICY_AGREED_STORAGE_KEY, "true");
+    } else {
+      localStorage.removeItem(POLICY_AGREED_STORAGE_KEY);
+    }
+  } catch {
+    // Private browsing / storage disabled — the checkbox just won't be
+    // remembered next visit, which is a fine fallback.
+  }
+}
+
 function LoginPage() {
   const navigate = useNavigate();
   const [mode, setMode] = useState<Mode>("google");
@@ -51,7 +77,11 @@ function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [agreedToPolicy, setAgreedToPolicy] = useState(false);
+  const [agreedToPolicy, setAgreedToPolicyState] = useState(readStoredPolicyAgreement);
+  function setAgreedToPolicy(agreed: boolean) {
+    setAgreedToPolicyState(agreed);
+    storePolicyAgreement(agreed);
+  }
   const [loading, setLoading] = useState(false);
   const [forgotSubmitted, setForgotSubmitted] = useState(false);
   const [demoLoading, setDemoLoading] = useState<BusinessCategory | null>(null);
