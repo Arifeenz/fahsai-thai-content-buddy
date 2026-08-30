@@ -32,6 +32,7 @@ import {
   ChevronDown,
   Dna,
   BookOpen,
+  ExternalLink,
 } from "lucide-react";
 
 export const Route = createFileRoute("/create")({
@@ -72,6 +73,24 @@ const MONTH_LABELS = [
 function formatThaiDate(iso: string): string {
   const d = new Date(`${iso}T00:00:00`);
   return `${d.getDate()} ${MONTH_LABELS[d.getMonth()]} ${d.getFullYear() + 543}`;
+}
+
+const GOOGLE_FLOW_URL = "https://labs.google/fx/tools/flow";
+
+type VideoScriptScene = { label: string; text: string };
+
+// The backend prompt asks the model for "ฉาก 1:" / "ฉาก 2:" headers but the
+// closing เพลง/ตัดต่อ tip has no guaranteed header, so a script with no
+// recognizable scene marker just falls back to a single block rather than
+// silently dropping content.
+function splitVideoScriptIntoScenes(script: string): VideoScriptScene[] {
+  const trimmed = script.trim();
+  if (!trimmed) return [];
+  const parts = trimmed.split(/\r?\n(?=ฉาก\s*\d+\s*[:：])/);
+  return parts.map((part, i) => {
+    const match = part.match(/^ฉาก\s*\d+/);
+    return { label: match ? match[0] : `ส่วนที่ ${i + 1}`, text: part.trim() };
+  });
 }
 
 const MAX_PHOTOS = 3;
@@ -862,21 +881,49 @@ function CreateContent() {
 
                   {videoScript ? (
                     <>
-                      <textarea
-                        value={videoScript}
-                        onChange={(e) => setVideoScript(e.target.value)}
-                        rows={8}
-                        className="mt-3 w-full resize-none rounded-lg border border-border bg-input p-3 text-sm leading-relaxed outline-none focus:border-teal"
-                      />
+                      <div className="mt-3 space-y-2">
+                        {splitVideoScriptIntoScenes(videoScript).map((scene, i) => (
+                          <div
+                            key={i}
+                            className="rounded-lg border border-border bg-input p-3 text-sm leading-relaxed"
+                          >
+                            <div className="mb-1.5 flex items-center justify-between gap-2">
+                              <span className="text-xs font-semibold text-gold">{scene.label}</span>
+                              <button
+                                onClick={async () => {
+                                  await navigator.clipboard.writeText(scene.text);
+                                  toast.success(`คัดลอก${scene.label}แล้วค่ะ`);
+                                }}
+                                className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-xs hover:bg-white/5"
+                              >
+                                <Copy className="h-3 w-3" /> คัดลอก
+                              </button>
+                            </div>
+                            <p className="whitespace-pre-wrap">{scene.text}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                      <a
+                        href={GOOGLE_FLOW_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-3 flex items-center gap-2 rounded-lg border border-dashed border-teal/40 bg-teal/5 p-3 text-xs text-muted-foreground hover:bg-teal/10"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5 shrink-0 text-teal" />
+                        คัดลอกสคริปแต่ละฉากด้านบน แล้วนำไปสร้างวิดีโอต่อได้ที่{" "}
+                        <span className="font-semibold text-teal">Google Flow</span>
+                      </a>
+
                       <div className="mt-3 flex flex-wrap items-center gap-3">
                         <button
                           onClick={async () => {
                             await navigator.clipboard.writeText(videoScript);
-                            toast.success("คัดลอกสคริปวิดีโอแล้วค่ะ");
+                            toast.success("คัดลอกสคริปวิดีโอทั้งหมดแล้วค่ะ");
                           }}
                           className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm hover:bg-white/5"
                         >
-                          <Copy className="h-4 w-4" /> คัดลอกสคริป
+                          <Copy className="h-4 w-4" /> คัดลอกทั้งหมด
                         </button>
                         <button
                           onClick={handleGenerateVideoScript}
@@ -886,6 +933,18 @@ function CreateContent() {
                           <RefreshCw className="h-4 w-4" /> วางสคริปใหม่
                         </button>
                       </div>
+
+                      <details className="mt-3">
+                        <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+                          แก้ไขสคริปแบบข้อความเต็ม
+                        </summary>
+                        <textarea
+                          value={videoScript}
+                          onChange={(e) => setVideoScript(e.target.value)}
+                          rows={8}
+                          className="mt-2 w-full resize-none rounded-lg border border-border bg-input p-3 text-sm leading-relaxed outline-none focus:border-teal"
+                        />
+                      </details>
                     </>
                   ) : (
                     <>
