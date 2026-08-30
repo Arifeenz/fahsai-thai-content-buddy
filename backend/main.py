@@ -20,8 +20,14 @@ from fastapi.responses import JSONResponse
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 from openai import OpenAI
+import pillow_heif
 from PIL import Image, ImageOps
 from pydantic import BaseModel, Field
+
+# Lets Image.open() decode iPhone-default HEIC/HEIF photos through the same
+# path as any other format, so the strict "PIL must decode it" check in
+# upload_example_image() below doesn't reject real photos.
+pillow_heif.register_heif_opener()
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -219,17 +225,13 @@ def upload_example_image(file: UploadFile | None, owner_id: int) -> str | None:
     if len(contents) > MAX_IMAGE_BYTES:
         raise HTTPException(status_code=400, detail="ไฟล์รูปภาพใหญ่เกินไป (จำกัด 15MB นะคะ)")
     resized = resize_and_compress_image(contents)
-    if resized is not None:
+    if resized is None:
         # PIL successfully decoding the bytes IS the real image check --
-        # more reliable than trusting the browser's Content-Type, which
-        # isn't set consistently for drag-and-dropped files (unlike the
-        # <input type="file"> picker, which gets it from the OS).
-        contents, ext, content_type = resized, "jpg", "image/jpeg"
-    else:
-        if not (file.content_type or "").startswith("image/"):
-            raise HTTPException(status_code=400, detail="ไฟล์ต้องเป็นรูปภาพเท่านั้นนะคะ")
-        ext = (file.filename.rsplit(".", 1)[-1] if "." in file.filename else "jpg").lower()
-        content_type = file.content_type
+        # trusting the browser's Content-Type/filename instead is spoofable
+        # (e.g. an SVG with an embedded <script>, relabeled as image/*),
+        # and would get served back from Supabase's public bucket as-is.
+        raise HTTPException(status_code=400, detail="ไฟล์ต้องเป็นรูปภาพเท่านั้นนะคะ")
+    contents, ext, content_type = resized, "jpg", "image/jpeg"
     path = f"{owner_id}/{uuid.uuid4()}.{ext}"
     supabase_client.storage.from_(EXAMPLE_POSTS_BUCKET).upload(
         path, contents, {"content-type": content_type}
