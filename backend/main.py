@@ -1778,6 +1778,19 @@ PLATFORM_STYLE_HINTS = {
     "tiktok": "TikTok สั้น กระชับ มีประโยคตะขอความสนใจ (hook) ตั้งแต่บรรทัดแรก ใช้แฮชแท็กเยอะได้",
     "youtube": "YouTube เขียนแบบคำโปรยวิดีโอ บอกว่าคลิปนี้มีอะไร ชวนกดติดตาม/กดกระดิ่ง",
 }
+# Shared by /generate and /generate-from-image. Without these the model
+# padded captions with every menu item from Brand DNA as hashtags, made up
+# scenery the shop never mentioned (a "seaside" feel for a Yala cafe), and
+# misspelled freshly-invented Thai hashtags (#สมุดกาแฟเย็น for ส้มกาแฟเย็น) --
+# building hashtags from words already in the caption is far less error-prone
+# than having gpt-4o-mini compose new unspaced Thai compounds.
+CAPTION_RULES = """กฎการเขียน:
+1. โพสต์นี้พูดถึงเฉพาะสิ่งที่ร้านบอกมาในคำขอนี้ (และในรูปที่แนบมา ถ้ามี) เท่านั้น ข้อมูลร้านด้านบนมีไว้ให้รู้จักร้านและโทนเสียง ไม่ต้องหยิบเมนูหรือสินค้าอื่นมาโปรโมตด้วย
+2. ห้ามแต่งข้อเท็จจริงที่ไม่มีในข้อมูลร้านหรือคำขอ เช่น สถานที่ วิว บรรยากาศที่ไม่ได้บอก ราคา โปรโมชั่น เวลาเปิดปิด บริการ (เช่น สั่งกลับบ้าน เดลิเวอรี่) และห้ามเดาส่วนผสม ชนิดวัตถุดิบ หรือวิธีทำของสินค้าในโพสต์นี้ แม้จะมีคำนั้นอยู่ในเมนูร้าน ถ้าไม่รู้ก็ไม่ต้องพูดถึง
+3. แฮชแท็ก: ใช้ 3-5 อัน สร้างจากคำที่ปรากฏในโพสต์นี้ สะกดให้ตรงกับในโพสต์ทุกตัวอักษร และต้องเกี่ยวกับสิ่งที่โพสต์นี้พูดถึงเท่านั้น"""
+# Default 1.0 made the embellishment above worse; 0.7 still varies wording
+# between regenerations.
+CAPTION_TEMPERATURE = 0.7
 TONE_LABELS = {
     "friendly": "เป็นกันเอง",
     "professional": "ทางการ",
@@ -1899,6 +1912,8 @@ def generate_content(body: GenerateRequest, request: Request):
 
 โพสต์นี้จะลงแพลตฟอร์ม {platform_label} ด้วยโทน "{tone_label}" ให้ความยาวและสไตล์เหมาะกับแพลตฟอร์มนั้น ({platform_style_hint})
 
+{CAPTION_RULES}
+
 {examples_section}
 
 {"มีรูปตัวอย่างโพสต์แนบมาด้วย ลองดูสไตล์ภาพ สี และบรรยากาศ ใช้เป็นแนวทางทั้งแต่งข้อความและคิด prompt สำหรับสร้างภาพให้เข้ากับสไตล์ภาพตัวอย่างเหล่านี้ด้วย" if any(p["image_url"] for p in example_post_rows) else ""}
@@ -1922,6 +1937,7 @@ def generate_content(body: GenerateRequest, request: Request):
                 {"role": "user", "content": user_content},
             ],
             max_tokens=500,
+            temperature=CAPTION_TEMPERATURE,
             timeout=20,
             response_format={"type": "json_object"},
         )
@@ -2023,6 +2039,8 @@ def generate_from_image(
 
 โพสต์นี้จะลงแพลตฟอร์ม {platform_label} ด้วยโทน "{tone_label}" ให้ความยาวและสไตล์เหมาะกับแพลตฟอร์มนั้น ({platform_style_hint})
 
+{CAPTION_RULES}
+
 ตอบกลับด้วยข้อความโพสต์เท่านั้น ไม่ต้องมีคำอธิบายอื่น"""
 
     user_content: list[dict] = [
@@ -2039,6 +2057,7 @@ def generate_from_image(
                 {"role": "user", "content": user_content},
             ],
             max_tokens=500,
+            temperature=CAPTION_TEMPERATURE,
             timeout=20,
         )
         caption = response.choices[0].message.content
