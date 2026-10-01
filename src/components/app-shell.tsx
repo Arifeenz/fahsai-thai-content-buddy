@@ -22,12 +22,14 @@ import {
   Heart,
   MoreHorizontal,
   Lightbulb,
+  ClipboardCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import logo from "@/assets/fahsai-logo.png";
 import { api, type TeamPage } from "@/lib/api";
 import { useState, type ReactNode } from "react";
 import { Drawer, DrawerContent, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer";
+import { SurveyFloatingButton, SurveySidebarLink } from "@/components/survey-prompt";
 
 export function useCurrentUserQuery() {
   return useQuery({ queryKey: ["me"], queryFn: () => api.getMe(), retry: false });
@@ -60,6 +62,7 @@ const adminNavItems = [
   { to: "/admin/quotes", label: "คำคมให้กำลังใจ", icon: Heart },
   { to: "/admin/security", label: "ความปลอดภัย", icon: ShieldAlert },
   { to: "/admin/support", label: "แจ้งปัญหา", icon: LifeBuoy },
+  { to: "/admin/survey", label: "ผลแบบประเมิน", icon: ClipboardCheck },
   { to: "/settings", label: "ตั้งค่า", icon: Settings },
 ] as const;
 
@@ -178,6 +181,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             );
           })}
         </nav>
+        {pathname !== "/feedback" && <SurveySidebarLink user={user} />}
         <div className="border-t border-sidebar-border p-4">
           <div className="glass-card flex items-center gap-3 rounded-2xl p-3">
             <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-gold to-teal font-bold text-primary-foreground">
@@ -238,6 +242,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         )}
         {children}
       </main>
+
+      {pathname !== "/feedback" && <SurveyFloatingButton user={user} />}
 
       {/* Mobile bottom nav */}
       <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-sidebar-border bg-sidebar/95 backdrop-blur md:hidden">

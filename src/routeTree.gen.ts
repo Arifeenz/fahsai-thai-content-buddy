@@ -15,6 +15,7 @@ import { Route as BrandDnaRouteImport } from './routes/brand-dna'
 import { Route as CreateRouteImport } from './routes/create'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as ExamplesRouteImport } from './routes/examples'
+import { Route as FeedbackRouteImport } from './routes/feedback'
 import { Route as JoinTeamRouteImport } from './routes/join-team'
 import { Route as LibraryRouteImport } from './routes/library'
 import { Route as LoginRouteImport } from './routes/login'
@@ -35,6 +36,7 @@ import { Route as AdminPlatformTipsRouteImport } from './routes/admin.platform-t
 import { Route as AdminQuotesRouteImport } from './routes/admin.quotes'
 import { Route as AdminSecurityRouteImport } from './routes/admin.security'
 import { Route as AdminSupportRouteImport } from './routes/admin.support'
+import { Route as AdminSurveyRouteImport } from './routes/admin.survey'
 import { Route as AdminTemplatesRouteImport } from './routes/admin.templates'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 
@@ -66,6 +68,11 @@ const DashboardRoute = DashboardRouteImport.update({
 const ExamplesRoute = ExamplesRouteImport.update({
   id: '/examples',
   path: '/examples',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FeedbackRoute = FeedbackRouteImport.update({
+  id: '/feedback',
+  path: '/feedback',
   getParentRoute: () => rootRouteImport,
 } as any)
 const JoinTeamRoute = JoinTeamRouteImport.update({
@@ -168,6 +175,11 @@ const AdminSupportRoute = AdminSupportRouteImport.update({
   path: '/support',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminSurveyRoute = AdminSurveyRouteImport.update({
+  id: '/survey',
+  path: '/survey',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminTemplatesRoute = AdminTemplatesRouteImport.update({
   id: '/templates',
   path: '/templates',
@@ -186,6 +198,7 @@ export interface FileRoutesByFullPath {
   '/create': typeof CreateRoute
   '/dashboard': typeof DashboardRoute
   '/examples': typeof ExamplesRoute
+  '/feedback': typeof FeedbackRoute
   '/join-team': typeof JoinTeamRoute
   '/library': typeof LibraryRoute
   '/login': typeof LoginRoute
@@ -205,6 +218,7 @@ export interface FileRoutesByFullPath {
   '/admin/quotes': typeof AdminQuotesRoute
   '/admin/security': typeof AdminSecurityRoute
   '/admin/support': typeof AdminSupportRoute
+  '/admin/survey': typeof AdminSurveyRoute
   '/admin/templates': typeof AdminTemplatesRoute
   '/admin/users': typeof AdminUsersRoute
   '/admin/': typeof AdminIndexRoute
@@ -215,6 +229,7 @@ export interface FileRoutesByTo {
   '/create': typeof CreateRoute
   '/dashboard': typeof DashboardRoute
   '/examples': typeof ExamplesRoute
+  '/feedback': typeof FeedbackRoute
   '/join-team': typeof JoinTeamRoute
   '/library': typeof LibraryRoute
   '/login': typeof LoginRoute
@@ -234,6 +249,7 @@ export interface FileRoutesByTo {
   '/admin/quotes': typeof AdminQuotesRoute
   '/admin/security': typeof AdminSecurityRoute
   '/admin/support': typeof AdminSupportRoute
+  '/admin/survey': typeof AdminSurveyRoute
   '/admin/templates': typeof AdminTemplatesRoute
   '/admin/users': typeof AdminUsersRoute
   '/admin': typeof AdminIndexRoute
@@ -246,6 +262,7 @@ export interface FileRoutesById {
   '/create': typeof CreateRoute
   '/dashboard': typeof DashboardRoute
   '/examples': typeof ExamplesRoute
+  '/feedback': typeof FeedbackRoute
   '/join-team': typeof JoinTeamRoute
   '/library': typeof LibraryRoute
   '/login': typeof LoginRoute
@@ -265,6 +282,7 @@ export interface FileRoutesById {
   '/admin/quotes': typeof AdminQuotesRoute
   '/admin/security': typeof AdminSecurityRoute
   '/admin/support': typeof AdminSupportRoute
+  '/admin/survey': typeof AdminSurveyRoute
   '/admin/templates': typeof AdminTemplatesRoute
   '/admin/users': typeof AdminUsersRoute
   '/admin/': typeof AdminIndexRoute
@@ -278,6 +296,7 @@ export interface FileRouteTypes {
     | '/create'
     | '/dashboard'
     | '/examples'
+    | '/feedback'
     | '/join-team'
     | '/library'
     | '/login'
@@ -297,6 +316,7 @@ export interface FileRouteTypes {
     | '/admin/quotes'
     | '/admin/security'
     | '/admin/support'
+    | '/admin/survey'
     | '/admin/templates'
     | '/admin/users'
     | '/admin/'
@@ -307,6 +327,7 @@ export interface FileRouteTypes {
     | '/create'
     | '/dashboard'
     | '/examples'
+    | '/feedback'
     | '/join-team'
     | '/library'
     | '/login'
@@ -326,6 +347,7 @@ export interface FileRouteTypes {
     | '/admin/quotes'
     | '/admin/security'
     | '/admin/support'
+    | '/admin/survey'
     | '/admin/templates'
     | '/admin/users'
     | '/admin'
@@ -337,6 +359,7 @@ export interface FileRouteTypes {
     | '/create'
     | '/dashboard'
     | '/examples'
+    | '/feedback'
     | '/join-team'
     | '/library'
     | '/login'
@@ -356,6 +379,7 @@ export interface FileRouteTypes {
     | '/admin/quotes'
     | '/admin/security'
     | '/admin/support'
+    | '/admin/survey'
     | '/admin/templates'
     | '/admin/users'
     | '/admin/'
@@ -368,6 +392,7 @@ export interface RootRouteChildren {
   CreateRoute: typeof CreateRoute
   DashboardRoute: typeof DashboardRoute
   ExamplesRoute: typeof ExamplesRoute
+  FeedbackRoute: typeof FeedbackRoute
   JoinTeamRoute: typeof JoinTeamRoute
   LibraryRoute: typeof LibraryRoute
   LoginRoute: typeof LoginRoute
@@ -422,6 +447,13 @@ declare module '@tanstack/react-router' {
       path: '/examples'
       fullPath: '/examples'
       preLoaderRoute: typeof ExamplesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/feedback': {
+      id: '/feedback'
+      path: '/feedback'
+      fullPath: '/feedback'
+      preLoaderRoute: typeof FeedbackRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/join-team': {
@@ -564,6 +596,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminSupportRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/survey': {
+      id: '/admin/survey'
+      path: '/survey'
+      fullPath: '/admin/survey'
+      preLoaderRoute: typeof AdminSurveyRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/templates': {
       id: '/admin/templates'
       path: '/templates'
@@ -591,6 +630,7 @@ interface AdminRouteChildren {
   AdminQuotesRoute: typeof AdminQuotesRoute
   AdminSecurityRoute: typeof AdminSecurityRoute
   AdminSupportRoute: typeof AdminSupportRoute
+  AdminSurveyRoute: typeof AdminSurveyRoute
   AdminTemplatesRoute: typeof AdminTemplatesRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminIndexRoute: typeof AdminIndexRoute
@@ -606,6 +646,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminQuotesRoute: AdminQuotesRoute,
   AdminSecurityRoute: AdminSecurityRoute,
   AdminSupportRoute: AdminSupportRoute,
+  AdminSurveyRoute: AdminSurveyRoute,
   AdminTemplatesRoute: AdminTemplatesRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminIndexRoute: AdminIndexRoute,
@@ -620,6 +661,7 @@ const rootRouteChildren: RootRouteChildren = {
   CreateRoute: CreateRoute,
   DashboardRoute: DashboardRoute,
   ExamplesRoute: ExamplesRoute,
+  FeedbackRoute: FeedbackRoute,
   JoinTeamRoute: JoinTeamRoute,
   LibraryRoute: LibraryRoute,
   LoginRoute: LoginRoute,

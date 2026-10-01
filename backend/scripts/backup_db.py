@@ -24,15 +24,20 @@ TABLES = [
     "users",
     "brand_dna",
     "content_items",
+    "team_members",
+    "team_invites",
     "prompt_templates",
+    "platform_tips",
     "example_posts",
     "events",
+    "event_ai_headlines",
     "quotes",
     "generation_log",
     "security_events",
     "social_links",
     "follower_snapshots",
     "support_tickets",
+    "survey_responses",
 ]
 
 
@@ -59,6 +64,12 @@ def main() -> None:
         f.write("-- of the schema (init_db() creates the tables/columns first).\n\n")
         total_rows = 0
         for table in TABLES:
+            # A table added in code but not yet deployed (init_db() hasn't
+            # run against this database) shouldn't abort the whole backup.
+            exists = conn.execute("SELECT to_regclass(%s) AS t", (table,)).fetchone()["t"]
+            if exists is None:
+                f.write(f"-- {table}: table does not exist yet, skipped\n\n")
+                continue
             rows = conn.execute(f"SELECT * FROM {table}").fetchall()
             if not rows:
                 f.write(f"-- {table}: 0 rows\n\n")

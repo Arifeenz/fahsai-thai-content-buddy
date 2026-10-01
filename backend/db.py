@@ -264,6 +264,45 @@ def init_db() -> None:
         """
     )
 
+    # Satisfaction survey (แบบประเมินความพึงพอใจ). q1..q10 are kept as
+    # separate columns rather than an array so an export lines up 1:1 with
+    # the printed questionnaire's item numbers.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS survey_responses (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            is_demo BOOLEAN NOT NULL DEFAULT FALSE,
+            business_category TEXT NOT NULL,
+            business_category_other TEXT,
+            used_ai_before BOOLEAN NOT NULL,
+            minutes_before INTEGER NOT NULL,
+            minutes_after INTEGER NOT NULL,
+            q1 SMALLINT NOT NULL CHECK (q1 BETWEEN 1 AND 5),
+            q2 SMALLINT NOT NULL CHECK (q2 BETWEEN 1 AND 5),
+            q3 SMALLINT NOT NULL CHECK (q3 BETWEEN 1 AND 5),
+            q4 SMALLINT NOT NULL CHECK (q4 BETWEEN 1 AND 5),
+            q5 SMALLINT NOT NULL CHECK (q5 BETWEEN 1 AND 5),
+            q6 SMALLINT NOT NULL CHECK (q6 BETWEEN 1 AND 5),
+            q7 SMALLINT NOT NULL CHECK (q7 BETWEEN 1 AND 5),
+            q8 SMALLINT NOT NULL CHECK (q8 BETWEEN 1 AND 5),
+            q9 SMALLINT NOT NULL CHECK (q9 BETWEEN 1 AND 5),
+            q10 SMALLINT NOT NULL CHECK (q10 BETWEEN 1 AND 5),
+            comment TEXT,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    # One response per real account. Demo accounts are shared by everyone
+    # who clicks "ทดลองใช้" on the login page, so each of those visitors
+    # must still be able to submit their own response.
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS survey_responses_one_per_user
+        ON survey_responses (user_id) WHERE NOT is_demo
+        """
+    )
+
     event_count = conn.execute("SELECT COUNT(*) AS n FROM events").fetchone()["n"]
     if event_count == 0:
         conn.cursor().executemany(
@@ -2065,3 +2104,87 @@ def set_support_ticket_resolved(ticket_id: int, resolved: bool) -> dict | None:
     conn.commit()
     conn.close()
     return row
+
+
+SURVEY_SCORE_COLUMNS = [f"q{i}" for i in range(1, 11)]
+
+
+def create_survey_response(
+    user_id: int,
+    is_demo: bool,
+    business_category: str,
+    business_category_other: str | None,
+    used_ai_before: bool,
+    minutes_before: int,
+    minutes_after: int,
+    scores: list[int],
+    comment: str | None,
+) -> dict | None:
+    """Returns None when this (non-demo) user has already responded."""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            f"""
+            INSERT INTO survey_responses
+                (user_id, is_demo, business_category, business_category_other,
+                 used_ai_before, minutes_before, minutes_after,
+                 {", ".join(SURVEY_SCORE_COLUMNS)}, comment)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, {", ".join(["%s"] * 10)}, %s)
+            RETURNING *
+            """,
+            (
+                user_id,
+                is_demo,
+                business_category,
+                business_category_other,
+                used_ai_before,
+                minutes_before,
+                minutes_after,
+                *scores,
+                comment,
+            ),
+        ).fetchone()
+        conn.commit()
+    except psycopg.errors.UniqueViolation:
+        conn.rollback()
+        row = None
+    finally:
+        conn.close()
+    return row
+
+
+def has_survey_response(user_id: int) -> bool:
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT 1 FROM survey_responses WHERE user_id = %s AND NOT is_demo LIMIT 1",
+        (user_id,),
+    ).fetchone()
+    conn.close()
+    return row is not None
+
+
+def count_generations_for_user(user_id: int) -> int:
+    conn = get_connection()
+    n = conn.execute(
+        "SELECT COUNT(*) AS n FROM generation_log WHERE user_id = %s", (user_id,)
+    ).fetchone()["n"]
+    conn.close()
+    return n
+
+
+# Deliberately selects no user_id/name/email: the questionnaire promises
+# respondents their answers are only reported in aggregate, anonymously.
+def list_survey_responses(include_demo: bool = True) -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute(
+        f"""
+        SELECT id, is_demo, business_category, business_category_other,
+               used_ai_before, minutes_before, minutes_after,
+               {", ".join(SURVEY_SCORE_COLUMNS)}, comment, created_at
+        FROM survey_responses
+        {"" if include_demo else "WHERE NOT is_demo"}
+        ORDER BY created_at ASC
+        """
+    ).fetchall()
+    conn.close()
+    return rows

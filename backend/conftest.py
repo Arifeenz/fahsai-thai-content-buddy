@@ -35,6 +35,7 @@ import db
 import main
 
 TABLES = [
+    "survey_responses",
     "generation_log",
     "example_posts",
     "security_events",

@@ -228,6 +228,45 @@ export interface SupportTicket {
   user_name: string | null;
   user_email: string | null;
 }
+export type SurveyBusinessCategory = BusinessCategory | "other";
+export interface SurveyInput {
+  business_category: SurveyBusinessCategory;
+  business_category_other: string | null;
+  used_ai_before: boolean;
+  minutes_before: number;
+  minutes_after: number;
+  scores: number[];
+  comment: string | null;
+}
+export interface SurveyStatus {
+  submitted: boolean;
+  generation_count: number;
+}
+export interface LikertStats {
+  mean: number | null;
+  sd: number | null;
+  level: string | null;
+}
+export interface SurveyResponse extends SurveyInput {
+  id: number;
+  is_demo: boolean;
+  created_at: string;
+}
+export interface SurveySummary {
+  total: number;
+  demo_count: number;
+  used_ai_before_count: number;
+  by_category: Record<string, number>;
+  time: {
+    mean_minutes_before: number | null;
+    mean_minutes_after: number | null;
+    reduction_percent: number | null;
+  };
+  items: (LikertStats & { item: number })[];
+  dimensions: (LikertStats & { key: string; label: string; items: number[] })[];
+  overall: LikertStats;
+  responses: SurveyResponse[];
+}
 export interface ApprovalByMode {
   mode: string;
   generations: number;
@@ -350,6 +389,15 @@ export const api = {
   async listFollowerSnapshots(): Promise<FollowerSnapshot[]> {
     const { snapshots } = await request<{ snapshots: FollowerSnapshot[] }>("/follower-snapshot");
     return snapshots;
+  },
+  async getSurveyStatus(): Promise<SurveyStatus> {
+    return request("/survey/me");
+  },
+  async submitSurvey(input: SurveyInput): Promise<void> {
+    await request("/survey", { method: "POST", body: JSON.stringify(input) });
+  },
+  async adminGetSurveySummary(includeDemo: boolean): Promise<SurveySummary> {
+    return request(`/admin/survey/summary?include_demo=${includeDemo}`);
   },
   async createSupportTicket(message: string): Promise<SupportTicket> {
     return request("/support-tickets", {

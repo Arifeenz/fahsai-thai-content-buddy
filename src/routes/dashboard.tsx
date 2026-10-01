@@ -15,6 +15,7 @@ import {
 import { type CategoryKey } from "@/lib/category-platforms";
 import { AppShell, PageHeader, useCurrentUser } from "@/components/app-shell";
 import { useRequireAuth } from "@/lib/auth-guard";
+import { SurveyDashboardCard } from "@/components/survey-prompt";
 import {
   TrendingUp,
   Clock,
@@ -431,6 +432,7 @@ function Dashboard() {
         {dailyQuote && (
           <p className="-mt-4 mb-6 text-sm italic text-teal">"{dailyQuote}"</p>
         )}
+        <SurveyDashboardCard user={user} />
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <StatCard

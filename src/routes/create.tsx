@@ -16,6 +16,7 @@ import { categoryPlatforms, type CategoryKey } from "@/lib/category-platforms";
 import { AppShell, PageHeader, useCurrentUser } from "@/components/app-shell";
 import { useRequireAuth } from "@/lib/auth-guard";
 import { useScreenCapture } from "@/components/screen-capture";
+import { recordSurveyGeneration, SurveyNudgeCard } from "@/components/survey-prompt";
 import {
   Sparkles,
   Check,
@@ -302,6 +303,8 @@ function CreateContent() {
         setUsedExamples(res.used_examples ?? []);
       }
       toast.success("โพสต์ใหม่พร้อมแล้วค่ะ ลองดูได้เลย", { id: t });
+      if (user) recordSurveyGeneration(user.email);
+      queryClient.invalidateQueries({ queryKey: ["survey", "me"] });
     } catch (err) {
       // The backend already explains *why* (rate limited, budget exhausted,
       // too many images, etc.) via the thrown Error's message -- showing a
@@ -1038,6 +1041,12 @@ function CreateContent() {
             )}
           </div>
         </div>
+
+        {caption && !loading && (
+          <div className="mt-6">
+            <SurveyNudgeCard user={user} />
+          </div>
+        )}
       </div>
 
       {captureDialog}

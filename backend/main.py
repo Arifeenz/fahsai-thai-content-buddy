@@ -3,11 +3,12 @@ import json
 import os
 import random
 import secrets
+import statistics
 import sys
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
-from typing import Literal
+from typing import Annotated, Literal
 
 import bcrypt
 import jwt
@@ -47,7 +48,9 @@ from db import (
     create_quote,
     create_support_ticket,
     create_team_invite,
+    count_generations_for_user,
     count_team_members,
+    create_survey_response,
     delete_content_item,
     delete_event,
     delete_example_post,
@@ -67,6 +70,7 @@ from db import (
     get_feedback_ratio_by_mode,
     get_monthly_openai_spend,
     get_demo_user_by_category,
+    has_survey_response,
     get_pending_invite,
     get_pending_invite_by_token,
     get_platform_tip,
@@ -94,6 +98,7 @@ from db import (
     list_quotes,
     list_security_events,
     list_support_tickets,
+    list_survey_responses,
     list_team_invites,
     list_team_members,
     list_top_content_by_category,
@@ -470,6 +475,19 @@ class QuoteWrite(BaseModel):
 class SupportTicketCreate(BaseModel):
     message: str
     user_agent: str | None = None
+
+
+class SurveyResponseCreate(BaseModel):
+    business_category: Literal[
+        "food_beverage", "online_shop", "fortune_telling", "streamer", "other"
+    ]
+    business_category_other: str | None = Field(default=None, max_length=100)
+    used_ai_before: bool
+    minutes_before: int = Field(ge=0, le=1440)
+    minutes_after: int = Field(ge=0, le=1440)
+    # Items 1-10 of ตอนที่ 2, in questionnaire order.
+    scores: list[Annotated[int, Field(ge=1, le=5)]] = Field(min_length=10, max_length=10)
+    comment: str | None = Field(default=None, max_length=2000)
 
 
 # Matches the sidebar's user-facing nav sections -- "settings" is deliberately
@@ -1183,6 +1201,47 @@ def create_my_support_ticket(body: SupportTicketCreate, request: Request):
         raise HTTPException(status_code=400, detail="กรุณาอธิบายปัญหาก่อนนะคะ")
     row = create_support_ticket(user["id"], message, body.user_agent)
     return support_ticket_to_dict(row)
+
+
+@app.get("/survey/me")
+def get_my_survey_status(request: Request):
+    user = require_user(request)
+    is_demo = bool(user["is_demo"])
+    return {
+        # A shared demo account is never "done" -- each visitor using it
+        # tracks their own submission client-side instead.
+        "submitted": False if is_demo else has_survey_response(user["id"]),
+        "generation_count": count_generations_for_user(user["id"]),
+    }
+
+
+@app.post("/survey")
+@limiter.limit("10/hour")
+def submit_survey(body: SurveyResponseCreate, request: Request):
+    user = require_user(request)
+    if user["role"] == "admin":
+        # Keeps the developer's own test runs out of the research data.
+        raise HTTPException(status_code=403, detail="บัญชีแอดมินส่งแบบประเมินไม่ได้ค่ะ")
+    other = (body.business_category_other or "").strip() or None
+    if body.business_category == "other" and other is None:
+        raise HTTPException(status_code=400, detail="กรุณาระบุประเภทธุรกิจด้วยนะคะ")
+    if body.business_category != "other":
+        other = None
+    comment = (body.comment or "").strip() or None
+    row = create_survey_response(
+        user["id"],
+        bool(user["is_demo"]),
+        body.business_category,
+        other,
+        body.used_ai_before,
+        body.minutes_before,
+        body.minutes_after,
+        body.scores,
+        comment,
+    )
+    if row is None:
+        raise HTTPException(status_code=409, detail="คุณส่งแบบประเมินไปแล้ว ขอบคุณมากค่ะ")
+    return {"ok": True}
 
 
 @app.get("/team")
@@ -2450,6 +2509,101 @@ def admin_resolve_support_ticket(
     if row is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
     return support_ticket_to_dict(row)
+
+
+# Matches the four ด้าน of ตอนที่ 2 in the printed questionnaire.
+SURVEY_DIMENSIONS = [
+    ("ease", "ด้านความง่ายในการใช้งาน", [1, 2, 3]),
+    ("quality", "ด้านคุณภาพของคอนเทนต์", [4, 5, 6]),
+    ("benefit", "ด้านประโยชน์ของระบบ", [7, 8, 9]),
+    ("overall", "ด้านความพึงพอใจโดยรวม", [10]),
+]
+
+
+# Standard 5-level Likert interpretation bands (class width 0.80 from 1.00).
+def interpret_likert_mean(mean: float) -> str:
+    if mean >= 4.51:
+        return "มากที่สุด"
+    if mean >= 3.51:
+        return "มาก"
+    if mean >= 2.51:
+        return "ปานกลาง"
+    if mean >= 1.51:
+        return "น้อย"
+    return "น้อยที่สุด"
+
+
+def likert_stats(scores: list[int]) -> dict:
+    if not scores:
+        return {"mean": None, "sd": None, "level": None}
+    mean = statistics.fmean(scores)
+    # Sample S.D. (n-1), the convention for reporting questionnaire results.
+    sd = statistics.stdev(scores) if len(scores) > 1 else 0.0
+    return {"mean": round(mean, 2), "sd": round(sd, 2), "level": interpret_likert_mean(mean)}
+
+
+def survey_response_to_dict(row) -> dict:
+    return {
+        "id": row["id"],
+        "is_demo": bool(row["is_demo"]),
+        "business_category": row["business_category"],
+        "business_category_other": row["business_category_other"],
+        "used_ai_before": bool(row["used_ai_before"]),
+        "minutes_before": row["minutes_before"],
+        "minutes_after": row["minutes_after"],
+        "scores": [row[f"q{i}"] for i in range(1, 11)],
+        "comment": row["comment"],
+        "created_at": to_utc_iso(row["created_at"]),
+    }
+
+
+@app.get("/admin/survey/summary")
+@limiter.limit("60/minute")
+def admin_survey_summary(request: Request, include_demo: bool = True):
+    require_admin(request)
+    responses = [survey_response_to_dict(row) for row in list_survey_responses(include_demo)]
+
+    items = [
+        {"item": i, **likert_stats([r["scores"][i - 1] for r in responses])}
+        for i in range(1, 11)
+    ]
+    dimensions = [
+        {
+            "key": key,
+            "label": label,
+            "items": item_numbers,
+            **likert_stats([r["scores"][i - 1] for r in responses for i in item_numbers]),
+        }
+        for key, label, item_numbers in SURVEY_DIMENSIONS
+    ]
+
+    by_category: dict[str, int] = {}
+    for r in responses:
+        by_category[r["business_category"]] = by_category.get(r["business_category"], 0) + 1
+
+    mean_before = statistics.fmean(r["minutes_before"] for r in responses) if responses else None
+    mean_after = statistics.fmean(r["minutes_after"] for r in responses) if responses else None
+    reduction_percent = (
+        round((mean_before - mean_after) / mean_before * 100, 1)
+        if mean_before
+        else None
+    )
+
+    return {
+        "total": len(responses),
+        "demo_count": sum(1 for r in responses if r["is_demo"]),
+        "used_ai_before_count": sum(1 for r in responses if r["used_ai_before"]),
+        "by_category": by_category,
+        "time": {
+            "mean_minutes_before": round(mean_before, 1) if mean_before is not None else None,
+            "mean_minutes_after": round(mean_after, 1) if mean_after is not None else None,
+            "reduction_percent": reduction_percent,
+        },
+        "items": items,
+        "dimensions": dimensions,
+        "overall": likert_stats([s for r in responses for s in r["scores"]]),
+        "responses": responses,
+    }
 
 
 @app.post("/admin/example-posts")
