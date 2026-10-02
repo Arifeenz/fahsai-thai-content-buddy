@@ -44,32 +44,6 @@ function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback;
 }
 
-const POLICY_AGREED_STORAGE_KEY = "fahsai_policy_agreed";
-
-// Remembered per-browser (not per-account) so a returning user isn't asked
-// to re-tick "I agree" on every single Google login — only actually new
-// signups (fresh browser, no local record) see the gate.
-function readStoredPolicyAgreement(): boolean {
-  try {
-    return localStorage.getItem(POLICY_AGREED_STORAGE_KEY) === "true";
-  } catch {
-    return false;
-  }
-}
-
-function storePolicyAgreement(agreed: boolean): void {
-  try {
-    if (agreed) {
-      localStorage.setItem(POLICY_AGREED_STORAGE_KEY, "true");
-    } else {
-      localStorage.removeItem(POLICY_AGREED_STORAGE_KEY);
-    }
-  } catch {
-    // Private browsing / storage disabled — the checkbox just won't be
-    // remembered next visit, which is a fine fallback.
-  }
-}
-
 function LoginPage() {
   const navigate = useNavigate();
   const [mode, setMode] = useState<Mode>("google");
@@ -77,31 +51,16 @@ function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [agreedToPolicy, setAgreedToPolicyState] = useState(readStoredPolicyAgreement);
-  function setAgreedToPolicy(agreed: boolean) {
-    setAgreedToPolicyState(agreed);
-    storePolicyAgreement(agreed);
-  }
+  const [agreedToPolicy, setAgreedToPolicy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [forgotSubmitted, setForgotSubmitted] = useState(false);
   const [demoLoading, setDemoLoading] = useState<BusinessCategory | null>(null);
   const googleButtonRef = useRef<HTMLDivElement>(null);
-  // The Google callback below is registered once (empty-ish dep array) and
-  // reads this on every credential response, so a ref is required — a plain
-  // closure over agreedToPolicy would stay stuck at its value from setup time.
-  const agreedToPolicyRef = useRef(agreedToPolicy);
-  useEffect(() => {
-    agreedToPolicyRef.current = agreedToPolicy;
-  }, [agreedToPolicy]);
 
   useEffect(() => {
     if (!GOOGLE_CLIENT_ID) return;
 
     async function handleCredentialResponse(response: { credential: string }) {
-      if (!agreedToPolicyRef.current) {
-        toast.error("กรุณายอมรับนโยบายความเป็นส่วนตัวและข้อกำหนดการใช้งานก่อนเข้าสู่ระบบด้วย Google");
-        return;
-      }
       setLoading(true);
       const t = toast.loading("กำลังเข้าสู่ระบบให้อยู่ค่ะ...");
       try {
@@ -268,45 +227,8 @@ function LoginPage() {
 
         {mode === "google" && (
           <>
-            <label className="mt-8 flex items-start gap-2 px-1 text-left text-xs text-muted-foreground">
-              <input
-                type="checkbox"
-                checked={agreedToPolicy}
-                onChange={(e) => setAgreedToPolicy(e.target.checked)}
-                className="mt-0.5 h-4 w-4 shrink-0 rounded border-border accent-teal"
-              />
-              <span>
-                ฉันได้อ่านและยอมรับ{" "}
-                <Link
-                  to="/privacy"
-                  target="_blank"
-                  className="text-teal underline underline-offset-4 hover:text-teal/80"
-                >
-                  นโยบายความเป็นส่วนตัว
-                </Link>{" "}
-                และ{" "}
-                <Link
-                  to="/terms"
-                  target="_blank"
-                  className="text-teal underline underline-offset-4 hover:text-teal/80"
-                >
-                  ข้อกำหนดการใช้งาน
-                </Link>
-              </span>
-            </label>
-            <div className="relative mt-3 flex w-full justify-center">
-              <div className="flex w-full justify-center" ref={googleButtonRef} />
-              {!agreedToPolicy && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    toast.error("กรุณาติ๊กยอมรับนโยบายความเป็นส่วนตัวและข้อกำหนดการใช้งานก่อนนะคะ")
-                  }
-                  aria-label="ติ๊กยอมรับนโยบายก่อนเข้าสู่ระบบด้วย Google"
-                  className="absolute inset-0 cursor-not-allowed"
-                />
-              )}
-            </div>
+            <div className="mt-8 flex w-full justify-center" ref={googleButtonRef} />
+            <PolicyNotice className="mt-3" action="เข้าสู่ระบบด้วย Google" />
             {loading && (
               <p className="mt-3 text-sm text-muted-foreground">กำลังเข้าสู่ระบบให้อยู่ค่ะ...</p>
             )}
@@ -517,7 +439,8 @@ function LoginPage() {
               </button>
             ))}
           </div>
-          <p className="mt-3 text-center text-xs text-muted-foreground">
+          <PolicyNotice className="mt-3" action="ทดลองใช้" />
+          <p className="mt-2 text-center text-xs text-muted-foreground">
             บัญชีทดลองใช้ร่วมกับผู้ใช้อื่นได้ ข้อมูลอาจถูกแก้ไขหรือรีเซ็ตได้ตลอดเวลา
             และมีการจำกัดจำนวนครั้งสร้างคอนเทนต์ ไม่เหมาะสำหรับเก็บข้อมูลจริงนะคะ
           </p>
@@ -533,5 +456,31 @@ function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Shown under one-click entry points (Google, demo accounts) instead of a
+// blocking checkbox -- the pattern Shopee, Pantip and Notion use on their
+// signup pages. Email signup still keeps its explicit checkbox.
+function PolicyNotice({ action, className = "" }: { action: string; className?: string }) {
+  return (
+    <p className={"text-center text-xs text-muted-foreground " + className}>
+      การ{action} ถือว่าคุณยอมรับ{" "}
+      <Link
+        to="/privacy"
+        target="_blank"
+        className="whitespace-nowrap text-teal underline underline-offset-4 hover:text-teal/80"
+      >
+        นโยบายความเป็นส่วนตัว
+      </Link>{" "}
+      และ{" "}
+      <Link
+        to="/terms"
+        target="_blank"
+        className="whitespace-nowrap text-teal underline underline-offset-4 hover:text-teal/80"
+      >
+        ข้อกำหนดการใช้งาน
+      </Link>
+    </p>
   );
 }
