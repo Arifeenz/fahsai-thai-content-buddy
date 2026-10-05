@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -34,15 +34,22 @@ export function useScreenCapture(onCaptured: (file: File) => void) {
   // clicking "ถ่ายภาพ" before that point used to silently no-op with zero
   // feedback, which read as the whole capture flow being stuck.
   const [videoReady, setVideoReady] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const capturedImgRef = useRef<HTMLImageElement>(null);
   const captureStreamRef = useRef<MediaStream | null>(null);
 
-  useEffect(() => {
-    if (videoRef.current && captureStream) {
-      videoRef.current.srcObject = captureStream;
+  // A callback ref, not an effect on captureStream: the <video> lives inside
+  // a Radix Dialog portal, which only mounts its content one render *after*
+  // `open` flips true -- an effect keyed on the stream ran while the video
+  // didn't exist yet and never re-ran, leaving a black preview stuck on
+  // "กำลังโหลด...". The element is also re-created after "ถ่ายใหม่", so the
+  // stream has to be (re)attached whenever a new <video> appears.
+  const attachVideo = useCallback((el: HTMLVideoElement | null) => {
+    videoRef.current = el;
+    if (el && captureStreamRef.current && el.srcObject !== captureStreamRef.current) {
+      el.srcObject = captureStreamRef.current;
     }
-  }, [captureStream]);
+  }, []);
 
   useEffect(() => {
     if (!captureStream) return;
@@ -106,6 +113,8 @@ export function useScreenCapture(onCaptured: (file: File) => void) {
 
   function retakeSnapshot() {
     if (capturedUrl) URL.revokeObjectURL(capturedUrl);
+    // The fresh <video> has to load metadata again before it can be captured.
+    setVideoReady(false);
     setCapturedUrl(null);
     setCapturedBlob(null);
     setCropRect(null);
@@ -212,7 +221,7 @@ export function useScreenCapture(onCaptured: (file: File) => void) {
         {!capturedUrl ? (
           <div className="overflow-hidden rounded-xl border border-border bg-black">
             <video
-              ref={videoRef}
+              ref={attachVideo}
               autoPlay
               muted
               playsInline
