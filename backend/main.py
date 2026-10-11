@@ -1,4 +1,5 @@
 import base64
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 import random
@@ -1820,22 +1821,120 @@ PLATFORM_STYLE_HINTS = {
 CAPTION_RULES = """กฎการเขียน:
 1. โพสต์นี้พูดถึงเฉพาะสิ่งที่ร้านบอกมาในคำขอนี้ (และในรูปที่แนบมา ถ้ามี) เท่านั้น ข้อมูลร้านด้านบนมีไว้ให้รู้จักร้านและโทนเสียง ไม่ต้องหยิบเมนูหรือสินค้าอื่นมาโปรโมตด้วย
 2. ห้ามแต่งข้อเท็จจริงที่ไม่มีในข้อมูลร้านหรือคำขอ เช่น สถานที่ วิว บรรยากาศที่ไม่ได้บอก ราคา โปรโมชั่น เวลาเปิดปิด บริการ (เช่น สั่งกลับบ้าน เดลิเวอรี่) และห้ามเดาส่วนผสม ชนิดวัตถุดิบ หรือวิธีทำของสินค้าในโพสต์นี้ แม้จะมีคำนั้นอยู่ในเมนูร้าน ถ้าไม่รู้ก็ไม่ต้องพูดถึง
-3. แฮชแท็ก: ใช้ 3-5 อัน สร้างจากคำที่ปรากฏในโพสต์นี้ สะกดให้ตรงกับในโพสต์ทุกตัวอักษร และต้องเกี่ยวกับสิ่งที่โพสต์นี้พูดถึงเท่านั้น"""
+3. แฮชแท็ก: ใช้ 3-5 อัน สร้างจากคำที่ปรากฏในโพสต์นี้ สะกดให้ตรงกับในโพสต์ทุกตัวอักษร และต้องเกี่ยวกับสิ่งที่โพสต์นี้พูดถึงเท่านั้น
+4. ไม่ต้องขึ้นต้นด้วยคำทักทายสำเร็จรูป เช่น "สวัสดีค่ะเพื่อนๆ" หรือ "วันนี้เรามี..." ให้เปิดโพสต์ตามมุมการเล่าที่กำหนดด้านล่าง"""
 # Default 1.0 made the embellishment above worse; 0.7 still varies wording
 # between regenerations.
 CAPTION_TEMPERATURE = 0.7
-# Captions per generation, requested as `n` choices in ONE OpenAI call: the
-# user waits no longer and spends one rate-limit slot, only output tokens
-# scale. Lets them pick instead of paying a full regenerate per attempt.
-CAPTION_VARIANTS = 3
+# One caption per storytelling angle. Asking for n=3 choices of the SAME
+# prompt gave three near-identical posts (same opener, different emoji), so
+# each variant now gets its own angle instruction, generated in parallel:
+# same wait for the user, still one rate-limit slot, ~3x input tokens.
+# Order matters -- content_items.selected_variant stores the 1-based index.
+CAPTION_ANGLES: list[tuple[str, str, str]] = [
+    (
+        "story",
+        "เล่าเรื่อง",
+        "มุมการเล่าของโพสต์นี้: เล่าเรื่อง — เปิดด้วยสถานการณ์หรือความรู้สึกทั่วไปที่คนอ่านคุ้นเคยและนึกภาพตามได้ "
+        "แล้วค่อยพาไปถึงสิ่งที่โพสต์นี้พูดถึง ห้ามแต่งเป็นเหตุการณ์ที่เกิดขึ้นจริงกับร้านถ้าไม่มีในข้อมูลร้านหรือคำขอ",
+    ),
+    (
+        "direct",
+        "ตรงประเด็น",
+        "มุมการเล่าของโพสต์นี้: ตรงประเด็น — บอกสิ่งที่นำเสนอ จุดเด่น และข้อเสนอให้ชัดตั้งแต่บรรทัดแรก "
+        "เขียนกระชับ แล้วปิดด้วยการชวนให้ลงมือทำ",
+    ),
+    (
+        "conversation",
+        "ชวนคุย",
+        "มุมการเล่าของโพสต์นี้: ชวนคุย — เปิดด้วยคำถามหรือประโยคที่ชวนให้ผู้อ่านมีส่วนร่วม "
+        "เช่น ให้คอมเมนต์ ให้เลือก หรือแชร์ประสบการณ์ แล้วเชื่อมไปยังสิ่งที่โพสต์นี้พูดถึง",
+    ),
+]
+CAPTION_VARIANTS = len(CAPTION_ANGLES)
 
 
-def join_variants_for_log(captions: list[str]) -> str:
+def join_variants_for_log(captions: list[str], labels: list[str] | None = None) -> str:
     # One generation_log row per request, not per variant -- the survey's
     # "nudge after 3 generations" and the admin KPIs count rows as requests.
     if len(captions) == 1:
         return captions[0]
-    return "\n\n".join(f"--- แบบที่ {i} ---\n{c}" for i, c in enumerate(captions, 1))
+    names = labels or [f"แบบที่ {i}" for i in range(1, len(captions) + 1)]
+    return "\n\n".join(f"--- {name} ---\n{c}" for name, c in zip(names, captions))
+
+
+def system_prompt_for_log(system_prompt: str) -> str:
+    return system_prompt + "\n\n[ต่อท้ายแยกตามแบบ]\n" + "\n".join(a[2] for a in CAPTION_ANGLES)
+
+
+def generate_angle_variants(
+    system_prompt: str, user_content: list[dict], parse, **create_kwargs
+) -> tuple[list[dict], int | None, int | None]:
+    """Runs one OpenAI call per CAPTION_ANGLES entry, in parallel.
+
+    `parse` turns a reply's text into a variant dict (or None to drop it).
+    A failed or unparseable angle is dropped; only if every angle fails does
+    this raise. Returns (variants in angle order, prompt tokens, completion tokens).
+    """
+
+    def call(instruction: str):
+        return openai_client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": f"{system_prompt}\n\n{instruction}"},
+                {"role": "user", "content": user_content},
+            ],
+            max_tokens=500,
+            temperature=CAPTION_TEMPERATURE,
+            timeout=30,
+            **create_kwargs,
+        )
+
+    with ThreadPoolExecutor(max_workers=len(CAPTION_ANGLES)) as pool:
+        futures = [pool.submit(call, instruction) for _, _, instruction in CAPTION_ANGLES]
+
+    variants: list[dict] = []
+    prompt_tokens = completion_tokens = 0
+    saw_usage = False
+    last_error: Exception | None = None
+    for (key, label, _), future in zip(CAPTION_ANGLES, futures):
+        try:
+            response = future.result()
+        except Exception as exc:
+            last_error = exc
+            sentry_sdk.capture_exception(exc)
+            continue
+        if response.usage:
+            saw_usage = True
+            prompt_tokens += response.usage.prompt_tokens
+            completion_tokens += response.usage.completion_tokens
+        variant = parse(response.choices[0].message.content) if response.choices else None
+        if variant:
+            variants.append({**variant, "angle": key, "angle_label": label})
+    if not variants:
+        raise last_error or ValueError("no usable caption from any angle")
+    return (
+        variants,
+        prompt_tokens if saw_usage else None,
+        completion_tokens if saw_usage else None,
+    )
+
+
+def parse_json_caption(text: str | None) -> dict | None:
+    # A reply can come back cut off (max_tokens) and fail to parse -- drop it.
+    try:
+        parsed = json.loads(text or "")
+        return {
+            "caption": parsed["caption"],
+            "image_prompt": parsed.get("image_prompt"),
+            "image_prompt_th": parsed.get("image_prompt_th"),
+        }
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return None
+
+
+def parse_plain_caption(text: str | None) -> dict | None:
+    return {"caption": text, "image_prompt": None, "image_prompt_th": None} if text else None
 TONE_LABELS = {
     "friendly": "เป็นกันเอง",
     "professional": "ทางการ",
@@ -1989,37 +2088,12 @@ def generate_content(body: GenerateRequest, request: Request):
             )
 
     try:
-        response = openai_client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_content},
-            ],
-            max_tokens=500,
-            temperature=CAPTION_TEMPERATURE,
-            n=CAPTION_VARIANTS,
-            timeout=30,
+        variants, prompt_tokens, completion_tokens = generate_angle_variants(
+            system_prompt,
+            user_content,
+            parse_json_caption,
             response_format={"type": "json_object"},
         )
-        variants = []
-        for choice in response.choices:
-            # A single choice can come back cut off (max_tokens) and fail to
-            # parse -- drop just that one rather than failing the request.
-            try:
-                parsed = json.loads(choice.message.content)
-                variants.append(
-                    {
-                        "caption": parsed["caption"],
-                        "image_prompt": parsed.get("image_prompt"),
-                        "image_prompt_th": parsed.get("image_prompt_th"),
-                    }
-                )
-            except (json.JSONDecodeError, KeyError, TypeError):
-                continue
-        if not variants:
-            raise ValueError("no parseable caption in any choice")
-        prompt_tokens = response.usage.prompt_tokens if response.usage else None
-        completion_tokens = response.usage.completion_tokens if response.usage else None
     except Exception as exc:
         print(f"[generate:openai_error] {type(exc).__name__}: {exc}")
         sentry_sdk.capture_exception(exc)
@@ -2038,11 +2112,13 @@ def generate_content(body: GenerateRequest, request: Request):
         body.platform,
         body.tone,
         body.prompt,
-        join_variants_for_log([v["caption"] for v in variants]),
+        join_variants_for_log(
+            [v["caption"] for v in variants], [v["angle_label"] for v in variants]
+        ),
         prompt_tokens,
         completion_tokens,
         estimated_cost_usd,
-        system_prompt,
+        system_prompt_for_log(system_prompt),
         mode="idea",
     )
     first = variants[0]
@@ -2129,22 +2205,9 @@ def generate_from_image(
         user_content.append({"type": "image_url", "image_url": {"url": url, "detail": "low"}})
 
     try:
-        response = openai_client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_content},
-            ],
-            max_tokens=500,
-            temperature=CAPTION_TEMPERATURE,
-            n=CAPTION_VARIANTS,
-            timeout=30,
+        variants, prompt_tokens, completion_tokens = generate_angle_variants(
+            system_prompt, user_content, parse_plain_caption
         )
-        captions = [c.message.content for c in response.choices if c.message.content]
-        if not captions:
-            raise ValueError("empty caption in every choice")
-        prompt_tokens = response.usage.prompt_tokens if response.usage else None
-        completion_tokens = response.usage.completion_tokens if response.usage else None
     except Exception as exc:
         print(f"[generate_from_image:openai_error] {type(exc).__name__}: {exc}")
         sentry_sdk.capture_exception(exc)
@@ -2163,19 +2226,21 @@ def generate_from_image(
         platform,
         tone,
         context,
-        join_variants_for_log(captions),
+        join_variants_for_log(
+            [v["caption"] for v in variants], [v["angle_label"] for v in variants]
+        ),
         prompt_tokens,
         completion_tokens,
         estimated_cost_usd,
-        system_prompt,
+        system_prompt_for_log(system_prompt),
         mode="photo",
     )
-    content_row = save_generated_draft(owner["id"], platform, captions[0], "photo", content_id)
+    content_row = save_generated_draft(
+        owner["id"], platform, variants[0]["caption"], "photo", content_id
+    )
     return {
-        "caption": captions[0],
-        "variants": [
-            {"caption": c, "image_prompt": None, "image_prompt_th": None} for c in captions
-        ],
+        "caption": variants[0]["caption"],
+        "variants": variants,
         "image_urls": image_urls,
         "content_id": content_row["id"],
     }

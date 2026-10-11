@@ -19,6 +19,8 @@ export interface CaptionVariant {
   caption: string;
   image_prompt: string | null;
   image_prompt_th: string | null;
+  // Storytelling angle (เล่าเรื่อง/ตรงประเด็น/ชวนคุย); absent on template fallbacks.
+  angle_label?: string | null;
 }
 export interface ContentItem {
   id: string;

@@ -71,21 +71,24 @@ def test_returns_caption_and_image_url_when_openai_available(client, monkeypatch
     assert body["image_urls"] == ["https://fake/photo.jpg"]
 
     logs = main.list_generation_logs()
-    assert any(log["caption"] == "แคปชั่นทดสอบจากรูปภาพ" for log in logs)
+    assert any("แคปชั่นทดสอบจากรูปภาพ" in log["caption"] for log in logs)
 
 
-def test_photo_mode_returns_variants_from_one_call(client, monkeypatch):
+def test_photo_mode_writes_one_variant_per_storytelling_angle(client, monkeypatch):
     signup(client)
     monkeypatch.setattr(main, "upload_example_image", lambda file, owner_id: "https://fake/photo.jpg")
+    replies = {"story": "รูปแบบหนึ่ง", "direct": "รูปแบบสอง", "conversation": "รูปแบบสาม"}
+
+    def create(**kwargs):
+        system = kwargs["messages"][0]["content"]
+        angle = next(key for key, _, text in main.CAPTION_ANGLES if text in system)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=replies[angle]))],
+            usage=SimpleNamespace(prompt_tokens=100, completion_tokens=50),
+        )
+
     fake_client = MagicMock()
-    fake_client.chat.completions.create.return_value = SimpleNamespace(
-        choices=[
-            SimpleNamespace(message=SimpleNamespace(content="รูปแบบหนึ่ง")),
-            SimpleNamespace(message=SimpleNamespace(content="รูปแบบสอง")),
-            SimpleNamespace(message=SimpleNamespace(content="รูปแบบสาม")),
-        ],
-        usage=SimpleNamespace(prompt_tokens=100, completion_tokens=150),
-    )
+    fake_client.chat.completions.create.side_effect = create
     monkeypatch.setattr(main, "openai_client", fake_client)
 
     res = client.post(
@@ -97,5 +100,5 @@ def test_photo_mode_returns_variants_from_one_call(client, monkeypatch):
     body = res.json()
     assert [v["caption"] for v in body["variants"]] == ["รูปแบบหนึ่ง", "รูปแบบสอง", "รูปแบบสาม"]
     assert body["caption"] == "รูปแบบหนึ่ง"
-    assert fake_client.chat.completions.create.call_count == 1
-    assert fake_client.chat.completions.create.call_args.kwargs["n"] == main.CAPTION_VARIANTS
+    assert [v["angle_label"] for v in body["variants"]] == ["เล่าเรื่อง", "ตรงประเด็น", "ชวนคุย"]
+    assert fake_client.chat.completions.create.call_count == len(main.CAPTION_ANGLES)

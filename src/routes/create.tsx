@@ -155,6 +155,7 @@ const SHORT_PROMPT_THRESHOLD = 15;
 const DNA_KEYS: DnaDocType[] = ["history", "menu", "usp", "tone", "audience"];
 
 interface VariantState {
+  label: string | null;
   caption: string;
   imagePrompt: string | null;
   imagePromptTh: string | null;
@@ -175,6 +176,7 @@ function toVariantStates(
     ? variants
     : [{ caption, image_prompt: imagePrompt, image_prompt_th: imagePromptTh }];
   return list.map((v) => ({
+    label: v.angle_label ?? null,
     caption: v.caption,
     imagePrompt: v.image_prompt,
     imagePromptTh: v.image_prompt_th,
@@ -828,7 +830,7 @@ function CreateContent() {
                 {variants.length > 1 && (
                   <div className="mb-3">
                     <p className="mb-2 text-xs text-muted-foreground">
-                      AI เขียนให้ {variants.length} แบบ เลือกแบบที่ชอบได้เลย
+                      AI เขียนให้ {variants.length} มุม เลือกแบบที่ชอบได้เลย
                     </p>
                     <div
                       role="tablist"
@@ -836,7 +838,7 @@ function CreateContent() {
                       className="grid gap-1 rounded-xl border border-border bg-input/40 p-1"
                       style={{ gridTemplateColumns: `repeat(${variants.length}, minmax(0, 1fr))` }}
                     >
-                      {variants.map((_, i) => (
+                      {variants.map((v, i) => (
                         <button
                           key={i}
                           type="button"
@@ -850,7 +852,7 @@ function CreateContent() {
                               : "text-muted-foreground hover:text-foreground")
                           }
                         >
-                          แบบ {i + 1}
+                          {v.label ?? `แบบ ${i + 1}`}
                         </button>
                       ))}
                     </div>

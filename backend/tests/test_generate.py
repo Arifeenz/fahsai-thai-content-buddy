@@ -230,16 +230,35 @@ def fake_json_choice(caption, image_prompt=None):
     )
 
 
-def test_generate_returns_one_variant_per_choice_in_a_single_call(client, monkeypatch):
+def angle_of(call_kwargs):
+    system = call_kwargs["messages"][0]["content"]
+    keys = [key for key, _, instruction in main.CAPTION_ANGLES if instruction in system]
+    assert len(keys) == 1, "each call must carry exactly one angle instruction"
+    return keys[0]
+
+
+def reply_per_angle(replies):
+    """Mock side_effect answering by angle -- calls run in parallel, so
+    call order can't be used to tell them apart."""
+
+    def create(**kwargs):
+        return SimpleNamespace(
+            choices=[replies[angle_of(kwargs)]],
+            usage=SimpleNamespace(prompt_tokens=100, completion_tokens=50),
+        )
+
+    return create
+
+
+def test_generate_writes_one_variant_per_storytelling_angle(client, monkeypatch):
     signup(client, "user@test.local")
     fake_client = MagicMock()
-    fake_client.chat.completions.create.return_value = SimpleNamespace(
-        choices=[
-            fake_json_choice("แบบหนึ่ง", "prompt one"),
-            fake_json_choice("แบบสอง", "prompt two"),
-            fake_json_choice("แบบสาม", "prompt three"),
-        ],
-        usage=SimpleNamespace(prompt_tokens=100, completion_tokens=150),
+    fake_client.chat.completions.create.side_effect = reply_per_angle(
+        {
+            "story": fake_json_choice("แบบเล่าเรื่อง", "prompt story"),
+            "direct": fake_json_choice("แบบตรงประเด็น", "prompt direct"),
+            "conversation": fake_json_choice("แบบชวนคุย", "prompt conversation"),
+        }
     )
     monkeypatch.setattr(main, "openai_client", fake_client)
 
@@ -248,33 +267,47 @@ def test_generate_returns_one_variant_per_choice_in_a_single_call(client, monkey
     )
     assert res.status_code == 200
     body = res.json()
-    assert [v["caption"] for v in body["variants"]] == ["แบบหนึ่ง", "แบบสอง", "แบบสาม"]
-    # Each variant keeps the image prompt written for it.
-    assert [v["image_prompt"] for v in body["variants"]] == ["prompt one", "prompt two", "prompt three"]
-    assert body["caption"] == "แบบหนึ่ง"
+    # Variants come back in CAPTION_ANGLES order, labelled for the tabs.
+    assert [v["caption"] for v in body["variants"]] == ["แบบเล่าเรื่อง", "แบบตรงประเด็น", "แบบชวนคุย"]
+    assert [v["angle_label"] for v in body["variants"]] == ["เล่าเรื่อง", "ตรงประเด็น", "ชวนคุย"]
+    assert [v["image_prompt"] for v in body["variants"]] == [
+        "prompt story",
+        "prompt direct",
+        "prompt conversation",
+    ]
+    assert body["caption"] == "แบบเล่าเรื่อง"
 
-    # One request -> one OpenAI call asking for n choices, one log row.
-    assert fake_client.chat.completions.create.call_count == 1
-    assert fake_client.chat.completions.create.call_args.kwargs["n"] == main.CAPTION_VARIANTS
+    # One call per angle, each with a different angle instruction.
+    calls = fake_client.chat.completions.create.call_args_list
+    assert sorted(angle_of(c.kwargs) for c in calls) == ["conversation", "direct", "story"]
+    assert all("n" not in c.kwargs for c in calls)
+
+    # Still one log row per request, with token usage summed over the calls.
     logs = [log for log in main.list_generation_logs() if log["mode"] == "idea"]
     assert len(logs) == 1
-    assert "แบบสาม" in logs[0]["caption"]
+    assert "--- ชวนคุย ---" in logs[0]["caption"]
+    assert logs[0]["prompt_tokens"] == 300
+    assert logs[0]["completion_tokens"] == 150
 
-    # The draft saved is variant 1.
     items = client.get("/content").json()["items"]
-    assert any(it["id"] == body["content_id"] and it["preview"] == "แบบหนึ่ง" for it in items)
+    assert any(it["id"] == body["content_id"] and it["preview"] == "แบบเล่าเรื่อง" for it in items)
 
 
-def test_generate_skips_an_unparseable_choice(client, monkeypatch):
+def test_generate_drops_an_angle_that_fails_or_cannot_be_parsed(client, monkeypatch):
     signup(client, "user@test.local")
     fake_client = MagicMock()
-    fake_client.chat.completions.create.return_value = SimpleNamespace(
-        choices=[
-            fake_json_choice("ใช้ได้"),
-            SimpleNamespace(message=SimpleNamespace(content='{"caption": "ถูกตัดกลาง')),
-        ],
-        usage=SimpleNamespace(prompt_tokens=100, completion_tokens=150),
-    )
+    broken = SimpleNamespace(message=SimpleNamespace(content='{"caption": "ถูกตัดกลาง'))
+
+    def create(**kwargs):
+        angle = angle_of(kwargs)
+        if angle == "conversation":
+            raise TimeoutError("one angle timed out")
+        return SimpleNamespace(
+            choices=[fake_json_choice("ใช้ได้") if angle == "direct" else broken],
+            usage=SimpleNamespace(prompt_tokens=100, completion_tokens=50),
+        )
+
+    fake_client.chat.completions.create.side_effect = create
     monkeypatch.setattr(main, "openai_client", fake_client)
 
     res = client.post(
@@ -282,6 +315,18 @@ def test_generate_skips_an_unparseable_choice(client, monkeypatch):
     )
     assert res.status_code == 200
     assert [v["caption"] for v in res.json()["variants"]] == ["ใช้ได้"]
+
+
+def test_generate_fails_only_when_every_angle_fails(client, monkeypatch):
+    signup(client, "user@test.local")
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.side_effect = TimeoutError("OpenAI down")
+    monkeypatch.setattr(main, "openai_client", fake_client)
+
+    res = client.post(
+        "/generate", json={"prompt": "เมนูใหม่", "platform": "facebook", "tone": "friendly"}
+    )
+    assert res.status_code == 502
 
 
 def test_template_fallback_also_returns_variants(client):
