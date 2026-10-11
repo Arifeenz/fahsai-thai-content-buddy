@@ -15,6 +15,11 @@ export interface GenerateInput {
   tone: Tone;
   contentId?: string;
 }
+export interface CaptionVariant {
+  caption: string;
+  image_prompt: string | null;
+  image_prompt_th: string | null;
+}
 export interface ContentItem {
   id: string;
   platform: Platform;
@@ -436,6 +441,7 @@ export const api = {
     caption: string;
     image_prompt: string | null;
     image_prompt_th: string | null;
+    variants: CaptionVariant[];
     content_id: string;
     used_examples?: { id: number; caption: string; platform: Platform }[];
   }> {
@@ -449,9 +455,12 @@ export const api = {
       }),
     });
   },
-  async generateFromImage(
-    formData: FormData,
-  ): Promise<{ caption: string; image_urls: string[]; content_id: string }> {
+  async generateFromImage(formData: FormData): Promise<{
+    caption: string;
+    variants: CaptionVariant[];
+    image_urls: string[];
+    content_id: string;
+  }> {
     return requestForm("/generate-from-image", formData);
   },
   async generateVideoScript(
@@ -508,7 +517,12 @@ export const api = {
   },
   async updateContent(
     id: string,
-    updates: { preview?: string; status?: ContentStatus; scheduled_date?: string },
+    updates: {
+      preview?: string;
+      status?: ContentStatus;
+      scheduled_date?: string;
+      selected_variant?: number;
+    },
   ): Promise<ContentItem> {
     return request(`/content/${id}`, { method: "PATCH", body: JSON.stringify(updates) });
   },
