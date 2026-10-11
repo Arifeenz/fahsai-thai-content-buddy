@@ -808,6 +808,9 @@ export const api = {
     }>(`/admin/support-tickets?page=${page}&page_size=${pageSize}`);
     return { items: tickets, total, page: p, page_size };
   },
+  async adminResetDemoAccount(category: BusinessCategory): Promise<void> {
+    await request(`/admin/demo-accounts/${category}/reset`, { method: "POST" });
+  },
   async adminResolveSupportTicket(id: number, resolved: boolean): Promise<SupportTicket> {
     return request(`/admin/support-tickets/${id}/resolve`, {
       method: "PATCH",

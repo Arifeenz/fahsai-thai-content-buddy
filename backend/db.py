@@ -1872,6 +1872,41 @@ def ensure_demo_users() -> None:
     conn.close()
 
 
+def reset_demo_account(business_category: str) -> dict | None:
+    """Puts one shared demo account's Brand DNA and category back to the
+    DEMO_ACCOUNTS defaults. Content, generation history, example posts and
+    survey answers made on it are left alone. None if no such demo account."""
+    info = DEMO_ACCOUNTS.get(business_category)
+    if info is None:
+        return None
+    conn = get_connection()
+    row = conn.execute(
+        """
+        UPDATE users SET business_category = %s, is_demo = TRUE
+        WHERE email = %s AND is_demo = TRUE
+        RETURNING *
+        """,
+        (business_category, info["email"]),
+    ).fetchone()
+    if row is None:
+        conn.close()
+        return None
+    for doc_type in DNA_DOC_TYPES:
+        conn.execute(
+            """
+            INSERT INTO brand_dna (user_id, doc_type, content, updated_at)
+            VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+            ON CONFLICT(user_id, doc_type) DO UPDATE SET
+                content = excluded.content,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (row["id"], doc_type, info["dna"].get(doc_type, "")),
+        )
+    conn.commit()
+    conn.close()
+    return row
+
+
 _PLATFORM_TABLES = {"prompt_templates", "platform_tips", "example_posts"}
 
 

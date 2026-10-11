@@ -2,13 +2,37 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { api, businessCategoryLabel, platformLabel, type AdminUserDetail, type Role } from "@/lib/api";
+import {
+  api,
+  businessCategoryLabel,
+  platformLabel,
+  type AdminUserDetail,
+  type BusinessCategory,
+  type Role,
+} from "@/lib/api";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { AppShell, PageHeader, useCurrentUser } from "@/components/app-shell";
 import { useRequireAdmin } from "@/lib/admin-guard";
 import { Pagination } from "@/components/pagination";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { StatusBadge } from "./dashboard";
-import { Search, Ban, CircleCheck, ShieldCheck, ShieldOff } from "lucide-react";
+import { Search, Ban, CircleCheck, ShieldCheck, ShieldOff, RotateCcw } from "lucide-react";
 
 export const Route = createFileRoute("/admin/users")({
   head: () => ({
@@ -67,6 +91,7 @@ function AdminUsersPage() {
     <AppShell>
       <div className="p-6 md:p-8">
         <PageHeader title="ผู้ใช้งาน" subtitle={`ผู้ใช้งานทั้งหมด (${total})`} />
+        <DemoAccountsCard />
         <div className="glass-card mb-4 flex items-center gap-3 rounded-2xl p-4">
           <div className="relative min-w-0 flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -115,7 +140,9 @@ function AdminUsersPage() {
                     <span
                       className={
                         "rounded-full px-2.5 py-1 text-[11px] font-medium " +
-                        (u.is_active ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive")
+                        (u.is_active
+                          ? "bg-success/15 text-success"
+                          : "bg-destructive/15 text-destructive")
                       }
                     >
                       {u.is_active ? "ใช้งานได้" : "ถูกระงับ"}
@@ -201,7 +228,9 @@ function UserDetailDialog({ userId, onClose }: { userId: number | null; onClose:
               <span
                 className={
                   "rounded-full px-2.5 py-1 text-[11px] font-medium " +
-                  (user.role === "admin" ? "bg-gold/15 text-gold" : "bg-white/5 text-muted-foreground")
+                  (user.role === "admin"
+                    ? "bg-gold/15 text-gold"
+                    : "bg-white/5 text-muted-foreground")
                 }
               >
                 {user.role === "admin" ? "แอดมิน" : "ผู้ใช้ทั่วไป"}
@@ -209,7 +238,9 @@ function UserDetailDialog({ userId, onClose }: { userId: number | null; onClose:
               <span
                 className={
                   "rounded-full px-2.5 py-1 text-[11px] font-medium " +
-                  (user.is_active ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive")
+                  (user.is_active
+                    ? "bg-success/15 text-success"
+                    : "bg-destructive/15 text-destructive")
                 }
               >
                 {user.is_active ? "ใช้งานได้" : "ถูกระงับ"}
@@ -224,7 +255,9 @@ function UserDetailDialog({ userId, onClose }: { userId: number | null; onClose:
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div>
                 <div className="text-xs text-muted-foreground">ประเภทธุรกิจ</div>
-                <div>{user.business_category ? businessCategoryLabel[user.business_category] : "—"}</div>
+                <div>
+                  {user.business_category ? businessCategoryLabel[user.business_category] : "—"}
+                </div>
               </div>
               <div>
                 <div className="text-xs text-muted-foreground">สมัครเมื่อ</div>
@@ -287,7 +320,9 @@ function UserDetailDialog({ userId, onClose }: { userId: number | null; onClose:
                   disabled={activeMutation.isPending}
                   className={
                     "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs hover:bg-white/5 disabled:opacity-60 " +
-                    (user.is_active ? "border-destructive/40 text-destructive" : "border-success/40 text-success")
+                    (user.is_active
+                      ? "border-destructive/40 text-destructive"
+                      : "border-success/40 text-success")
                   }
                 >
                   {user.is_active ? (
@@ -306,5 +341,84 @@ function UserDetailDialog({ userId, onClose }: { userId: number | null; onClose:
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+const DEMO_CATEGORIES = Object.keys(businessCategoryLabel) as BusinessCategory[];
+
+// Shared demo accounts drift as visitors edit their Brand DNA; resetting puts
+// the DNA and category back to the built-in defaults without deleting any
+// content, history or survey answers made on them.
+function DemoAccountsCard() {
+  const [target, setTarget] = useState<BusinessCategory | "all" | null>(null);
+  const resetMutation = useMutation({
+    mutationFn: async (which: BusinessCategory | "all") => {
+      const categories = which === "all" ? DEMO_CATEGORIES : [which];
+      for (const category of categories) await api.adminResetDemoAccount(category);
+      return categories.length;
+    },
+    onSuccess: (count) => toast.success(`รีเซ็ตบัญชีทดลองแล้ว ${count} บัญชี`),
+    onError: (err) =>
+      toast.error(err instanceof Error ? err.message : "รีเซ็ตไม่สำเร็จ ลองใหม่อีกครั้งนะคะ"),
+  });
+
+  const targetLabel =
+    target === "all" ? "บัญชีทดลองทั้ง 4 บัญชี" : target ? businessCategoryLabel[target] : "";
+
+  return (
+    <div className="glass-card mb-4 rounded-2xl p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="text-sm font-bold">บัญชีทดลอง</div>
+          <div className="text-xs text-muted-foreground">
+            คืนข้อมูลร้าน (Brand DNA) และประเภทธุรกิจเป็นค่าเริ่มต้น คอนเทนต์และประวัติไม่ถูกลบ
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setTarget("all")}
+          disabled={resetMutation.isPending}
+          className="inline-flex items-center gap-2 rounded-full border border-border px-3 py-1.5 text-xs hover:border-teal disabled:opacity-50"
+        >
+          <RotateCcw className="h-3.5 w-3.5" /> รีเซ็ตทั้งหมด
+        </button>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {DEMO_CATEGORIES.map((category) => (
+          <button
+            key={category}
+            type="button"
+            onClick={() => setTarget(category)}
+            disabled={resetMutation.isPending}
+            className="rounded-full border border-dashed border-border px-3 py-1.5 text-xs text-muted-foreground hover:border-teal hover:text-teal disabled:opacity-50"
+          >
+            รีเซ็ต {businessCategoryLabel[category]}
+          </button>
+        ))}
+      </div>
+
+      <AlertDialog open={target !== null} onOpenChange={(open) => !open && setTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>รีเซ็ต{targetLabel}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              ข้อมูลร้าน (Brand DNA) ที่ผู้ทดลองแก้ไว้จะกลับเป็นค่าเริ่มต้น ส่วนคอนเทนต์
+              ประวัติการสร้าง ตัวอย่างโพสต์ และแบบประเมินยังอยู่ครบ
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (target) resetMutation.mutate(target);
+                setTarget(null);
+              }}
+            >
+              รีเซ็ต
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 }

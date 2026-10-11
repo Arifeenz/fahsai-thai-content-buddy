@@ -72,6 +72,7 @@ from db import (
     get_monthly_openai_spend,
     get_demo_user_by_category,
     get_row_platform,
+    reset_demo_account,
     has_survey_response,
     get_pending_invite,
     get_pending_invite_by_token,
@@ -2471,6 +2472,19 @@ def admin_update_user_role(user_id: int, body: UpdateUserRoleRequest, request: R
         raise HTTPException(status_code=404, detail="ไม่พบผู้ใช้นี้ค่ะ")
     updated = update_user_role(user_id, body.role)
     return {"user": admin_user_to_dict(updated)}
+
+
+@app.post("/admin/demo-accounts/{business_category}/reset")
+@limiter.limit("30/minute")
+def admin_reset_demo_account(business_category: str, request: Request):
+    # Visitors share and can freely edit demo accounts; this restores one's
+    # Brand DNA so the next visitor's first try isn't built on someone
+    # else's edits. Nothing the account created is deleted.
+    require_admin(request)
+    row = reset_demo_account(business_category)
+    if row is None:
+        raise HTTPException(status_code=404, detail="ไม่พบบัญชีทดลองสำหรับหมวดนี้ค่ะ")
+    return {"user": admin_user_to_dict(row)}
 
 
 @app.patch("/admin/users/{user_id}/active")

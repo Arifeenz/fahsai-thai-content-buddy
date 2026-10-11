@@ -54,3 +54,41 @@ def test_startup_repairs_a_demo_whose_category_was_changed(client):
     client.cookies.clear()
     demo_login(client, "streamer")
     assert client.get("/auth/me").json()["user"]["business_category"] == "streamer"
+
+
+def test_admin_reset_restores_demo_dna_without_deleting_content(client):
+    info = db.DEMO_ACCOUNTS["online_shop"]
+    demo_login(client, "online_shop")
+    # A visitor rewrites the shop and creates some content on the shared account.
+    client.put("/brand-dna", json={**info["dna"], "menu": "ผ้าตัดชุด", "audience": "คนหาชุดไปงานแต่ง"})
+    created = client.post(
+        "/content", json={"platform": "facebook", "preview": "โพสต์ของผู้ทดลอง", "status": "draft"}
+    ).json()
+    assert client.get("/brand-dna").json()["menu"] == "ผ้าตัดชุด"
+
+    client.cookies.clear()
+    client.post(
+        "/auth/signup", json={"name": "A", "email": "admin@test.local", "password": "testpass123"}
+    )
+    res = client.post("/admin/demo-accounts/online_shop/reset")
+    assert res.status_code == 200
+    assert res.json()["user"]["business_category"] == "online_shop"
+
+    client.cookies.clear()
+    demo_login(client, "online_shop")
+    assert client.get("/brand-dna").json() == info["dna"]
+    items = client.get("/content").json()["items"]
+    assert any(it["id"] == created["id"] for it in items)  # content kept
+
+
+def test_demo_reset_is_admin_only_and_knows_categories(client):
+    client.post(
+        "/auth/signup", json={"name": "U", "email": "u@test.local", "password": "testpass123"}
+    )
+    assert client.post("/admin/demo-accounts/online_shop/reset").status_code == 403
+
+    client.cookies.clear()
+    client.post(
+        "/auth/signup", json={"name": "A", "email": "admin@test.local", "password": "testpass123"}
+    )
+    assert client.post("/admin/demo-accounts/not_a_category/reset").status_code == 404
