@@ -11,6 +11,7 @@ import {
   type BusinessCategory,
   type PromptTemplate,
 } from "@/lib/api";
+import { platformOptions } from "@/lib/category-platforms";
 import { AppShell, PageHeader } from "@/components/app-shell";
 import { useRequireAdmin } from "@/lib/admin-guard";
 import { Pencil, Trash2 } from "lucide-react";
@@ -25,7 +26,6 @@ export const Route = createFileRoute("/admin/templates")({
   component: AdminTemplatesPage,
 });
 
-const platforms: Platform[] = ["facebook", "line", "instagram", "tiktok", "youtube"];
 const tones: Tone[] = ["friendly", "professional", "playful", "promo"];
 
 const emptyForm = {
@@ -126,7 +126,7 @@ function AdminTemplatesPage() {
             onChange={(e) => setForm({ ...form, platform: e.target.value as Platform })}
             className="rounded-full border border-border bg-input px-3 py-2 text-sm"
           >
-            {platforms.map((p) => (
+            {platformOptions(form.platform).map((p) => (
               <option key={p} value={p}>
                 {platformLabel[p]}
               </option>

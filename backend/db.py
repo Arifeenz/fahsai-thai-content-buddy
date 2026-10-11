@@ -22,6 +22,35 @@ def _add_column_if_missing(conn: psycopg.Connection, table: str, column_ddl: str
     conn.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column_ddl}")
 
 
+# Fallback captions for the TikTok/YouTube pairs the original seed never
+# covered. Only used to seed an EMPTY prompt_templates table (fresh/test
+# DBs) -- deliberately not wired into the startup backfill below, so they
+# reach production only via scripts/add_tiktok_youtube_templates.py once
+# someone has read them.
+NEW_PLATFORM_TEMPLATES: list[tuple[str, str, str]] = [
+    # food_beverage x tiktok
+    ("food_beverage", "tiktok", "เมนูนี้ต้องลอง! 😋 ใครผ่านมาแถวร้านห้ามพลาดนะคะ #ของอร่อยบอกต่อ #คาเฟ่ #FAHSAI"),
+    ("food_beverage", "tiktok", "พามาดูเมนูเด็ดของร้าน ☕ ดูจนจบแล้วจะอยากแวะมาลองเลยค่ะ #ร้านอาหาร #รีวิวของกิน"),
+    ("food_beverage", "tiktok", "โปรวันนี้มาแล้ว 🎉 แวะมาที่ร้านกันได้เลยค่ะ กดติดตามไว้ไม่พลาดโปรหน้า #โปรโมชั่น #ของกินบอกต่อ"),
+    # food_beverage x youtube
+    ("food_beverage", "youtube", "พาชมบรรยากาศร้านและเมนูแนะนำค่ะ ☕ ใครกำลังหาร้านนั่งชิล ดูคลิปนี้ก่อนแวะมาได้เลย อย่าลืมกดติดตามช่องไว้นะคะ"),
+    ("food_beverage", "youtube", "เบื้องหลังการทำเมนูของร้าน ตั้งแต่เตรียมวัตถุดิบจนเสิร์ฟถึงมือลูกค้า 🍽️ ชอบคลิปแบบนี้ กดไลก์และกดติดตามเป็นกำลังใจให้กันด้วยนะคะ"),
+    ("food_beverage", "youtube", "ขอบคุณลูกค้าทุกท่านที่แวะมาอุดหนุนร้านเสมอค่ะ 💛 คลิปนี้พาไปดูเมนูแนะนำของร้าน ใครยังไม่เคยลอง แวะมาได้เลยนะคะ"),
+    # online_shop x youtube
+    ("online_shop", "youtube", "รีวิวสินค้าตัวใหม่ของร้านแบบละเอียดค่ะ 🛍️ ดูจนจบจะรู้ว่าเหมาะกับใคร สนใจสั่งซื้อหรือสอบถามเพิ่มเติม ทักมาได้เลยนะคะ"),
+    ("online_shop", "youtube", "แกะกล่องสินค้าเข้าใหม่ ✨ ใครรอของชิ้นไหนอยู่ ดูในคลิปนี้ได้เลยค่ะ อย่าลืมกดติดตามช่องไว้ไม่พลาดของเข้าใหม่นะคะ"),
+    ("online_shop", "youtube", "ตอบคำถามที่ลูกค้าถามบ่อยเกี่ยวกับสินค้าของร้านค่ะ 💬 มีคำถามเพิ่มเติม พิมพ์ไว้ในคอมเมนต์ได้เลยนะคะ"),
+    # fortune_telling x tiktok
+    ("fortune_telling", "tiktok", "ดวงสัปดาห์นี้มาแล้ว 🔮 ใครเกิดวันไหน ดูให้จบแล้วคอมเมนต์บอกกันหน่อยนะคะ #ดูดวง #ดวงรายสัปดาห์"),
+    ("fortune_telling", "tiktok", "เปิดไพ่ให้ 1 ใบ ✨ หยุดคลิปตอนที่ใจบอก แล้วดูคำทำนายของคุณได้เลยค่ะ #ไพ่ทาโรต์ #ดูดวงออนไลน์"),
+    ("fortune_telling", "tiktok", "มีเรื่องกังวลใจอยู่ใช่ไหมคะ 💫 คลิปนี้มีคำแนะนำดีๆ ให้ กดติดตามไว้ไม่พลาดดวงอัปเดตนะคะ #ดูดวง #FAHSAI"),
+    # fortune_telling x youtube
+    ("fortune_telling", "youtube", "ดูดวงรายสัปดาห์ครบทุกวันเกิดค่ะ 🔮 ทั้งการงาน การเงิน และความรัก ดูจนจบแล้วคอมเมนต์บอกได้นะคะว่าตรงไหม อย่าลืมกดติดตามและกดกระดิ่งไว้ไม่พลาดดวงอัปเดตค่ะ"),
+    ("fortune_telling", "youtube", "เปิดไพ่ทาโรต์ เลือกกองที่ใจบอก แล้วฟังคำทำนายของคุณได้เลยค่ะ ✨ ใครอยากให้ดูเรื่องไหนเพิ่ม พิมพ์ไว้ในคอมเมนต์ได้เลยนะคะ"),
+    ("fortune_telling", "youtube", "ขอบคุณทุกท่านที่ติดตามช่องนะคะ 🙏 คลิปนี้ตอบคำถามที่ถามกันเข้ามาบ่อย หากอยากปรึกษาแบบส่วนตัว ทักมาจองคิวได้เลยค่ะ"),
+]
+
+
 def init_db() -> None:
     conn = get_connection()
     conn.execute(
@@ -339,9 +368,6 @@ def init_db() -> None:
                 ("food_beverage", "facebook", "☕ วันนี้แวะมาที่ร้านกันหรือยังคะ เมนูอร่อยๆ รอเสิร์ฟให้ทุกท่านอยู่นะคะ บรรยากาศดี นั่งชิลได้ทั้งวัน แวะมาทักทายกันได้เลยค่ะ 🌤️\n#ร้านอาหารยะลา #FAHSAI"),
                 ("food_beverage", "facebook", "พิเศษวันนี้! 🎉 มีโปรโมชั่นดีๆ รอคุณอยู่ที่ร้าน แวะมาลองกันได้เลยนะคะ รับรองว่าคุ้มค่าแน่นอน 💛"),
                 ("food_beverage", "facebook", "สวัสดีค่ะลูกค้าคนพิเศษ 🌟 ขอบคุณที่แวะมาอุดหนุนร้านเราเสมอมานะคะ วันนี้ก็ยังเปิดให้บริการตามปกติ พร้อมต้อนรับทุกท่านค่ะ"),
-                ("food_beverage", "line", "สวัสดีค่ะลูกค้าคนเก่ง 💛 วันนี้ร้านเรามีเมนูพิเศษรอเสิร์ฟอยู่นะคะ พิมพ์ 'สั่ง' เพื่อสั่งเลยค่ะ ☕✨"),
-                ("food_beverage", "line", "แจ้งข่าวดีค่ะ! ร้านเรามีโปรโมชั่นพิเศษสำหรับลูกค้า LINE OA วันนี้เท่านั้น รีบสั่งกันเลยนะคะ 🎁"),
-                ("food_beverage", "line", "ขอบคุณที่ติดตามร้านเรานะคะ 🙏 มีคำถามหรืออยากสั่งอะไร ทักมาได้เลยค่ะ ยินดีให้บริการทุกวัน"),
                 ("food_beverage", "instagram", "good vibes only ☀️ แวะมาสัมผัสบรรยากาศดีๆ ที่ร้านเรากันนะคะ\n·\n·\n#thailandfood #localcafe #ฟ้าใส"),
                 ("food_beverage", "instagram", "your daily dose of happiness 🌿 พร้อมเสิร์ฟให้ทุกวัน\n·\n·\n#foodie #thaicafe #FAHSAI"),
                 ("food_beverage", "instagram", "made with love, served with a smile 💫\n·\n·\n#smallbusiness #supportlocal #ยะลา"),
@@ -349,9 +375,6 @@ def init_db() -> None:
                 ("online_shop", "facebook", "🛍️ สินค้าคุณภาพดี ราคาเป็นกันเอง พร้อมส่งให้ทุกท่านแล้วนะคะ แวะดูสินค้าในร้านได้เลยค่ะ"),
                 ("online_shop", "facebook", "โปรโมชั่นพิเศษวันนี้! 🎉 ลดราคาสินค้าหลายรายการ รีบสั่งก่อนหมดนะคะ"),
                 ("online_shop", "facebook", "ขอบคุณลูกค้าทุกท่านที่ไว้วางใจร้านเรานะคะ 🙏 เรามุ่งมั่นคัดสินค้าดีๆ มาให้เสมอค่ะ"),
-                ("online_shop", "line", "สวัสดีค่ะ 🛒 สนใจสินค้าตัวไหน ทักมาสอบถามได้เลยนะคะ ตอบไวแน่นอนค่ะ"),
-                ("online_shop", "line", "แจ้งโปรพิเศษ! วันนี้สั่งผ่าน LINE รับส่วนลดพิเศษค่ะ พิมพ์ 'สนใจ' เพื่อดูรายละเอียดเพิ่มเติม"),
-                ("online_shop", "line", "ของเข้าใหม่แล้วค่ะ ✨ ใครรอของชิ้นไหนอยู่ ทักมาจองได้เลยนะคะ"),
                 ("online_shop", "instagram", "new arrivals just dropped ✨\n·\n·\n#onlineshop #shoplocal #ของมันต้องมี"),
                 ("online_shop", "instagram", "quality you can trust, prices you'll love 💕\n·\n·\n#thailandshop #onlinestore"),
                 ("online_shop", "instagram", "shop smart, shop with us 🛍️\n·\n·\n#supportsmallbusiness #FAHSAI"),
@@ -359,9 +382,6 @@ def init_db() -> None:
                 ("fortune_telling", "facebook", "🔮 อยากรู้ว่าดวงชะตาช่วงนี้เป็นอย่างไร ทักมาปรึกษาได้เลยนะคะ ให้คำแนะนำด้วยความจริงใจค่ะ"),
                 ("fortune_telling", "facebook", "เปิดคิวดูดวงแล้วนะคะวันนี้ ✨ ใครมีเรื่องกังวลใจ อยากได้คำตอบ ทักมาคุยกันได้เลยค่ะ"),
                 ("fortune_telling", "facebook", "ขอบคุณทุกท่านที่ไว้วางใจให้ดูดวงนะคะ 🙏 ทุกคำทำนายตั้งใจให้คำแนะนำที่ดีที่สุดเสมอค่ะ"),
-                ("fortune_telling", "line", "สวัสดีค่ะ 🔮 อยากดูดวงเรื่องไหน ทักมาปรึกษาได้เลยนะคะ พร้อมให้คำแนะนำค่ะ"),
-                ("fortune_telling", "line", "เปิดจองคิวดูดวงแล้วนะคะ พิมพ์ 'จองคิว' เพื่อนัดเวลาได้เลยค่ะ"),
-                ("fortune_telling", "line", "มีเรื่องกังวลใจไหมคะ ทักมาคุยได้เสมอนะคะ ยินดีรับฟังและให้คำแนะนำค่ะ 💫"),
                 ("fortune_telling", "instagram", "trust the process, trust the stars ✨\n·\n·\n#ดูดวง #fortuneteller #thailand"),
                 ("fortune_telling", "instagram", "your path, your destiny 🔮\n·\n·\n#astrology #tarot #ดูดวงออนไลน์"),
                 ("fortune_telling", "instagram", "guidance when you need it most 💫\n·\n·\n#spiritualjourney #FAHSAI"),
@@ -369,13 +389,11 @@ def init_db() -> None:
                 ("streamer", "facebook", "🎮 คืนนี้มีไลฟ์นะคะ ใครว่างมาชมกันได้เลย มาสนุกไปด้วยกันนะคะ"),
                 ("streamer", "facebook", "ขอบคุณทุกคนที่ติดตามช่องนะคะ 💛 มีอะไรอยากให้เล่นเกมไหนบอกได้เลยนะคะ"),
                 ("streamer", "facebook", "วันนี้มีกิจกรรมพิเศษระหว่างไลฟ์ด้วยนะคะ ห้ามพลาดเด็ดขาด แวะมาดูกันได้เลยค่ะ"),
-                ("streamer", "line", "สวัสดีค่ะ 🎮 วันนี้มีไลฟ์กี่โมง เดี๋ยวแจ้งให้ทราบนะคะ ติดตามกันไว้ได้เลยค่ะ"),
-                ("streamer", "line", "ขอบคุณที่ติดตามกันมานะคะ มีคำถามหรืออยากแนะนำอะไร ทักมาได้เลยค่ะ"),
-                ("streamer", "line", "คืนนี้มีเซอร์ไพรส์ระหว่างไลฟ์ด้วยนะคะ อย่าลืมมาดูกันค่ะ"),
                 ("streamer", "instagram", "game on 🎮✨\n·\n·\n#streamer #gaming #livestream"),
                 ("streamer", "instagram", "behind the screen, always grinding 💪\n·\n·\n#gamer #streaming #thailand"),
                 ("streamer", "instagram", "new stream, new memories 🎥\n·\n·\n#twitch #gamingcommunity #FAHSAI"),
-            ],
+            ]
+            + NEW_PLATFORM_TEMPLATES,
         )
 
     # Platforms added to a category after the block above already ran once
@@ -1476,12 +1494,6 @@ _PLATFORM_TIP_SEED: dict[str, tuple[str, str, str, str]] = {
         "Shorts ยาวไม่เกิน 60 วิ ต้องรักษาอัตราดูจบ 50-65% ส่วนวิดีโอยาวภาพปก/ชื่อคลิปมีผลกับอัตราคลิกมาก",
         "อย่าตั้งชื่อ/ภาพปกเกินจริง ระบบตรวจจับคลิกเบตได้ ถ้าคนดูไม่จบจะโดนกดอันดับ",
     ),
-    "line": (
-        "ข้อความสั้น กระชับ ได้ใจความในบรรทัดแรก เพราะขึ้นแจ้งเตือนบนมือถือ",
-        "LINE OA ไม่มีระบบแฮชแท็ก เน้นคำเรียกร้องให้ทำ (CTA) ชัดเจนแทน",
-        "รูปภาพหรือ Rich Message ที่มีปุ่มกดชัดเจนช่วยเพิ่มอัตราคลิก",
-        "อย่าส่งบรอดแคสต์ถี่เกินไป ลูกค้าจะบล็อกบัญชี ควรเว้นระยะและเลือกช่วงเวลาที่เหมาะสม",
-    ),
 }
 
 
@@ -1858,6 +1870,19 @@ def ensure_demo_users() -> None:
             )
     conn.commit()
     conn.close()
+
+
+_PLATFORM_TABLES = {"prompt_templates", "platform_tips", "example_posts"}
+
+
+def get_row_platform(table: str, row_id: int) -> str | None:
+    """Current platform of an existing row, or None if it doesn't exist."""
+    if table not in _PLATFORM_TABLES:
+        raise ValueError(table)
+    conn = get_connection()
+    row = conn.execute(f"SELECT platform FROM {table} WHERE id = %s", (row_id,)).fetchone()
+    conn.close()
+    return row["platform"] if row else None
 
 
 def get_demo_user_by_category(business_category: str) -> dict | None:

@@ -46,7 +46,10 @@ function ErrorComponent({ error, reset }: ErrorComponentProps) {
         <h1 className="text-xl font-semibold">โหลดหน้านี้ไม่สำเร็จ</h1>
         <p className="mt-2 text-sm text-muted-foreground">ลองใหม่อีกครั้งได้เลยนะคะ</p>
         <button
-          onClick={() => { router.invalidate(); reset(); }}
+          onClick={() => {
+            router.invalidate();
+            reset();
+          }}
           className="btn-gold mt-6 rounded-full px-6 py-2 text-sm"
         >
           ลองอีกครั้ง
@@ -62,7 +65,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "FAHSAI — ผู้ช่วยสร้างคอนเทนต์สำหรับร้านของคุณ" },
-      { name: "description", content: "FAHSAI ช่วย SME ชายแดนใต้สร้างคอนเทนต์ Facebook, LINE OA และ Instagram ด้วย AI" },
+      {
+        name: "description",
+        content:
+          "FAHSAI ช่วยร้านค้าและครีเอเตอร์ชายแดนใต้สร้างคอนเทนต์ Facebook, Instagram, TikTok และ YouTube ด้วย AI",
+      },
       { property: "og:title", content: "FAHSAI — ผู้ช่วยสร้างคอนเทนต์สำหรับร้านของคุณ" },
       { property: "og:description", content: "AI ช่วยปั้นแบรนด์ของคุณให้โดดเด่น" },
       { property: "og:type", content: "website" },
@@ -72,7 +79,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "stylesheet", href: appCss },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
-      { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700;800&display=swap" },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700;800&display=swap",
+      },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
     ],
   }),
@@ -85,7 +95,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 function RootShell({ children }: { children: ReactNode }) {
   return (
     <html lang="th">
-      <head><HeadContent /></head>
+      <head>
+        <HeadContent />
+      </head>
       <body>
         {children}
         <Scripts />

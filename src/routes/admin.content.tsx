@@ -12,6 +12,7 @@ import {
   type Platform,
   type TopGrowthUser,
 } from "@/lib/api";
+import { CREATABLE_PLATFORMS } from "@/lib/category-platforms";
 import { AppShell, PageHeader } from "@/components/app-shell";
 import { useRequireAdmin } from "@/lib/admin-guard";
 import { Pagination } from "@/components/pagination";
@@ -34,9 +35,7 @@ const statusFilters: { key: "all" | ContentStatus; label: string }[] = [
 ];
 const platformFilters: { key: "all" | Platform; label: string }[] = [
   { key: "all", label: "ทุกช่อง" },
-  { key: "facebook", label: "Facebook" },
-  { key: "line", label: "LINE OA" },
-  { key: "instagram", label: "Instagram" },
+  ...CREATABLE_PLATFORMS.map((key) => ({ key, label: platformLabel[key] })),
 ];
 
 export const Route = createFileRoute("/admin/content")({

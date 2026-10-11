@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api, platformLabel, type ContentItem, type ContentStatus, type Platform } from "@/lib/api";
+import { CREATABLE_PLATFORMS } from "@/lib/category-platforms";
 import { AppShell, PageHeader } from "@/components/app-shell";
 import { useRequireAuth } from "@/lib/auth-guard";
 import { ContentFeedbackControl, StatusBadge } from "./dashboard";
@@ -31,9 +32,7 @@ const statusFilters: { key: "all" | ContentStatus; label: string }[] = [
 ];
 const platformFilters: { key: "all" | Platform; label: string }[] = [
   { key: "all", label: "ทุกช่อง" },
-  { key: "facebook", label: "Facebook" },
-  { key: "line", label: "LINE OA" },
-  { key: "instagram", label: "Instagram" },
+  ...CREATABLE_PLATFORMS.map((key) => ({ key, label: platformLabel[key] })),
 ];
 
 function TopContentSection() {
@@ -239,7 +238,7 @@ function Library() {
           </div>
           <select
             value={platform}
-            onChange={(e) => setPlatform(e.target.value as any)}
+            onChange={(e) => setPlatform(e.target.value as "all" | Platform)}
             className="rounded-full border border-border bg-input px-4 py-2.5 text-sm outline-none"
           >
             {platformFilters.map((f) => (

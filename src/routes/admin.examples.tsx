@@ -10,7 +10,13 @@ import {
   type AdminExamplePost,
   type Platform,
 } from "@/lib/api";
-import { categoryPlatforms, likeCountLabel, type CategoryKey } from "@/lib/category-platforms";
+import {
+  categoryPlatforms,
+  CREATABLE_PLATFORMS,
+  likeCountLabel,
+  platformOptions,
+  type CategoryKey,
+} from "@/lib/category-platforms";
 import { AppShell, PageHeader } from "@/components/app-shell";
 import { useRequireAdmin } from "@/lib/admin-guard";
 import { useScreenCapture } from "@/components/screen-capture";
@@ -37,7 +43,6 @@ export const Route = createFileRoute("/admin/examples")({
   component: AdminExamplesPage,
 });
 
-const platforms: Platform[] = ["facebook", "line", "instagram", "tiktok", "youtube"];
 const PAGE_SIZE = 20;
 
 const emptyForm = {
@@ -61,7 +66,9 @@ function AdminExamplesPage() {
 
   const platformsForForm =
     categoryPlatforms[
-      form.businessCategory in categoryPlatforms ? (form.businessCategory as CategoryKey) : "default"
+      form.businessCategory in categoryPlatforms
+        ? (form.businessCategory as CategoryKey)
+        : "default"
     ];
 
   // A platform picked under a different category may not exist in the newly
@@ -248,7 +255,7 @@ function AdminExamplesPage() {
             onChange={(e) => setForm({ ...form, platform: e.target.value as Platform })}
             className="rounded-full border border-border bg-input px-3 py-2 text-sm"
           >
-            {platformsForForm.map(({ key }) => (
+            {platformOptions(form.platform).map((key) => (
               <option key={key} value={key}>
                 {platformLabel[key]}
               </option>
@@ -385,7 +392,7 @@ function AdminExamplesPage() {
             className="rounded-full border border-border bg-input px-3 py-2 text-sm"
           >
             <option value="all">ทุกแพลตฟอร์ม</option>
-            {platforms.map((p) => (
+            {CREATABLE_PLATFORMS.map((p) => (
               <option key={p} value={p}>
                 {platformLabel[p]}
               </option>

@@ -33,7 +33,7 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "ให้ FAHSAI ช่วยเขียนโพสต์ Facebook, LINE OA และ Instagram ให้ร้านคุณ ด้วย AI ตรงสไตล์แบรนด์ทุกครั้ง",
+          "ให้ FAHSAI ช่วยเขียนโพสต์ Facebook, Instagram, TikTok และ YouTube ให้ร้านคุณ ด้วย AI ตรงสไตล์แบรนด์ทุกครั้ง",
       },
       { property: "og:title", content: "FAHSAI — ผู้ช่วยสร้างคอนเทนต์สำหรับร้านของคุณ" },
       { property: "og:description", content: "AI ช่วยปั้นแบรนด์ของคุณให้โดดเด่น เริ่มใช้งานฟรี" },
@@ -122,7 +122,7 @@ const faqs: { q: string; a: string }[] = [
   },
   {
     q: "ใช้ได้กับแพลตฟอร์มไหนบ้าง?",
-    a: "Facebook, LINE OA และ Instagram ค่ะ เลือกแพลตฟอร์มตอนสร้างคอนเทนต์ได้เลย",
+    a: "Facebook, Instagram, TikTok และ YouTube ค่ะ เลือกแพลตฟอร์มตอนสร้างคอนเทนต์ได้เลย",
   },
   {
     q: "ราคาเท่าไหร่?",

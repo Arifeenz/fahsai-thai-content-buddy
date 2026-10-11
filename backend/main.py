@@ -70,6 +70,7 @@ from db import (
     get_feedback_ratio_by_mode,
     get_monthly_openai_spend,
     get_demo_user_by_category,
+    get_row_platform,
     has_survey_response,
     get_pending_invite,
     get_pending_invite_by_token,
@@ -1029,6 +1030,7 @@ def get_my_content(request: Request):
 def post_my_content(body: ContentItemCreate, request: Request):
     user = require_user(request)
     require_page_access(user, "create", "library", "schedule")
+    reject_retired_platform(body.platform)
     owner = resolve_effective_owner(user)
     row = create_content_item(
         owner["id"], body.platform, body.preview, body.status, body.mode, body.scheduled_date
@@ -1637,7 +1639,7 @@ def extract_example_post(request: Request, image: UploadFile = File(...)):
     system_prompt = """คุณคือผู้ช่วยอ่านภาพหน้าจอโพสต์โซเชียลมีเดีย จากภาพที่ได้รับ ให้ดึงข้อมูลนี้ออกมา:
 - caption: ข้อความแคปชั่น/เนื้อหาโพสต์ที่เห็นในภาพ เขียนตามที่เห็นจริง (ถ้าอ่านไม่ออกให้เป็นสตริงว่าง "")
 - like_count: จำนวนไลค์/ถูกใจ/หัวใจที่เห็นในภาพ เป็นตัวเลขล้วนเท่านั้น (แปลง "1.2K" เป็น 1200, ถ้าไม่เห็นตัวเลขนี้ในภาพให้เป็น null)
-- platform: แพลตฟอร์มที่คาดว่าภาพนี้มาจาก เลือกได้เฉพาะ facebook, instagram, line, tiktok, youtube เท่านั้น (ถ้าไม่แน่ใจให้เป็น null)
+- platform: แพลตฟอร์มที่คาดว่าภาพนี้มาจาก เลือกได้เฉพาะ facebook, instagram, tiktok, youtube เท่านั้น (ถ้าไม่แน่ใจให้เป็น null)
 
 ตอบเป็น JSON เท่านั้น ไม่ต้องมีคำอธิบายอื่น รูปแบบ: {"caption": string, "like_count": number หรือ null, "platform": string หรือ null}"""
 
@@ -1672,7 +1674,9 @@ def extract_example_post(request: Request, image: UploadFile = File(...)):
     like_count = parsed.get("like_count")
     like_count = int(like_count) if isinstance(like_count, (int, float)) else None
     platform = parsed.get("platform")
-    platform = platform if platform in PLATFORM_LABELS else None
+    platform = (
+        platform if platform in PLATFORM_LABELS and platform not in RETIRED_PLATFORMS else None
+    )
     caption = str(parsed.get("caption") or "")
 
     estimated_cost_usd = 0.0
@@ -1714,6 +1718,7 @@ def create_my_example_post(
     like_count: int | None = Form(None),
 ):
     user = require_user(request)
+    reject_retired_platform(platform)
     require_page_access(user, "examples")
     owner = resolve_effective_owner(user)
     image_url = upload_example_image(image, owner["id"])
@@ -1745,6 +1750,7 @@ def update_my_example_post(
     like_count: int | None = Form(None),
 ):
     user = require_user(request)
+    reject_retired_platform(platform, get_row_platform("example_posts", post_id))
     require_page_access(user, "examples")
     owner = resolve_effective_owner(user)
     existing = get_example_post(post_id)
@@ -1781,6 +1787,20 @@ PLATFORM_LABELS = {
     "tiktok": "TikTok",
     "youtube": "YouTube",
 }
+# LINE OA was dropped as a target for NEW content. Its label stays above so
+# rows created before then still display correctly; nothing may create or
+# switch a row to it any more (editing an existing LINE row's text is fine).
+RETIRED_PLATFORMS = {"line"}
+RETIRED_PLATFORM_DETAIL = (
+    "LINE OA ไม่รองรับการสร้างคอนเทนต์ใหม่แล้ว กรุณาเลือก Facebook, Instagram, TikTok หรือ YouTube"
+)
+
+
+def reject_retired_platform(platform: str | None, current: str | None = None) -> None:
+    if platform in RETIRED_PLATFORMS and platform != current:
+        raise HTTPException(status_code=400, detail=RETIRED_PLATFORM_DETAIL)
+
+
 # Appended to the platform line in generation prompts so style/length guidance
 # scales with whatever platforms a business category actually offers, instead
 # of the prompt silently saying nothing for tiktok/youtube.
@@ -1850,6 +1870,7 @@ DNA_MENU_DRAFT_HINTS = {
 def generate_content(body: GenerateRequest, request: Request):
     user = require_user(request)
     require_page_access(user, "create")
+    reject_retired_platform(body.platform)
     owner = resolve_effective_owner(user)
     templates = list_prompt_templates(business_category=owner["business_category"], platform=body.platform)
 
@@ -1872,7 +1893,11 @@ def generate_content(body: GenerateRequest, request: Request):
             # yet would widen to every template in the table, not "closest
             # match for their business."
             if owner["business_category"]:
-                templates = list_prompt_templates(business_category=owner["business_category"])
+                templates = [
+                    t
+                    for t in list_prompt_templates(business_category=owner["business_category"])
+                    if t["platform"] not in RETIRED_PLATFORMS
+                ]
         if not templates:
             raise HTTPException(
                 status_code=404,
@@ -2047,6 +2072,7 @@ def generate_from_image(
 ):
     user = require_user(request)
     require_page_access(user, "create")
+    reject_retired_platform(platform)
     owner = resolve_effective_owner(user)
     if len(images) > MAX_GENERATE_IMAGES:
         raise HTTPException(
@@ -2160,6 +2186,7 @@ def generate_from_image(
 def generate_video_script(body: VideoScriptRequest, request: Request):
     user = require_user(request)
     require_page_access(user, "create")
+    reject_retired_platform(body.platform)
     owner = resolve_effective_owner(user)
     caption = body.caption.strip()
     if not caption:
@@ -2444,6 +2471,7 @@ def admin_list_prompt_templates(request: Request):
 @limiter.limit("60/minute")
 def admin_create_prompt_template(body: PromptTemplateWrite, request: Request):
     admin = require_admin(request)
+    reject_retired_platform(body.platform)
     row = create_prompt_template(
         body.business_category, body.platform, body.tone, body.template_text, admin["id"]
     )
@@ -2454,6 +2482,7 @@ def admin_create_prompt_template(body: PromptTemplateWrite, request: Request):
 @limiter.limit("60/minute")
 def admin_update_prompt_template(template_id: int, body: PromptTemplateWrite, request: Request):
     require_admin(request)
+    reject_retired_platform(body.platform, get_row_platform("prompt_templates", template_id))
     row = update_prompt_template(
         template_id, body.business_category, body.platform, body.tone, body.template_text
     )
@@ -2495,6 +2524,7 @@ def admin_list_platform_tips(request: Request):
 @limiter.limit("60/minute")
 def admin_create_platform_tip(body: PlatformTipWrite, request: Request):
     admin = require_admin(request)
+    reject_retired_platform(body.platform)
     row = create_platform_tip(
         body.business_category,
         body.platform,
@@ -2511,6 +2541,7 @@ def admin_create_platform_tip(body: PlatformTipWrite, request: Request):
 @limiter.limit("60/minute")
 def admin_update_platform_tip(tip_id: int, body: PlatformTipWrite, request: Request):
     admin = require_admin(request)
+    reject_retired_platform(body.platform, get_row_platform("platform_tips", tip_id))
     row = update_platform_tip(
         tip_id,
         body.business_category,
@@ -2699,6 +2730,7 @@ def admin_create_example_post(
     like_count: int | None = Form(None),
 ):
     admin = require_admin(request)
+    reject_retired_platform(platform)
     image_url = upload_example_image(image, admin["id"])
     row = create_example_post(
         None, business_category, platform, caption, image_url, admin["id"], like_count
@@ -2718,6 +2750,7 @@ def admin_update_example_post(
     like_count: int | None = Form(None),
 ):
     admin = require_admin(request)
+    reject_retired_platform(platform, get_row_platform("example_posts", post_id))
     existing = get_example_post(post_id)
     if existing is None or existing["user_id"] is not None:
         raise HTTPException(status_code=404, detail="Example post not found")

@@ -11,7 +11,7 @@ import {
   type Platform,
   type BusinessCategory,
 } from "@/lib/api";
-import { categoryPlatforms, likeCountLabel } from "@/lib/category-platforms";
+import { categoryPlatforms, likeCountLabel, RETIRED_PLATFORMS } from "@/lib/category-platforms";
 import { AppShell, PageHeader, useCurrentUser } from "@/components/app-shell";
 import { useRequireAuth } from "@/lib/auth-guard";
 import { useScreenCapture } from "@/components/screen-capture";
@@ -55,12 +55,14 @@ function ExamplesPage() {
   const platformsForCategory =
     categoryPlatforms[effectiveCategoryOption === "other" ? "default" : effectiveCategoryOption];
 
-  // A platform picked while a different category was selected (e.g. LINE OA
-  // under "streamer" before switching to "online_shop") may not exist in the
-  // new category's list -- fall back to that category's first option instead
-  // of leaving a stale, no-longer-offered platform selected.
+  // A platform no longer offered for the selected category falls back to its
+  // first option -- except while editing an old LINE OA post, which keeps its
+  // own (retired) platform so saving its text doesn't silently change it.
   useEffect(() => {
-    if (!platformsForCategory.some((p) => p.key === platform)) {
+    if (
+      !platformsForCategory.some((p) => p.key === platform) &&
+      !RETIRED_PLATFORMS.includes(platform)
+    ) {
       setPlatform(platformsForCategory[0].key);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -305,7 +307,9 @@ function ExamplesPage() {
               )}
               <button
                 onClick={() => saveMutation.mutate()}
-                disabled={!caption.trim() || !resolvedCategory || saveMutation.isPending || extracting}
+                disabled={
+                  !caption.trim() || !resolvedCategory || saveMutation.isPending || extracting
+                }
                 className="btn-gold rounded-full px-6 py-2 text-sm disabled:opacity-60"
               >
                 {editingId ? "บันทึกการแก้ไข" : "เพิ่มตัวอย่าง"}

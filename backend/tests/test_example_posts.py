@@ -71,7 +71,7 @@ def test_admin_can_edit_global_example_post(client):
 
     res = client.put(
         f"/admin/example-posts/{post_id}",
-        data={"business_category": "online_shop", "platform": "line", "caption": "global edited"},
+        data={"business_category": "online_shop", "platform": "instagram", "caption": "global edited"},
     )
     assert res.status_code == 200
     assert res.json()["caption"] == "global edited"
@@ -85,7 +85,7 @@ def test_admin_cannot_edit_others_personal_example_post(client):
     signup(client, "admin@test.local")
     res = client.put(
         f"/admin/example-posts/{post_id}",
-        data={"business_category": "online_shop", "platform": "line", "caption": "should not work"},
+        data={"business_category": "online_shop", "platform": "instagram", "caption": "should not work"},
     )
     assert res.status_code == 404
 
