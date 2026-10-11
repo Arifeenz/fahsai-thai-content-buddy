@@ -1826,6 +1826,18 @@ def ensure_demo_users() -> None:
             "SELECT id FROM users WHERE email = %s", (info["email"],)
         ).fetchone()
         if existing is not None:
+            # Demo accounts are shared by every visitor, and one of them once
+            # switched the streamer demo to online_shop -- which left the
+            # streamer button with no account and two online_shop demos.
+            # Put the category (and demo flag) back on every startup.
+            conn.execute(
+                """
+                UPDATE users SET business_category = %s, is_demo = TRUE
+                WHERE email = %s
+                  AND (business_category IS DISTINCT FROM %s OR NOT is_demo)
+                """,
+                (category, info["email"], category),
+            )
             continue
         row = conn.execute(
             """
@@ -1849,10 +1861,16 @@ def ensure_demo_users() -> None:
 
 
 def get_demo_user_by_category(business_category: str) -> dict | None:
+    # Looked up by the fixed demo email, not by business_category: the
+    # category column is user-editable, so matching on it could find nothing
+    # or (with two demos sharing a category) an arbitrary one of them.
+    info = DEMO_ACCOUNTS.get(business_category)
+    if info is None:
+        return None
     conn = get_connection()
     row = conn.execute(
-        "SELECT * FROM users WHERE is_demo = TRUE AND business_category = %s LIMIT 1",
-        (business_category,),
+        "SELECT * FROM users WHERE is_demo = TRUE AND email = %s",
+        (info["email"],),
     ).fetchone()
     conn.close()
     return row

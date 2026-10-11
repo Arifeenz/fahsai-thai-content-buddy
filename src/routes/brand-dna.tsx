@@ -104,7 +104,8 @@ const sectionsByCategory: Record<BusinessCategory, Section[]> = {
       title: "เรื่องราวของร้าน",
       hint: "ประวัติสั้นๆ ที่มาที่ไป",
       icon: BookOpen,
-      placeholder: "เล่าให้ FAHSAI ฟังหน่อยค่ะ เปิดร้านเมื่อไหร่ ใครเป็นเจ้าของ ขายผ่านช่องทางไหนบ้าง...",
+      placeholder:
+        "เล่าให้ FAHSAI ฟังหน่อยค่ะ เปิดร้านเมื่อไหร่ ใครเป็นเจ้าของ ขายผ่านช่องทางไหนบ้าง...",
       example: "เปิดร้านขายออนไลน์ปี 2566 เริ่มจากขายในเฟซบุ๊ก ก่อนขยายมาขายใน Shopee/Lazada",
     },
     {
@@ -179,7 +180,8 @@ const sectionsByCategory: Record<BusinessCategory, Section[]> = {
       hint: "คนที่มาดูดวงกับคุณส่วนใหญ่เป็นใคร",
       icon: Users,
       placeholder: "เช่น คนที่กำลังตัดสินใจเรื่องความรัก/งาน วัยเริ่มทำงาน...",
-      example: "คนวัยเริ่มทำงานถึงวัยกลางคนที่กำลังสับสนเรื่องความรักหรือการงาน อยากได้คำแนะนำชัดเจน",
+      example:
+        "คนวัยเริ่มทำงานถึงวัยกลางคนที่กำลังสับสนเรื่องความรักหรือการงาน อยากได้คำแนะนำชัดเจน",
     },
   ],
   streamer: [
@@ -285,7 +287,8 @@ function BrandDna() {
   const valuesRef = useRef(values);
   const timers = useRef<Partial<Record<DnaDocType, ReturnType<typeof setTimeout>>>>({});
 
-  const category: BusinessCategory = (user?.business_category as BusinessCategory) || "food_beverage";
+  const category: BusinessCategory =
+    (user?.business_category as BusinessCategory) || "food_beverage";
   const sections = useMemo(() => sectionsByCategory[category], [category]);
   const visiblePlatforms = useMemo(() => socialPlatformsByCategory[category], [category]);
 
@@ -450,13 +453,16 @@ function BrandDna() {
             <div className="min-w-0 flex-1">
               <div className="font-bold">ประเภทธุรกิจ</div>
               <div className="text-sm text-muted-foreground">
-                ใช้เลือก prompt ที่เหมาะกับร้านคุณตอนสร้างคอนเทนต์
+                {user?.is_demo
+                  ? "บัญชีทดลองล็อกประเภทไว้ อยากลองประเภทอื่น เลือกบัญชีทดลองประเภทนั้นจากหน้าเข้าสู่ระบบได้เลยค่ะ"
+                  : "ใช้เลือก prompt ที่เหมาะกับร้านคุณตอนสร้างคอนเทนต์"}
               </div>
             </div>
             <select
               value={user?.business_category ?? ""}
               onChange={(e) => changeBusinessCategory(e.target.value as BusinessCategory)}
-              className="shrink-0 rounded-full border border-border bg-input px-3 py-1.5 text-sm"
+              disabled={user?.is_demo}
+              className="shrink-0 rounded-full border border-border bg-input px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-60"
             >
               <option value="" disabled>
                 เลือกประเภท

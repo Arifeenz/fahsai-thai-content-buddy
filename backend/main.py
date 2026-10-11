@@ -914,6 +914,12 @@ def me(request: Request):
 @app.patch("/me")
 def update_me(body: UpdateMeRequest, request: Request):
     user = require_user(request)
+    if user["is_demo"]:
+        # Each shared demo account stands for one business category on the
+        # login page; letting a visitor change it breaks that button for everyone.
+        raise HTTPException(
+            status_code=403, detail="บัญชีทดลองเปลี่ยนประเภทธุรกิจไม่ได้ค่ะ ลองเลือกบัญชีทดลองประเภทอื่นแทนนะคะ"
+        )
     updated = update_business_category(user["id"], body.business_category)
     return {"user": user_to_dict(updated)}
 
