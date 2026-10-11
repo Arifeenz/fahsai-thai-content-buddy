@@ -3,6 +3,13 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api, businessCategoryLabel, type BusinessCategory } from "@/lib/api";
 import logo from "@/assets/fahsai-logo.png";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const demoCategories = Object.keys(businessCategoryLabel) as BusinessCategory[];
 
@@ -55,6 +62,7 @@ function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [forgotSubmitted, setForgotSubmitted] = useState(false);
   const [demoLoading, setDemoLoading] = useState<BusinessCategory | null>(null);
+  const [demoOpen, setDemoOpen] = useState(false);
   const googleButtonRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -223,20 +231,22 @@ function LoginPage() {
           <br />
           ให้โดดเด่น
         </h1>
-        <p className="mt-3 text-sm text-muted-foreground">ผู้ช่วยสร้างคอนเทนต์สำหรับร้านของคุณ</p>
+        <p className="mt-3 text-sm text-muted-foreground">
+          ผู้ช่วยสร้างคอนเทนต์สำหรับ <span className="whitespace-nowrap">ร้านค้าและครีเอเตอร์</span>
+        </p>
 
         {mode === "google" && (
           <>
             <div className="mt-8 flex w-full justify-center" ref={googleButtonRef} />
-            <PolicyNotice className="mt-3" action="เข้าสู่ระบบด้วย Google" />
             {loading && (
               <p className="mt-3 text-sm text-muted-foreground">กำลังเข้าสู่ระบบให้อยู่ค่ะ...</p>
             )}
             <button
+              type="button"
               onClick={() => setMode("login")}
-              className="mt-4 text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
+              className="mt-3 h-10 w-full rounded-full border border-border text-sm font-medium text-foreground transition hover:border-teal hover:bg-white/5"
             >
-              หรือเข้าสู่ระบบด้วยอีเมล
+              เข้าสู่ระบบด้วยอีเมล
             </button>
           </>
         )}
@@ -422,65 +432,63 @@ function LoginPage() {
           </p>
         )}
 
-        <div className="mt-8 border-t border-border pt-6 text-left">
-          <p className="text-center text-sm font-semibold text-muted-foreground">
-            หรือทดลองใช้ก่อนสมัครสมาชิก
+        <div className="mt-8 border-t border-border pt-6">
+          <button
+            type="button"
+            onClick={() => setDemoOpen(true)}
+            className="text-sm text-muted-foreground underline-offset-4 transition hover:text-teal hover:underline"
+          >
+            ทดลองใช้โดยไม่ต้องสมัคร →
+          </button>
+        </div>
+
+        {/* The signup form carries its own consent checkbox, so this single
+            notice is hidden there to keep exactly one policy mention per screen. */}
+        {mode !== "signup" && (
+          <p className="mt-6 text-xs text-muted-foreground/80">
+            การใช้งานถือว่ายอมรับ{" "}
+            <Link
+              to="/privacy"
+              target="_blank"
+              className="whitespace-nowrap underline underline-offset-4 hover:text-foreground"
+            >
+              นโยบายความเป็นส่วนตัว
+            </Link>{" "}
+            และ{" "}
+            <Link
+              to="/terms"
+              target="_blank"
+              className="whitespace-nowrap underline underline-offset-4 hover:text-foreground"
+            >
+              ข้อกำหนดการใช้งาน
+            </Link>
           </p>
-          <div className="mt-3 grid grid-cols-2 gap-2">
+        )}
+      </div>
+
+      <Dialog open={demoOpen} onOpenChange={setDemoOpen}>
+        <DialogContent className="w-[calc(100%-2rem)] max-w-sm rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>เลือกประเภทธุรกิจเพื่อทดลองใช้</DialogTitle>
+            <DialogDescription>
+              บัญชีทดลองใช้ร่วมกับผู้อื่น ข้อมูลอาจถูกรีเซ็ต ไม่เหมาะกับข้อมูลจริง
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-2">
             {demoCategories.map((category) => (
               <button
                 key={category}
                 type="button"
                 onClick={() => handleDemoLogin(category)}
                 disabled={demoLoading !== null}
-                className="rounded-xl border border-dashed border-border px-3 py-2.5 text-sm text-muted-foreground transition hover:border-teal hover:text-teal disabled:opacity-60"
+                className="rounded-xl border border-border px-3 py-3 text-sm text-foreground transition hover:border-teal hover:text-teal disabled:opacity-60"
               >
                 {demoLoading === category ? "กำลังเข้าสู่ระบบ..." : businessCategoryLabel[category]}
               </button>
             ))}
           </div>
-          <PolicyNotice className="mt-3" action="ทดลองใช้" />
-          <p className="mt-2 text-center text-xs text-muted-foreground">
-            บัญชีทดลองใช้ร่วมกับผู้ใช้อื่นได้ ข้อมูลอาจถูกแก้ไขหรือรีเซ็ตได้ตลอดเวลา
-            และมีการจำกัดจำนวนครั้งสร้างคอนเทนต์ ไม่เหมาะสำหรับเก็บข้อมูลจริงนะคะ
-          </p>
-        </div>
-
-        <div className="mt-10 flex justify-center gap-6 text-xs text-muted-foreground">
-          <Link to="/privacy" className="underline underline-offset-4">
-            นโยบายความเป็นส่วนตัว
-          </Link>
-          <Link to="/terms" className="underline underline-offset-4">
-            ข้อกำหนดการใช้งาน
-          </Link>
-        </div>
-      </div>
+        </DialogContent>
+      </Dialog>
     </div>
-  );
-}
-
-// Shown under one-click entry points (Google, demo accounts) instead of a
-// blocking checkbox -- the pattern Shopee, Pantip and Notion use on their
-// signup pages. Email signup still keeps its explicit checkbox.
-function PolicyNotice({ action, className = "" }: { action: string; className?: string }) {
-  return (
-    <p className={"text-center text-xs text-muted-foreground " + className}>
-      การ{action} ถือว่าคุณยอมรับ{" "}
-      <Link
-        to="/privacy"
-        target="_blank"
-        className="whitespace-nowrap text-teal underline underline-offset-4 hover:text-teal/80"
-      >
-        นโยบายความเป็นส่วนตัว
-      </Link>{" "}
-      และ{" "}
-      <Link
-        to="/terms"
-        target="_blank"
-        className="whitespace-nowrap text-teal underline underline-offset-4 hover:text-teal/80"
-      >
-        ข้อกำหนดการใช้งาน
-      </Link>
-    </p>
   );
 }
