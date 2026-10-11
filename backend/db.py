@@ -193,6 +193,9 @@ def init_db() -> None:
     _add_column_if_missing(conn, "content_items", "verified_like_count INTEGER")
     _add_column_if_missing(conn, "content_items", "verified_at TIMESTAMP")
     _add_column_if_missing(conn, "content_items", "verified_by INTEGER REFERENCES users(id)")
+    # Which of the generated caption variants (1-based) the user went with --
+    # NULL for content made before variants existed or never chosen from.
+    _add_column_if_missing(conn, "content_items", "selected_variant SMALLINT")
 
     conn.execute(
         """
@@ -1065,6 +1068,7 @@ def update_content_item(
     preview: str | None = None,
     status: str | None = None,
     scheduled_date: str | None = None,
+    selected_variant: int | None = None,
 ) -> dict | None:
     conn = get_connection()
     row = conn.execute(
@@ -1073,11 +1077,12 @@ def update_content_item(
         SET
             preview = COALESCE(%s, preview),
             status = COALESCE(%s, status),
-            scheduled_date = COALESCE(%s, scheduled_date)
+            scheduled_date = COALESCE(%s, scheduled_date),
+            selected_variant = COALESCE(%s, selected_variant)
         WHERE id = %s AND user_id = %s
         RETURNING *
         """,
-        (preview, status, scheduled_date, content_id, user_id),
+        (preview, status, scheduled_date, selected_variant, content_id, user_id),
     ).fetchone()
     conn.commit()
     conn.close()

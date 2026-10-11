@@ -220,3 +220,95 @@ def test_generate_falls_back_to_any_platform_template_for_category_when_exact_pl
     )
     assert res.status_code == 200
     assert res.json()["caption"]
+
+
+def fake_json_choice(caption, image_prompt=None):
+    return SimpleNamespace(
+        message=SimpleNamespace(
+            content=json.dumps({"caption": caption, "image_prompt": image_prompt})
+        )
+    )
+
+
+def test_generate_returns_one_variant_per_choice_in_a_single_call(client, monkeypatch):
+    signup(client, "user@test.local")
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = SimpleNamespace(
+        choices=[
+            fake_json_choice("แบบหนึ่ง", "prompt one"),
+            fake_json_choice("แบบสอง", "prompt two"),
+            fake_json_choice("แบบสาม", "prompt three"),
+        ],
+        usage=SimpleNamespace(prompt_tokens=100, completion_tokens=150),
+    )
+    monkeypatch.setattr(main, "openai_client", fake_client)
+
+    res = client.post(
+        "/generate", json={"prompt": "เมนูใหม่", "platform": "facebook", "tone": "friendly"}
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert [v["caption"] for v in body["variants"]] == ["แบบหนึ่ง", "แบบสอง", "แบบสาม"]
+    # Each variant keeps the image prompt written for it.
+    assert [v["image_prompt"] for v in body["variants"]] == ["prompt one", "prompt two", "prompt three"]
+    assert body["caption"] == "แบบหนึ่ง"
+
+    # One request -> one OpenAI call asking for n choices, one log row.
+    assert fake_client.chat.completions.create.call_count == 1
+    assert fake_client.chat.completions.create.call_args.kwargs["n"] == main.CAPTION_VARIANTS
+    logs = [log for log in main.list_generation_logs() if log["mode"] == "idea"]
+    assert len(logs) == 1
+    assert "แบบสาม" in logs[0]["caption"]
+
+    # The draft saved is variant 1.
+    items = client.get("/content").json()["items"]
+    assert any(it["id"] == body["content_id"] and it["preview"] == "แบบหนึ่ง" for it in items)
+
+
+def test_generate_skips_an_unparseable_choice(client, monkeypatch):
+    signup(client, "user@test.local")
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = SimpleNamespace(
+        choices=[
+            fake_json_choice("ใช้ได้"),
+            SimpleNamespace(message=SimpleNamespace(content='{"caption": "ถูกตัดกลาง')),
+        ],
+        usage=SimpleNamespace(prompt_tokens=100, completion_tokens=150),
+    )
+    monkeypatch.setattr(main, "openai_client", fake_client)
+
+    res = client.post(
+        "/generate", json={"prompt": "เมนูใหม่", "platform": "facebook", "tone": "friendly"}
+    )
+    assert res.status_code == 200
+    assert [v["caption"] for v in res.json()["variants"]] == ["ใช้ได้"]
+
+
+def test_template_fallback_also_returns_variants(client):
+    seed_template(client)
+    signup(client, "user@test.local")
+    res = client.post(
+        "/generate",
+        json={"prompt": "โปรโมชั่นหน้าร้อน", "platform": "unseeded-platform", "tone": "friendly"},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["variants"] == [
+        {"caption": body["caption"], "image_prompt": None, "image_prompt_th": None}
+    ]
+
+
+def test_selected_variant_is_saved_on_content(client):
+    signup(client, "user@test.local")
+    created = client.post(
+        "/content", json={"platform": "facebook", "preview": "draft", "status": "draft"}
+    ).json()
+    res = client.patch(
+        f"/content/{created['id']}",
+        json={"preview": "แบบสอง", "status": "approved", "selected_variant": 2},
+    )
+    assert res.status_code == 200
+    assert res.json()["selectedVariant"] == 2
+    assert client.patch(
+        f"/content/{created['id']}", json={"selected_variant": 4}
+    ).status_code == 422

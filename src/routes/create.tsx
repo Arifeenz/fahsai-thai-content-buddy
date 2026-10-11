@@ -7,6 +7,7 @@ import {
   api,
   exampleSelectionModeLabel,
   platformLabel,
+  type CaptionVariant,
   type DnaDocType,
   type ExampleSelectionMode,
   type Platform,
@@ -153,6 +154,35 @@ const SHORT_PROMPT_THRESHOLD = 15;
 // Dashboard's own card already nudges the "started but not finished" case.
 const DNA_KEYS: DnaDocType[] = ["history", "menu", "usp", "tone", "audience"];
 
+interface VariantState {
+  caption: string;
+  imagePrompt: string | null;
+  imagePromptTh: string | null;
+  videoScript: string | null;
+  // The caption a video script was written from -- once the caption is edited
+  // away from it the script is kept but flagged as possibly out of date.
+  scriptSource: string | null;
+}
+
+function toVariantStates(
+  variants: CaptionVariant[] | undefined,
+  caption: string,
+  imagePrompt: string | null,
+  imagePromptTh: string | null,
+): VariantState[] {
+  // An older backend (deploys can land in either order) only sends `caption`.
+  const list = variants?.length
+    ? variants
+    : [{ caption, image_prompt: imagePrompt, image_prompt_th: imagePromptTh }];
+  return list.map((v) => ({
+    caption: v.caption,
+    imagePrompt: v.image_prompt,
+    imagePromptTh: v.image_prompt_th,
+    videoScript: null,
+    scriptSource: null,
+  }));
+}
+
 function CreateContent() {
   const { ready } = useRequireAuth();
   const user = useCurrentUser();
@@ -171,11 +201,18 @@ function CreateContent() {
   const [platform, setPlatform] = useState<Platform>("facebook");
   const [tone, setTone] = useState<Tone>("friendly");
   const [loading, setLoading] = useState(false);
-  const [caption, setCaption] = useState<string>("");
+  // Each generation returns several caption variants; everything tied to a
+  // caption (the user's edits, its image prompt, a video script made from it)
+  // lives on its own variant so switching tabs never mixes them up.
+  const [variants, setVariants] = useState<VariantState[]>([]);
+  const [activeVariant, setActiveVariant] = useState(0);
+  const current = variants[activeVariant];
+  const caption = current?.caption ?? "";
+  const imagePrompt = current?.imagePrompt ?? null;
+  const imagePromptTh = current?.imagePromptTh ?? null;
+  const videoScript = current?.videoScript ?? null;
+  const videoScriptStale = !!videoScript && current?.scriptSource !== caption;
   const [resultImageUrls, setResultImageUrls] = useState<string[]>([]);
-  const [imagePrompt, setImagePrompt] = useState<string | null>(null);
-  const [imagePromptTh, setImagePromptTh] = useState<string | null>(null);
-  const [videoScript, setVideoScript] = useState<string | null>(null);
   const [videoScriptLoading, setVideoScriptLoading] = useState(false);
   const [videoCharacter, setVideoCharacter] = useState("");
   const [scheduleDate, setScheduleDate] = useState("");
@@ -213,6 +250,23 @@ function CreateContent() {
       promptRef.current?.focus();
     }
   }, [requestedPrompt]);
+
+  function updateVariant(index: number, patch: Partial<VariantState>) {
+    setVariants((vs) => vs.map((v, i) => (i === index ? { ...v, ...patch } : v)));
+  }
+
+  function switchVariant(index: number) {
+    if (index === activeVariant) return;
+    setActiveVariant(index);
+    // The saved draft holds whichever text was last approved/copied, so a
+    // different variant needs its own approve before it can be copied.
+    setApproved(false);
+  }
+
+  // Only worth recording when there was actually a choice to make.
+  function selectedVariantField() {
+    return variants.length > 1 ? { selected_variant: activeVariant + 1 } : {};
+  }
 
   const { startScreenCapture, captureDialog } = useScreenCapture((file) => addPhotoFiles([file]));
 
@@ -273,7 +327,6 @@ function CreateContent() {
     }
     setLoading(true);
     setApproved(false);
-    setVideoScript(null);
     const t = toast.loading("กำลังสร้างโพสต์ให้อยู่ค่ะ...");
     try {
       if (mode === "photo" && photoFiles.length > 0) {
@@ -284,10 +337,9 @@ function CreateContent() {
         if (contentId) formData.append("content_id", contentId);
         photoFiles.forEach((file) => formData.append("images", file));
         const res = await api.generateFromImage(formData);
-        setCaption(res.caption);
+        setVariants(toVariantStates(res.variants, res.caption, null, null));
+        setActiveVariant(0);
         setResultImageUrls(res.image_urls);
-        setImagePrompt(null);
-        setImagePromptTh(null);
         setContentId(res.content_id);
         setUsedExamples([]);
       } else {
@@ -298,10 +350,11 @@ function CreateContent() {
           tone,
           contentId: contentId ?? undefined,
         });
-        setCaption(res.caption);
+        setVariants(
+          toVariantStates(res.variants, res.caption, res.image_prompt, res.image_prompt_th),
+        );
+        setActiveVariant(0);
         setResultImageUrls([]);
-        setImagePrompt(res.image_prompt);
-        setImagePromptTh(res.image_prompt_th);
         setContentId(res.content_id);
         setUsedExamples(res.used_examples ?? []);
       }
@@ -326,11 +379,13 @@ function CreateContent() {
 
   async function handleGenerateVideoScript() {
     if (!caption.trim() || videoScriptLoading) return;
+    const forVariant = activeVariant;
+    const forCaption = caption;
     setVideoScriptLoading(true);
     const t = toast.loading("กำลังวางสคริปวิดีโอให้อยู่ค่ะ...");
     try {
-      const res = await api.generateVideoScript(caption, platform, tone, videoCharacter);
-      setVideoScript(res.video_script);
+      const res = await api.generateVideoScript(forCaption, platform, tone, videoCharacter);
+      updateVariant(forVariant, { videoScript: res.video_script, scriptSource: forCaption });
       toast.success("ได้สคริปวิดีโอแล้วค่ะ ✨", { id: t });
     } catch {
       toast.error("สร้างสคริปวิดีโอไม่สำเร็จ ลองใหม่อีกครั้งนะคะ", {
@@ -350,14 +405,22 @@ function CreateContent() {
   async function approve() {
     if (!caption.trim() || !contentId) return;
     setApproved(true);
-    await api.updateContent(contentId, { preview: caption, status: "approved" });
+    await api.updateContent(contentId, {
+      preview: caption,
+      status: "approved",
+      ...selectedVariantField(),
+    });
     toast.success("อนุมัติแล้วค่ะ พร้อมคัดลอกไปโพสต์ได้เลย ✓");
   }
 
   async function copy() {
     await navigator.clipboard.writeText(caption);
     if (contentId) {
-      await api.updateContent(contentId, { preview: caption, status: "posted" });
+      await api.updateContent(contentId, {
+        preview: caption,
+        status: "posted",
+        ...selectedVariantField(),
+      });
       // A posted item is done — the next generation should start a fresh
       // draft instead of silently overwriting what was just published.
       setContentId(null);
@@ -373,6 +436,7 @@ function CreateContent() {
         preview: caption,
         status: "approved",
         scheduled_date: scheduleDate,
+        ...selectedVariantField(),
       });
       toast.success('เตรียมไว้ในตารางโพสต์แล้วค่ะ ✅ ดูได้ที่เมนู "ตารางโพสต์"');
       setScheduleDate("");
@@ -761,12 +825,42 @@ function CreateContent() {
                     ))}
                   </div>
                 )}
+                {variants.length > 1 && (
+                  <div className="mb-3">
+                    <p className="mb-2 text-xs text-muted-foreground">
+                      AI เขียนให้ {variants.length} แบบ เลือกแบบที่ชอบได้เลย
+                    </p>
+                    <div
+                      role="tablist"
+                      aria-label="แคปชันแต่ละแบบ"
+                      className="grid gap-1 rounded-xl border border-border bg-input/40 p-1"
+                      style={{ gridTemplateColumns: `repeat(${variants.length}, minmax(0, 1fr))` }}
+                    >
+                      {variants.map((_, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          role="tab"
+                          aria-selected={i === activeVariant}
+                          onClick={() => switchVariant(i)}
+                          className={
+                            "rounded-lg py-2 text-sm transition " +
+                            (i === activeVariant
+                              ? "bg-teal/20 font-semibold text-foreground"
+                              : "text-muted-foreground hover:text-foreground")
+                          }
+                        >
+                          แบบ {i + 1}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <textarea
                   value={caption}
                   onChange={(e) => {
-                    setCaption(e.target.value);
+                    updateVariant(activeVariant, { caption: e.target.value });
                     setApproved(false);
-                    setVideoScript(null);
                   }}
                   rows={10}
                   className="w-full resize-none rounded-xl border border-border bg-input p-4 text-base leading-relaxed outline-none focus:border-teal"
@@ -888,6 +982,12 @@ function CreateContent() {
 
                   {videoScript ? (
                     <>
+                      {videoScriptStale && (
+                        <p className="mt-3 rounded-lg border border-gold/30 bg-gold/10 px-3 py-2 text-xs">
+                          แคปชันมีการแก้ไขหลังวางสคริปนี้ กด "วางสคริปใหม่"
+                          เพื่ออัปเดตสคริปให้ตรงกัน
+                        </p>
+                      )}
                       <div className="mt-3 space-y-2">
                         {splitVideoScriptIntoScenes(videoScript).map((scene, i) => (
                           <div
@@ -947,7 +1047,9 @@ function CreateContent() {
                         </summary>
                         <textarea
                           value={videoScript}
-                          onChange={(e) => setVideoScript(e.target.value)}
+                          onChange={(e) =>
+                            updateVariant(activeVariant, { videoScript: e.target.value })
+                          }
                           rows={8}
                           className="mt-2 w-full resize-none rounded-lg border border-border bg-input p-3 text-sm leading-relaxed outline-none focus:border-teal"
                         />
@@ -978,7 +1080,9 @@ function CreateContent() {
                     </div>
                     <textarea
                       value={imagePrompt}
-                      onChange={(e) => setImagePrompt(e.target.value)}
+                      onChange={(e) =>
+                        updateVariant(activeVariant, { imagePrompt: e.target.value })
+                      }
                       rows={3}
                       className="w-full resize-none rounded-lg border border-border bg-input p-3 text-sm leading-relaxed outline-none focus:border-teal"
                     />

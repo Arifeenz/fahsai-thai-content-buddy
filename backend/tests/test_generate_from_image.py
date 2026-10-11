@@ -72,3 +72,30 @@ def test_returns_caption_and_image_url_when_openai_available(client, monkeypatch
 
     logs = main.list_generation_logs()
     assert any(log["caption"] == "แคปชั่นทดสอบจากรูปภาพ" for log in logs)
+
+
+def test_photo_mode_returns_variants_from_one_call(client, monkeypatch):
+    signup(client)
+    monkeypatch.setattr(main, "upload_example_image", lambda file, owner_id: "https://fake/photo.jpg")
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = SimpleNamespace(
+        choices=[
+            SimpleNamespace(message=SimpleNamespace(content="รูปแบบหนึ่ง")),
+            SimpleNamespace(message=SimpleNamespace(content="รูปแบบสอง")),
+            SimpleNamespace(message=SimpleNamespace(content="รูปแบบสาม")),
+        ],
+        usage=SimpleNamespace(prompt_tokens=100, completion_tokens=150),
+    )
+    monkeypatch.setattr(main, "openai_client", fake_client)
+
+    res = client.post(
+        "/generate-from-image",
+        data={"platform": "facebook", "tone": "friendly"},
+        files=fake_image_file(),
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert [v["caption"] for v in body["variants"]] == ["รูปแบบหนึ่ง", "รูปแบบสอง", "รูปแบบสาม"]
+    assert body["caption"] == "รูปแบบหนึ่ง"
+    assert fake_client.chat.completions.create.call_count == 1
+    assert fake_client.chat.completions.create.call_args.kwargs["n"] == main.CAPTION_VARIANTS

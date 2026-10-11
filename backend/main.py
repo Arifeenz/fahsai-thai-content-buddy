@@ -402,6 +402,7 @@ class ContentItemUpdate(BaseModel):
     preview: str | None = None
     status: str | None = None
     scheduled_date: str | None = None
+    selected_variant: int | None = Field(default=None, ge=1, le=3)
 
 
 class ContentPostUrlUpdate(BaseModel):
@@ -673,6 +674,7 @@ def content_to_dict(row) -> dict:
         "postUrl": row["post_url"],
         "verifiedLikeCount": row["verified_like_count"],
         "verifiedAt": to_utc_iso(row["verified_at"]),
+        "selectedVariant": row["selected_variant"],
     }
 
 
@@ -1058,7 +1060,12 @@ def update_content_endpoint(content_id: int, body: ContentItemUpdate, request: R
     require_page_access(user, "create", "library", "schedule")
     owner = resolve_effective_owner(user)
     row = update_content_item(
-        content_id, owner["id"], body.preview, body.status, body.scheduled_date
+        content_id,
+        owner["id"],
+        body.preview,
+        body.status,
+        body.scheduled_date,
+        body.selected_variant,
     )
     if row is None:
         raise HTTPException(status_code=404, detail="Content not found")
@@ -1791,6 +1798,18 @@ CAPTION_RULES = """กฎการเขียน:
 # Default 1.0 made the embellishment above worse; 0.7 still varies wording
 # between regenerations.
 CAPTION_TEMPERATURE = 0.7
+# Captions per generation, requested as `n` choices in ONE OpenAI call: the
+# user waits no longer and spends one rate-limit slot, only output tokens
+# scale. Lets them pick instead of paying a full regenerate per attempt.
+CAPTION_VARIANTS = 3
+
+
+def join_variants_for_log(captions: list[str]) -> str:
+    # One generation_log row per request, not per variant -- the survey's
+    # "nudge after 3 generations" and the admin KPIs count rows as requests.
+    if len(captions) == 1:
+        return captions[0]
+    return "\n\n".join(f"--- แบบที่ {i} ---\n{c}" for i, c in enumerate(captions, 1))
 TONE_LABELS = {
     "friendly": "เป็นกันเอง",
     "professional": "ทางการ",
@@ -1853,17 +1872,26 @@ def generate_content(body: GenerateRequest, request: Request):
                 status_code=404,
                 detail="ยังไม่มี prompt template สำหรับแพลตฟอร์มนี้ — ให้แอดมินเพิ่มก่อนนะคะ",
             )
-        chosen = random.choice(templates)
+        chosen = random.sample(templates, min(CAPTION_VARIANTS, len(templates)))
+        captions = [t["template_text"] for t in chosen]
         create_generation_log(
-            user["id"], body.platform, body.tone, body.prompt, chosen["template_text"], mode="idea"
+            user["id"],
+            body.platform,
+            body.tone,
+            body.prompt,
+            join_variants_for_log(captions),
+            mode="idea",
         )
         content_row = save_generated_draft(
-            owner["id"], body.platform, chosen["template_text"], "idea", body.content_id
+            owner["id"], body.platform, captions[0], "idea", body.content_id
         )
         return {
-            "caption": chosen["template_text"],
+            "caption": captions[0],
             "image_prompt": None,
             "image_prompt_th": None,
+            "variants": [
+                {"caption": c, "image_prompt": None, "image_prompt_th": None} for c in captions
+            ],
             "content_id": content_row["id"],
         }
 
@@ -1938,13 +1966,27 @@ def generate_content(body: GenerateRequest, request: Request):
             ],
             max_tokens=500,
             temperature=CAPTION_TEMPERATURE,
-            timeout=20,
+            n=CAPTION_VARIANTS,
+            timeout=30,
             response_format={"type": "json_object"},
         )
-        parsed = json.loads(response.choices[0].message.content)
-        caption = parsed["caption"]
-        image_prompt = parsed.get("image_prompt")
-        image_prompt_th = parsed.get("image_prompt_th")
+        variants = []
+        for choice in response.choices:
+            # A single choice can come back cut off (max_tokens) and fail to
+            # parse -- drop just that one rather than failing the request.
+            try:
+                parsed = json.loads(choice.message.content)
+                variants.append(
+                    {
+                        "caption": parsed["caption"],
+                        "image_prompt": parsed.get("image_prompt"),
+                        "image_prompt_th": parsed.get("image_prompt_th"),
+                    }
+                )
+            except (json.JSONDecodeError, KeyError, TypeError):
+                continue
+        if not variants:
+            raise ValueError("no parseable caption in any choice")
         prompt_tokens = response.usage.prompt_tokens if response.usage else None
         completion_tokens = response.usage.completion_tokens if response.usage else None
     except Exception as exc:
@@ -1965,18 +2007,23 @@ def generate_content(body: GenerateRequest, request: Request):
         body.platform,
         body.tone,
         body.prompt,
-        caption,
+        join_variants_for_log([v["caption"] for v in variants]),
         prompt_tokens,
         completion_tokens,
         estimated_cost_usd,
         system_prompt,
         mode="idea",
     )
-    content_row = save_generated_draft(owner["id"], body.platform, caption, "idea", body.content_id)
+    first = variants[0]
+    content_row = save_generated_draft(
+        owner["id"], body.platform, first["caption"], "idea", body.content_id
+    )
+    # Top-level fields mirror variant 1 so an already-open older page keeps working.
     return {
-        "caption": caption,
-        "image_prompt": image_prompt,
-        "image_prompt_th": image_prompt_th,
+        "caption": first["caption"],
+        "image_prompt": first["image_prompt"],
+        "image_prompt_th": first["image_prompt_th"],
+        "variants": variants,
         "content_id": content_row["id"],
         "used_examples": used_examples,
     }
@@ -2058,9 +2105,12 @@ def generate_from_image(
             ],
             max_tokens=500,
             temperature=CAPTION_TEMPERATURE,
-            timeout=20,
+            n=CAPTION_VARIANTS,
+            timeout=30,
         )
-        caption = response.choices[0].message.content
+        captions = [c.message.content for c in response.choices if c.message.content]
+        if not captions:
+            raise ValueError("empty caption in every choice")
         prompt_tokens = response.usage.prompt_tokens if response.usage else None
         completion_tokens = response.usage.completion_tokens if response.usage else None
     except Exception as exc:
@@ -2081,15 +2131,22 @@ def generate_from_image(
         platform,
         tone,
         context,
-        caption,
+        join_variants_for_log(captions),
         prompt_tokens,
         completion_tokens,
         estimated_cost_usd,
         system_prompt,
         mode="photo",
     )
-    content_row = save_generated_draft(owner["id"], platform, caption, "photo", content_id)
-    return {"caption": caption, "image_urls": image_urls, "content_id": content_row["id"]}
+    content_row = save_generated_draft(owner["id"], platform, captions[0], "photo", content_id)
+    return {
+        "caption": captions[0],
+        "variants": [
+            {"caption": c, "image_prompt": None, "image_prompt_th": None} for c in captions
+        ],
+        "image_urls": image_urls,
+        "content_id": content_row["id"],
+    }
 
 
 @app.post("/generate-video-script")
