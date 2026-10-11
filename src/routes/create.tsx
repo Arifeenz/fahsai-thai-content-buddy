@@ -41,9 +41,12 @@ export const Route = createFileRoute("/create")({
   head: () => ({
     meta: [
       { title: "สร้างคอนเทนต์ — FAHSAI" },
-      { name: "description", content: "ให้ AI ช่วยเขียนโพสต์สำหรับร้านของคุณใน 2 วินาที" },
+      { name: "description", content: "ให้ AI ช่วยเขียนโพสต์สำหรับร้านของคุณภายในไม่ถึงนาที" },
       { property: "og:title", content: "สร้างคอนเทนต์ — FAHSAI" },
-      { property: "og:description", content: "ให้ AI ช่วยเขียนโพสต์สำหรับร้านของคุณใน 2 วินาที" },
+      {
+        property: "og:description",
+        content: "ให้ AI ช่วยเขียนโพสต์สำหรับร้านของคุณภายในไม่ถึงนาที",
+      },
     ],
   }),
   component: CreateContent,
@@ -310,7 +313,8 @@ function CreateContent() {
       // too many images, etc.) via the thrown Error's message -- showing a
       // generic string here just hides that reason and makes a specific,
       // self-explanatory failure look like a mystery bug.
-      const message = err instanceof Error && err.message ? err.message : "สร้างไม่สำเร็จ ลองอีกครั้งนะคะ";
+      const message =
+        err instanceof Error && err.message ? err.message : "สร้างไม่สำเร็จ ลองอีกครั้งนะคะ";
       toast.error(message, {
         id: t,
         action: { label: "ลองใหม่", onClick: generate },
@@ -952,8 +956,8 @@ function CreateContent() {
                   ) : (
                     <>
                       <p className="mt-2 pl-12 text-xs text-muted-foreground">
-                        ใช้บุคลิก จุดเด่น และตัวอย่างโพสต์ของร้านคุณช่วยวางบท ให้ได้สคริปที่เป็นเสียงของร้านคุณจริงๆ
-                        ไม่ใช่บทถ่ายวิดีโอทั่วไป
+                        ใช้บุคลิก จุดเด่น และตัวอย่างโพสต์ของร้านคุณช่วยวางบท
+                        ให้ได้สคริปที่เป็นเสียงของร้านคุณจริงๆ ไม่ใช่บทถ่ายวิดีโอทั่วไป
                       </p>
                       {dnaMissingForScript && (
                         <p className="mt-2 pl-12 text-xs text-gold">

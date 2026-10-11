@@ -106,7 +106,7 @@ const steps: { n: number; title: string; desc: string }[] = [
   {
     n: 2,
     title: "สร้างคอนเทนต์",
-    desc: "พิมพ์ไอเดียหรือแนบรูป ให้ AI เขียนโพสต์ให้ในไม่กี่วินาที",
+    desc: "พิมพ์ไอเดียหรือแนบรูป ให้ AI เขียนโพสต์ให้ภายในไม่ถึงนาที",
   },
   {
     n: 3,
@@ -164,7 +164,7 @@ function LandingPage() {
             ให้ <span className="text-gold">FAHSAI</span> ช่วยปั้นแบรนด์ร้านคุณให้โดดเด่น
           </h1>
           <p className="mt-4 text-base text-muted-foreground md:text-lg">
-            พิมพ์ไอเดียสั้นๆ หรือแนบรูปสินค้า ให้ AI เขียนโพสต์ให้เสร็จในไม่กี่วินาที
+            พิมพ์ไอเดียสั้นๆ หรือแนบรูปสินค้า ให้ AI เขียนโพสต์ให้เสร็จภายในไม่ถึงนาที
             ตรงสไตล์ร้านคุณทุกครั้ง
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">

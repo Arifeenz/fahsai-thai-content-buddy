@@ -44,6 +44,14 @@ function Row({ icon: Icon, title, desc, children }: any) {
   );
 }
 
+function ComingSoonBadge() {
+  return (
+    <span className="whitespace-nowrap rounded-full bg-white/5 px-3 py-1 text-xs text-muted-foreground">
+      เร็ว ๆ นี้
+    </span>
+  );
+}
+
 function ChangePasswordRow({ hasPassword }: { hasPassword: boolean }) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -473,18 +481,13 @@ function SettingsPage() {
               <TeamManagementCard />
             ))}
           <ReportIssueRow />
-          <Row icon={Bell} title="การแจ้งเตือน" desc="รับข่าวสาร โปรโมชั่น และเคล็ดลับจาก FAHSAI">
-            <input
-              type="checkbox"
-              defaultChecked
-              className="h-5 w-5 accent-[oklch(0.82_0.13_85)]"
-            />
+          {/* Not built yet -- shown as upcoming instead of a control that
+              looks interactive but does nothing. */}
+          <Row icon={Bell} title="การแจ้งเตือน" desc="เตือนทางอีเมลเมื่อถึงวันโพสต์ที่เตรียมไว้">
+            <ComingSoonBadge />
           </Row>
-          <Row icon={Globe} title="ภาษา" desc="ภาษาไทย (Thai)">
-            <select className="rounded-full border border-border bg-input px-3 py-1.5 text-sm">
-              <option>ไทย</option>
-              <option>English</option>
-            </select>
+          <Row icon={Globe} title="ภาษา" desc="ตอนนี้รองรับภาษาไทย">
+            <ComingSoonBadge />
           </Row>
           <button
             onClick={logout}
