@@ -7,6 +7,7 @@ import {
   businessCategoryLabel,
   socialPlatformLabel,
   socialPlatformsByCategory,
+  type AuthUser,
   type BusinessCategory,
   type DnaDocType,
   type SocialLinks,
@@ -286,10 +287,14 @@ function BrandDna() {
   const [pendingDraft, setPendingDraft] = useState<Record<DnaDocType, string> | null>(null);
   const valuesRef = useRef(values);
   const timers = useRef<Partial<Record<DnaDocType, ReturnType<typeof setTimeout>>>>({});
+  const [categoryStatus, setCategoryStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const categoryRequest = useRef(0);
 
   const category: BusinessCategory =
     (user?.business_category as BusinessCategory) || "food_beverage";
   const sections = useMemo(() => sectionsByCategory[category], [category]);
+  // The shop's category is the owner's; team members see it read-only.
+  const isTeamMember = !!user?.team_owner_name;
   const visiblePlatforms = useMemo(() => socialPlatformsByCategory[category], [category]);
 
   const [socialLinks, setSocialLinks] = useState<SocialLinks>(emptySocialLinks);
@@ -376,9 +381,34 @@ function BrandDna() {
     updateField("tone", sentence);
   }
 
+  // Optimistic: the select (and the category-specific sections below) switch
+  // immediately; the save runs in the background. The PATCH response already
+  // carries the updated profile, so it replaces the cache instead of a
+  // second round trip to /auth/me.
   async function changeBusinessCategory(value: BusinessCategory) {
-    await api.updateMe(value);
-    queryClient.invalidateQueries({ queryKey: ["me"] });
+    const previous = queryClient.getQueryData<{ user: AuthUser }>(["me"]);
+    if (!previous) return;
+    const requestId = ++categoryRequest.current;
+    queryClient.setQueryData(["me"], {
+      ...previous,
+      user: { ...previous.user, business_category: value },
+    });
+    setCategoryStatus("saving");
+    try {
+      const { user: updated } = await api.updateMe(value);
+      if (requestId !== categoryRequest.current) return; // a newer pick is in flight
+      queryClient.setQueryData(["me"], { ...previous, user: updated });
+      setCategoryStatus("saved");
+    } catch (err) {
+      if (requestId !== categoryRequest.current) return;
+      queryClient.setQueryData(["me"], previous);
+      setCategoryStatus("idle");
+      toast.error(
+        err instanceof Error && err.message
+          ? err.message
+          : "บันทึกประเภทธุรกิจไม่สำเร็จ ลองใหม่อีกครั้งนะคะ",
+      );
+    }
   }
 
   async function applyDraft(draft: Record<DnaDocType, string>) {
@@ -446,23 +476,39 @@ function BrandDna() {
         />
 
         {user?.role !== "admin" && (
-          <div className="glass-card mb-6 flex items-center gap-4 rounded-2xl p-5">
+          <div className="glass-card mb-6 flex flex-wrap items-center gap-4 rounded-2xl p-5">
             <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-white/5 text-teal">
               <Store className="h-6 w-6" />
             </div>
-            <div className="min-w-0 flex-1">
-              <div className="font-bold">ประเภทธุรกิจ</div>
+            <div className="min-w-0 flex-1 basis-0">
+              <div className="flex items-center gap-2 font-bold">
+                ประเภทธุรกิจ
+                {categoryStatus === "saving" && (
+                  <span className="flex items-center gap-1 text-xs font-normal text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    กำลังบันทึก…
+                  </span>
+                )}
+                {categoryStatus === "saved" && (
+                  <span className="flex items-center gap-1 text-xs font-normal text-teal">
+                    <Check className="h-3 w-3" />
+                    บันทึกแล้ว
+                  </span>
+                )}
+              </div>
               <div className="text-sm text-muted-foreground">
                 {user?.is_demo
                   ? "บัญชีทดลองล็อกประเภทไว้ อยากลองประเภทอื่น เลือกบัญชีทดลองประเภทนั้นจากหน้าเข้าสู่ระบบได้เลยค่ะ"
-                  : "ใช้เลือก prompt ที่เหมาะกับร้านคุณตอนสร้างคอนเทนต์"}
+                  : isTeamMember
+                    ? `ประเภทธุรกิจกำหนดโดยเจ้าของร้าน (${user?.team_owner_name})`
+                    : "ใช้เลือก prompt ที่เหมาะกับร้านคุณตอนสร้างคอนเทนต์"}
               </div>
             </div>
             <select
               value={user?.business_category ?? ""}
               onChange={(e) => changeBusinessCategory(e.target.value as BusinessCategory)}
-              disabled={user?.is_demo}
-              className="shrink-0 rounded-full border border-border bg-input px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={user?.is_demo || isTeamMember}
+              className="w-full rounded-full border border-border bg-input px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:shrink-0"
             >
               <option value="" disabled>
                 เลือกประเภท
