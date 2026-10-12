@@ -1,6 +1,8 @@
 import os
 
 import psycopg
+
+from migrations import survey_v2
 from psycopg.rows import dict_row
 
 
@@ -325,15 +327,10 @@ def init_db() -> None:
         )
         """
     )
-    # One response per real account. Demo accounts are shared by everyone
-    # who clicks "ทดลองใช้" on the login page, so each of those visitors
-    # must still be able to submit their own response.
-    conn.execute(
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS survey_responses_one_per_user
-        ON survey_responses (user_id) WHERE NOT is_demo
-        """
-    )
+    # v2 columns, per-version answer check, and one response per real
+    # account *per survey version* (demo accounts are shared by every
+    # visitor, so they stay exempt). See migrations/survey_v2.py.
+    survey_v2.apply(conn)
 
     event_count = conn.execute("SELECT COUNT(*) AS n FROM events").fetchone()["n"]
     if event_count == 0:
@@ -2189,7 +2186,8 @@ def set_support_ticket_resolved(ticket_id: int, resolved: bool) -> dict | None:
     return row
 
 
-SURVEY_SCORE_COLUMNS = [f"q{i}" for i in range(1, 11)]
+SURVEY_SCORE_COLUMNS = survey_v2.V1_COLUMNS
+SURVEY_ANSWER_COLUMNS = {1: survey_v2.V1_COLUMNS, 2: survey_v2.V2_COLUMNS}
 
 
 def create_survey_response(
@@ -2202,22 +2200,26 @@ def create_survey_response(
     minutes_after: int,
     scores: list[int],
     comment: str | None,
+    survey_version: int = 1,
 ) -> dict | None:
-    """Returns None when this (non-demo) user has already responded."""
+    """Returns None when this (non-demo) user already answered this version."""
+    answer_columns = SURVEY_ANSWER_COLUMNS[survey_version]
+    assert len(scores) == len(answer_columns)
     conn = get_connection()
     try:
         row = conn.execute(
             f"""
             INSERT INTO survey_responses
-                (user_id, is_demo, business_category, business_category_other,
+                (user_id, is_demo, survey_version, business_category, business_category_other,
                  used_ai_before, minutes_before, minutes_after,
-                 {", ".join(SURVEY_SCORE_COLUMNS)}, comment)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, {", ".join(["%s"] * 10)}, %s)
+                 {", ".join(answer_columns)}, comment)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, {", ".join(["%s"] * len(answer_columns))}, %s)
             RETURNING *
             """,
             (
                 user_id,
                 is_demo,
+                survey_version,
                 business_category,
                 business_category_other,
                 used_ai_before,
@@ -2236,11 +2238,12 @@ def create_survey_response(
     return row
 
 
-def has_survey_response(user_id: int) -> bool:
+def has_survey_response(user_id: int, survey_version: int = 1) -> bool:
     conn = get_connection()
     row = conn.execute(
-        "SELECT 1 FROM survey_responses WHERE user_id = %s AND NOT is_demo LIMIT 1",
-        (user_id,),
+        "SELECT 1 FROM survey_responses"
+        " WHERE user_id = %s AND survey_version = %s AND NOT is_demo LIMIT 1",
+        (user_id, survey_version),
     ).fetchone()
     conn.close()
     return row is not None
@@ -2255,15 +2258,17 @@ def count_generations_for_user(user_id: int) -> int:
     return n
 
 
-# Deliberately selects no user_id/name/email: the questionnaire promises
-# respondents their answers are only reported in aggregate, anonymously.
-def list_survey_responses(include_demo: bool = True) -> list[dict]:
+# Never returns name/email. `respondent` is an opaque per-account key used
+# only to avoid counting one person's time answers twice across v1/v2; it
+# is not sent to the admin page.
+def list_survey_responses(include_demo: bool = False) -> list[dict]:
     conn = get_connection()
     rows = conn.execute(
         f"""
-        SELECT id, is_demo, business_category, business_category_other,
+        SELECT id, user_id AS respondent, is_demo, survey_version,
+               business_category, business_category_other,
                used_ai_before, minutes_before, minutes_after,
-               {", ".join(SURVEY_SCORE_COLUMNS)}, comment, created_at
+               {", ".join(survey_v2.V1_COLUMNS + survey_v2.V2_COLUMNS)}, comment, created_at
         FROM survey_responses
         {"" if include_demo else "WHERE NOT is_demo"}
         ORDER BY created_at ASC

@@ -1,11 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Download } from "lucide-react";
-import { api, categoryDisplayLabel, type LikertStats, type SurveySummary } from "@/lib/api";
+import {
+  api,
+  categoryDisplayLabel,
+  type LikertStats,
+  type SurveySummary,
+  type SurveyTimeBlock,
+  type SurveyVersionSummary,
+} from "@/lib/api";
 import { AppShell, PageHeader } from "@/components/app-shell";
 import { useRequireAdmin } from "@/lib/admin-guard";
-import { SURVEY_SECTIONS } from "@/lib/survey";
+import { SURVEY_SECTIONS, SURVEY_V2_SECTIONS } from "@/lib/survey";
 
 export const Route = createFileRoute("/admin/survey")({
   head: () => ({
@@ -17,15 +24,22 @@ export const Route = createFileRoute("/admin/survey")({
   component: AdminSurveyPage,
 });
 
-const ITEM_TEXTS = SURVEY_SECTIONS.flatMap((s) => s.items);
+// Item number -> question text, per version ("1".."10" for v1, "1.1".."5.5" for v2).
+const ITEM_TEXT: Record<1 | 2, Record<string, string>> = {
+  1: Object.fromEntries(
+    SURVEY_SECTIONS.flatMap((s) => s.items).map((text, i) => [String(i + 1), text]),
+  ),
+  2: Object.fromEntries(
+    SURVEY_V2_SECTIONS.flatMap((s, d) => s.items.map((text, i) => [`${d + 1}.${i + 1}`, text])),
+  ),
+};
 
 function AdminSurveyPage() {
   const { ready } = useRequireAdmin();
-  const [includeDemo, setIncludeDemo] = useState(true);
+  const [tab, setTab] = useState<1 | 2>(2);
   const { data } = useQuery({
-    queryKey: ["admin", "survey", includeDemo],
-    queryFn: () => api.adminGetSurveySummary(includeDemo),
-    placeholderData: keepPreviousData,
+    queryKey: ["admin", "survey"],
+    queryFn: () => api.adminGetSurveySummary(),
     enabled: ready,
   });
 
@@ -44,71 +58,153 @@ function AdminSurveyPage() {
       <div className="p-6 md:p-8">
         <PageHeader
           title="ผลแบบประเมินความพึงพอใจ"
-          subtitle="ค่าเฉลี่ย (x̄) และส่วนเบี่ยงเบนมาตรฐาน (S.D.) แปลผลตามเกณฑ์ 5 ระดับ • ไม่แสดงตัวตนผู้ตอบ"
+          subtitle="x̄ และ S.D. (แบบตัวอย่าง n − 1) แปลผลตามเกณฑ์ 5 ระดับ • ไม่รวมบัญชีทดลอง • ไม่แสดงตัวตนผู้ตอบ"
         />
 
-        <div className="mb-6 flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={includeDemo}
-              onChange={(e) => setIncludeDemo(e.target.checked)}
-            />
-            รวมคำตอบจากบัญชีทดลอง (demo)
-          </label>
+        <div className="mb-6 flex justify-end">
           <button
             type="button"
-            disabled={!data || data.total === 0}
+            disabled={!data || data.responses.length === 0}
             onClick={() => data && downloadCsv(data)}
-            className="ml-auto flex items-center gap-2 rounded-xl border border-border px-4 py-2 text-sm font-medium hover:border-teal disabled:opacity-40"
+            className="flex items-center gap-2 rounded-xl border border-border px-4 py-2 text-sm font-medium hover:border-teal disabled:opacity-40"
           >
             <Download className="h-4 w-4" />
-            Export CSV
+            Export CSV (v1 + v2)
           </button>
         </div>
 
         {!data ? (
           <div className="text-sm text-muted-foreground">กำลังโหลด...</div>
-        ) : data.total === 0 ? (
-          <div className="glass-card rounded-2xl p-8 text-center text-sm text-muted-foreground">
-            ยังไม่มีผู้ตอบแบบประเมิน
-          </div>
         ) : (
-          <SummaryView data={data} />
+          <div className="grid gap-6">
+            <TimeSection time={data.time} />
+
+            <div
+              role="tablist"
+              className="grid w-full max-w-sm grid-cols-2 gap-1 rounded-xl border border-border bg-input/40 p-1"
+            >
+              {([2, 1] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === v}
+                  onClick={() => setTab(v)}
+                  className={
+                    "rounded-lg py-2 text-sm transition " +
+                    (tab === v
+                      ? "bg-teal/20 font-semibold"
+                      : "text-muted-foreground hover:text-foreground")
+                  }
+                >
+                  {v === 2 ? "ฉบับที่ 2 (25 ข้อ)" : "ฉบับที่ 1 (10 ข้อ)"} ·{" "}
+                  {v === 2 ? data.v2.total : data.v1.total} คน
+                </button>
+              ))}
+            </div>
+
+            <VersionSection
+              summary={tab === 2 ? data.v2 : data.v1}
+              version={tab}
+              comments={data.responses.filter((r) => r.survey_version === tab && r.comment)}
+            />
+          </div>
         )}
       </div>
     </AppShell>
   );
 }
 
-function SummaryView({ data }: { data: SurveySummary }) {
-  const { time } = data;
+function TimeSection({ time }: { time: SurveySummary["time"] }) {
+  const categories = Object.entries(time.by_category);
+  return (
+    <div className="glass-card rounded-2xl p-5">
+      <div className="mb-1 text-sm font-bold">เวลาที่ใช้เขียนโพสต์ 1 โพสต์ (รวมทั้งสองฉบับ)</div>
+      <div className="mb-4 text-xs text-muted-foreground">
+        นับคนละ 1 คำตอบ ถ้าตอบทั้งสองฉบับใช้คำตอบฉบับที่ 2 • n = {time.n} (จากฉบับที่ 1{" "}
+        {time.from_v1} คน, ฉบับที่ 2 {time.from_v2} คน) • เคยใช้ AI มาก่อน{" "}
+        {time.used_ai_before_count} คน
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[560px] text-sm">
+          <thead>
+            <tr className="border-b border-border text-left text-muted-foreground">
+              <th className="p-3 font-medium">กลุ่ม</th>
+              <th className="p-3 text-center font-medium">n</th>
+              <th className="p-3 text-center font-medium">ก่อนใช้ x̄ (S.D.)</th>
+              <th className="p-3 text-center font-medium">หลังใช้ x̄ (S.D.)</th>
+              <th className="p-3 text-center font-medium">ลดลง (%)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <TimeRow label="รวมทุกประเภท" block={time} bold />
+            {categories.map(([category, block]) => (
+              <TimeRow
+                key={category}
+                label={category === "other" ? "อื่น ๆ" : categoryDisplayLabel(category)}
+                block={block}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function TimeRow({
+  label,
+  block,
+  bold,
+}: {
+  label: string;
+  block: SurveyTimeBlock;
+  bold?: boolean;
+}) {
+  return (
+    <tr className={"border-b border-border/50 " + (bold ? "font-semibold" : "")}>
+      <td className="p-3">{label}</td>
+      <td className="p-3 text-center">{block.n}</td>
+      <td className="p-3 text-center">{minutes(block.minutes_before)}</td>
+      <td className="p-3 text-center">{minutes(block.minutes_after)}</td>
+      <td className="p-3 text-center">
+        {block.reduction_percent === null ? "—" : block.reduction_percent.toFixed(1)}
+      </td>
+    </tr>
+  );
+}
+
+function VersionSection({
+  summary,
+  version,
+  comments,
+}: {
+  summary: SurveyVersionSummary;
+  version: 1 | 2;
+  comments: SurveySummary["responses"];
+}) {
+  if (summary.total === 0) {
+    return (
+      <div className="glass-card rounded-2xl p-8 text-center text-sm text-muted-foreground">
+        ยังไม่มีผู้ตอบแบบประเมินฉบับนี้
+      </div>
+    );
+  }
   return (
     <div className="grid gap-6">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat
-          label="จำนวนผู้ตอบ"
-          value={`${data.total} คน`}
-          hint={data.demo_count > 0 ? `บัญชีทดลอง ${data.demo_count} คน` : undefined}
-        />
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Stat label="จำนวนผู้ตอบ" value={`${summary.total} คน`} />
         <Stat
           label="ความพึงพอใจภาพรวม"
-          value={fmt(data.overall.mean)}
-          hint={`S.D. ${fmt(data.overall.sd)} • ระดับ${data.overall.level}`}
-        />
-        <Stat
-          label="เวลาเขียนโพสต์ ก่อน → หลัง"
-          value={`${time.mean_minutes_before ?? "—"} → ${time.mean_minutes_after ?? "—"} นาที`}
-          hint={
-            time.reduction_percent !== null
-              ? `ลดลง ${time.reduction_percent}%`
-              : "ไม่มีข้อมูลเวลาก่อนใช้"
-          }
+          value={fmt(summary.overall.mean)}
+          hint={`S.D. ${fmt(summary.overall.sd)} • ระดับ${summary.overall.level}`}
         />
         <Stat
           label="เคยใช้ AI มาก่อน"
-          value={`${data.used_ai_before_count} คน`}
-          hint={`${Math.round((data.used_ai_before_count / data.total) * 100)}% ของผู้ตอบ`}
+          value={`${summary.used_ai_before_count} คน`}
+          hint={Object.entries(summary.by_category)
+            .map(([c, n]) => `${c === "other" ? "อื่น ๆ" : categoryDisplayLabel(c)} ${n}`)
+            .join(" • ")}
         />
       </div>
 
@@ -123,48 +219,34 @@ function SummaryView({ data }: { data: SurveySummary }) {
             </tr>
           </thead>
           <tbody>
-            {data.dimensions.map((dim) => (
-              <DimensionRows key={dim.key} dim={dim} items={data.items} />
+            {summary.dimensions.map((dim) => (
+              <DimensionRows key={dim.key} dim={dim} summary={summary} version={version} />
             ))}
             <tr className="border-t-2 border-border font-bold">
               <td className="p-4">รวมทุกด้าน</td>
-              <StatCells stats={data.overall} />
+              <StatCells stats={summary.overall} />
             </tr>
           </tbody>
         </table>
       </div>
 
       <div className="glass-card rounded-2xl p-5">
-        <div className="mb-3 text-sm font-bold">ประเภทธุรกิจของผู้ตอบ</div>
-        <div className="flex flex-wrap gap-2">
-          {Object.entries(data.by_category).map(([category, count]) => (
-            <span key={category} className="rounded-full bg-white/5 px-3 py-1 text-xs">
-              {category === "other" ? "อื่น ๆ" : categoryDisplayLabel(category)} • {count} คน
-            </span>
-          ))}
-        </div>
-      </div>
-
-      <div className="glass-card rounded-2xl p-5">
         <div className="mb-3 text-sm font-bold">ข้อเสนอแนะ</div>
         <div className="grid gap-3">
-          {data.responses.filter((r) => r.comment).length === 0 && (
+          {comments.length === 0 && (
             <div className="text-sm text-muted-foreground">ยังไม่มีข้อเสนอแนะ</div>
           )}
-          {data.responses
-            .filter((r) => r.comment)
-            .map((r) => (
-              <div key={r.id} className="rounded-xl bg-white/5 p-3 text-sm">
-                <div className="whitespace-pre-wrap">{r.comment}</div>
-                <div className="mt-1.5 text-[11px] text-muted-foreground">
-                  {r.business_category === "other"
-                    ? r.business_category_other
-                    : categoryDisplayLabel(r.business_category)}
-                  {r.is_demo ? " • บัญชีทดลอง" : ""} •{" "}
-                  {new Date(r.created_at).toLocaleDateString("th-TH")}
-                </div>
+          {comments.map((r) => (
+            <div key={r.id} className="rounded-xl bg-white/5 p-3 text-sm">
+              <div className="whitespace-pre-wrap">{r.comment}</div>
+              <div className="mt-1.5 text-[11px] text-muted-foreground">
+                {r.business_category === "other"
+                  ? r.business_category_other
+                  : categoryDisplayLabel(r.business_category)}{" "}
+                • {new Date(r.created_at).toLocaleDateString("th-TH")}
               </div>
-            ))}
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -173,10 +255,12 @@ function SummaryView({ data }: { data: SurveySummary }) {
 
 function DimensionRows({
   dim,
-  items,
+  summary,
+  version,
 }: {
-  dim: SurveySummary["dimensions"][number];
-  items: SurveySummary["items"];
+  dim: SurveyVersionSummary["dimensions"][number];
+  summary: SurveyVersionSummary;
+  version: 1 | 2;
 }) {
   return (
     <>
@@ -185,12 +269,12 @@ function DimensionRows({
         <StatCells stats={dim} />
       </tr>
       {dim.items.length > 1 &&
-        dim.items.map((n) => (
-          <tr key={n} className="border-b border-border/50">
+        dim.items.map((item) => (
+          <tr key={item} className="border-b border-border/50">
             <td className="p-4 pl-8 text-muted-foreground">
-              {n}. {ITEM_TEXTS[n - 1]}
+              {item} {ITEM_TEXT[version][item]}
             </td>
-            <StatCells stats={items[n - 1]} />
+            <StatCells stats={summary.items.find((i) => i.item === item)!} />
           </tr>
         ))}
     </>
@@ -221,33 +305,46 @@ function fmt(n: number | null) {
   return n === null ? "—" : n.toFixed(2);
 }
 
-// One row per response, columns matching the paper questionnaire, so the
-// file can go straight into Excel/SPSS for the report's chapter 4.
+function minutes(s: { mean: number | null; sd: number | null }) {
+  return s.mean === null ? "—" : `${s.mean.toFixed(1)} (${(s.sd ?? 0).toFixed(1)})`;
+}
+
+const V1_COLUMNS = Array.from({ length: 10 }, (_, i) => `q${i + 1}`);
+const V2_COLUMNS = Array.from({ length: 25 }, (_, k) => `a${Math.floor(k / 5) + 1}_${(k % 5) + 1}`);
+
+// One row per response from both rounds (demo accounts excluded), one column
+// per questionnaire item, so the file goes straight into Excel/SPSS.
 function downloadCsv(data: SurveySummary) {
   const header = [
     "id",
+    "survey_version",
     "created_at",
-    "is_demo",
     "business_category",
     "business_category_other",
     "used_ai_before",
     "minutes_before",
     "minutes_after",
-    ...Array.from({ length: 10 }, (_, i) => `q${i + 1}`),
+    ...V1_COLUMNS,
+    ...V2_COLUMNS,
     "comment",
   ];
-  const rows = data.responses.map((r) => [
-    r.id,
-    r.created_at,
-    r.is_demo,
-    r.business_category,
-    r.business_category_other ?? "",
-    r.used_ai_before,
-    r.minutes_before,
-    r.minutes_after,
-    ...r.scores,
-    r.comment ?? "",
-  ]);
+  const rows = data.responses.map((r) => {
+    const v1 = r.survey_version === 1 ? r.scores : V1_COLUMNS.map(() => "");
+    const v2 = r.survey_version === 2 ? r.scores : V2_COLUMNS.map(() => "");
+    return [
+      r.id,
+      r.survey_version,
+      r.created_at,
+      r.business_category,
+      r.business_category_other ?? "",
+      r.used_ai_before,
+      r.minutes_before,
+      r.minutes_after,
+      ...v1,
+      ...v2,
+      r.comment ?? "",
+    ];
+  });
   const csv = [header, ...rows]
     .map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","))
     .join("\r\n");

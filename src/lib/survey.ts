@@ -1,6 +1,6 @@
-// Same wording and numbering as the printed questionnaire
-// (FAHSAI_แบบประเมินความพึงพอใจ.pdf, ตอนที่ 2) so on-screen and paper
-// responses can be pooled for analysis.
+// v1 (10 items) -- same wording and numbering as the printed questionnaire
+// (FAHSAI_แบบประเมินความพึงพอใจ.pdf, ตอนที่ 2). Kept for the admin v1 results
+// tab; new responses use SURVEY_V2_SECTIONS.
 export const SURVEY_SECTIONS = [
   {
     label: "ด้านความง่ายในการใช้งาน",
@@ -31,3 +31,63 @@ export const SURVEY_SECTIONS = [
     items: ["ท่านพึงพอใจต่อระบบ FAHSAI โดยรวม"],
   },
 ] as const;
+
+// v2 (25 items, 5 dimensions) in the format set by the project advisor.
+// Item numbers are "<dimension>.<item>" and map to columns a1_1 .. a5_5.
+export const SURVEY_V2_SECTIONS = [
+  {
+    label: "ด้านที่ 1 การออกแบบหน้าจอ",
+    items: [
+      "หน้าจอมีความสวยงาม สีสันเหมาะสม",
+      "ขนาดและรูปแบบตัวอักษรอ่านง่าย",
+      "การจัดวางเมนูและปุ่มเป็นระเบียบ ค้นหาได้ง่าย",
+      "ไอคอนและสัญลักษณ์สื่อความหมายชัดเจน",
+      "แสดงผลได้เหมาะสมทั้งบนคอมพิวเตอร์และโทรศัพท์มือถือ",
+    ],
+  },
+  {
+    label: "ด้านที่ 2 การทำงานของระบบ",
+    items: [
+      "ระบบสร้างแคปชันได้ตรงตามหัวข้อที่ต้องการ",
+      "ระบบสร้างคอนเทนต์จากรูปภาพได้ถูกต้อง",
+      "ระบบประมวลผลและตอบสนองได้รวดเร็ว",
+      "ระบบบันทึกคอนเทนต์ลงคลังและปฏิทินได้ถูกต้อง",
+      "ระบบแสดงข้อความแจ้งเตือนหรือข้อผิดพลาดที่เข้าใจได้",
+    ],
+  },
+  {
+    label: "ด้านที่ 3 ความง่ายต่อการใช้งาน",
+    items: [
+      "สามารถเริ่มใช้งานได้เองโดยไม่ต้องมีผู้แนะนำ",
+      "การตั้งค่าข้อมูลร้าน (Brand DNA) เข้าใจง่าย",
+      "ขั้นตอนการสร้างโพสต์ไม่ซับซ้อน",
+      "นำคอนเทนต์ไปใช้ต่อ (คัดลอก/บันทึก) ได้สะดวก",
+      "ใช้งานได้แม้ไม่มีความรู้ด้านปัญญาประดิษฐ์",
+    ],
+  },
+  {
+    label: "ด้านที่ 4 การรักษาความปลอดภัยของข้อมูล",
+    items: [
+      "การเข้าสู่ระบบและยืนยันตัวตนมีความปลอดภัย",
+      // The system enforces a minimum length (8) but not complexity, and
+      // does not require email verification before use -- so this states
+      // only what is actually enforced. Pending advisor confirmation.
+      "ระบบกำหนดให้ตั้งรหัสผ่านอย่างน้อย 8 ตัวอักษร",
+      "ข้อมูลร้านเข้าถึงได้เฉพาะเจ้าของและสมาชิกทีมที่ได้รับสิทธิ์",
+      "สามารถกำหนดสิทธิ์การเข้าถึงของสมาชิกทีมได้",
+      "มีความมั่นใจในการจัดเก็บข้อมูลของระบบ",
+    ],
+  },
+  {
+    label: "ด้านที่ 5 คุณภาพของคอนเทนต์และประโยชน์",
+    items: [
+      "แคปชันภาษาไทยมีความเป็นธรรมชาติ",
+      "คอนเทนต์มีสไตล์ตรงกับอัตลักษณ์ของร้าน",
+      "คอนเทนต์นำไปโพสต์ได้ทันทีหรือแก้ไขเพียงเล็กน้อย",
+      "ระบบช่วยลดเวลาในการสร้างโพสต์",
+      "ไม่ต้องอธิบายข้อมูลร้านซ้ำทุกครั้งที่สร้างโพสต์",
+    ],
+  },
+] as const;
+
+export const SURVEY_V2_ITEM_COUNT = SURVEY_V2_SECTIONS.reduce((n, s) => n + s.items.length, 0);

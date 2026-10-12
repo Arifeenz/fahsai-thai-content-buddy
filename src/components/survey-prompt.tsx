@@ -12,6 +12,9 @@ const RE_PROMPT_AFTER = 5;
 const MAX_DISMISSALS = 2;
 
 interface LocalSurveyState {
+  // Version this browser last submitted (demo accounts track it here; the
+  // old boolean `submitted` from before v2 counts as version 1).
+  submittedVersion?: number;
   // Demo accounts are shared, so the server-side generation count and
   // "already submitted" flag belong to every visitor at once -- for those
   // accounts this per-browser copy is the one that counts.
@@ -55,8 +58,8 @@ export function recordSurveyGeneration(email: string) {
   writeLocal(email, { ...state, generations: state.generations + 1 });
 }
 
-export function markSurveySubmitted(email: string) {
-  writeLocal(email, { ...readLocal(email), submitted: true });
+export function markSurveySubmitted(email: string, version: number) {
+  writeLocal(email, { ...readLocal(email), submitted: true, submittedVersion: version });
 }
 
 export function useSurveyStatus(user: AuthUser | undefined) {
@@ -87,7 +90,9 @@ export function useSurveyStatus(user: AuthUser | undefined) {
   }
 
   const local = readLocal(user.email);
-  const submitted = user.is_demo ? local.submitted : data.submitted || local.submitted;
+  const localVersion = local.submittedVersion ?? (local.submitted ? 1 : 0);
+  const answeredLocally = localVersion >= data.survey_version;
+  const submitted = user.is_demo ? answeredLocally : data.submitted || answeredLocally;
   const generations = user.is_demo ? local.generations : data.generation_count;
   const shouldNudge =
     !submitted && generations >= local.nextPromptAt && local.dismissals < MAX_DISMISSALS;

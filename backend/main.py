@@ -74,6 +74,7 @@ from db import (
     get_row_platform,
     reset_demo_account,
     has_survey_response,
+    SURVEY_ANSWER_COLUMNS,
     get_pending_invite,
     get_pending_invite_by_token,
     get_platform_tip,
@@ -491,6 +492,20 @@ class SurveyResponseCreate(BaseModel):
     minutes_after: int = Field(ge=0, le=1440)
     # Items 1-10 of ตอนที่ 2, in questionnaire order.
     scores: list[Annotated[int, Field(ge=1, le=5)]] = Field(min_length=10, max_length=10)
+    comment: str | None = Field(default=None, max_length=2000)
+
+
+class SurveyV2ResponseCreate(BaseModel):
+    business_category: Literal[
+        "food_beverage", "online_shop", "fortune_telling", "streamer", "other"
+    ]
+    business_category_other: str | None = Field(default=None, max_length=100)
+    used_ai_before: bool
+    # v2 asks for a positive number of minutes (v1 also accepted 0).
+    minutes_before: int = Field(ge=1, le=1440)
+    minutes_after: int = Field(ge=1, le=1440)
+    # Items 1.1 .. 5.5 of ส่วนที่ 2, in questionnaire order (a1_1 .. a5_5).
+    answers: list[Annotated[int, Field(ge=1, le=5)]] = Field(min_length=25, max_length=25)
     comment: str | None = Field(default=None, max_length=2000)
 
 
@@ -1227,15 +1242,20 @@ def get_my_survey_status(request: Request):
     return {
         # A shared demo account is never "done" -- each visitor using it
         # tracks their own submission client-side instead.
-        "submitted": False if is_demo else has_survey_response(user["id"]),
+        # "submitted" is about the questionnaire currently open (v2); v1
+        # respondents are invited again.
+        "submitted": False if is_demo else has_survey_response(user["id"], CURRENT_SURVEY_VERSION),
+        "survey_version": CURRENT_SURVEY_VERSION,
         "generation_count": count_generations_for_user(user["id"]),
     }
 
 
-@app.post("/survey")
-@limiter.limit("10/hour")
-def submit_survey(body: SurveyResponseCreate, request: Request):
-    user = require_user(request)
+CURRENT_SURVEY_VERSION = 2
+V1_SURVEY_COLUMNS = SURVEY_ANSWER_COLUMNS[1]
+V2_SURVEY_COLUMNS = SURVEY_ANSWER_COLUMNS[2]
+
+
+def _save_survey(user: dict, body, scores: list[int], version: int) -> dict:
     if user["role"] == "admin":
         # Keeps the developer's own test runs out of the research data.
         raise HTTPException(status_code=403, detail="บัญชีแอดมินส่งแบบประเมินไม่ได้ค่ะ")
@@ -1253,12 +1273,29 @@ def submit_survey(body: SurveyResponseCreate, request: Request):
         body.used_ai_before,
         body.minutes_before,
         body.minutes_after,
-        body.scores,
+        scores,
         comment,
+        survey_version=version,
     )
     if row is None:
-        raise HTTPException(status_code=409, detail="คุณส่งแบบประเมินไปแล้ว ขอบคุณมากค่ะ")
+        raise HTTPException(status_code=409, detail="ขอบคุณ ท่านได้ตอบแบบประเมินแล้ว")
     return {"ok": True}
+
+
+# v1 (10 items) stays accepted so a page opened before the v2 rollout can
+# still submit; new pages use /survey/v2.
+@app.post("/survey")
+@limiter.limit("10/hour")
+def submit_survey(body: SurveyResponseCreate, request: Request):
+    user = require_user(request)
+    return _save_survey(user, body, body.scores, 1)
+
+
+@app.post("/survey/v2")
+@limiter.limit("10/hour")
+def submit_survey_v2(body: SurveyV2ResponseCreate, request: Request):
+    user = require_user(request)
+    return _save_survey(user, body, body.answers, 2)
 
 
 @app.get("/team")
@@ -2703,12 +2740,20 @@ def admin_resolve_support_ticket(
     return support_ticket_to_dict(row)
 
 
-# Matches the four ด้าน of ตอนที่ 2 in the printed questionnaire.
+# Matches the four ด้าน of ตอนที่ 2 in the printed v1 questionnaire.
 SURVEY_DIMENSIONS = [
     ("ease", "ด้านความง่ายในการใช้งาน", [1, 2, 3]),
     ("quality", "ด้านคุณภาพของคอนเทนต์", [4, 5, 6]),
     ("benefit", "ด้านประโยชน์ของระบบ", [7, 8, 9]),
     ("overall", "ด้านความพึงพอใจโดยรวม", [10]),
+]
+# v2: 5 dimensions x 5 items (a{dimension}_{item}).
+SURVEY_V2_DIMENSIONS = [
+    ("design", "ด้านที่ 1 การออกแบบหน้าจอ"),
+    ("function", "ด้านที่ 2 การทำงานของระบบ"),
+    ("usability", "ด้านที่ 3 ความง่ายต่อการใช้งาน"),
+    ("security", "ด้านที่ 4 การรักษาความปลอดภัยของข้อมูล"),
+    ("quality", "ด้านที่ 5 คุณภาพของคอนเทนต์และประโยชน์"),
 ]
 
 
@@ -2734,66 +2779,110 @@ def likert_stats(scores: list[int]) -> dict:
     return {"mean": round(mean, 2), "sd": round(sd, 2), "level": interpret_likert_mean(mean)}
 
 
+def number_stats(values: list[float]) -> dict:
+    if not values:
+        return {"mean": None, "sd": None}
+    sd = statistics.stdev(values) if len(values) > 1 else 0.0
+    return {"mean": round(statistics.fmean(values), 1), "sd": round(sd, 1)}
+
+
 def survey_response_to_dict(row) -> dict:
+    version = row["survey_version"]
+    columns = V2_SURVEY_COLUMNS if version == 2 else V1_SURVEY_COLUMNS
     return {
         "id": row["id"],
-        "is_demo": bool(row["is_demo"]),
+        "survey_version": version,
         "business_category": row["business_category"],
         "business_category_other": row["business_category_other"],
         "used_ai_before": bool(row["used_ai_before"]),
         "minutes_before": row["minutes_before"],
         "minutes_after": row["minutes_after"],
-        "scores": [row[f"q{i}"] for i in range(1, 11)],
+        "scores": [row[c] for c in columns],
         "comment": row["comment"],
         "created_at": to_utc_iso(row["created_at"]),
     }
 
 
-@app.get("/admin/survey/summary")
-@limiter.limit("60/minute")
-def admin_survey_summary(request: Request, include_demo: bool = True):
-    require_admin(request)
-    responses = [survey_response_to_dict(row) for row in list_survey_responses(include_demo)]
+def time_summary(rows: list[dict]) -> dict:
+    """Part 1 time answers pooled across both rounds, one row per person:
+    someone who answered both v1 and v2 counts once, with their v2 answer."""
+    latest: dict = {}
+    for r in rows:
+        key = r["respondent"]
+        if key not in latest or r["survey_version"] > latest[key]["survey_version"]:
+            latest[key] = r
+    people = list(latest.values())
 
+    def block(group: list[dict]) -> dict:
+        before = number_stats([r["minutes_before"] for r in group])
+        after = number_stats([r["minutes_after"] for r in group])
+        mean_before = statistics.fmean(r["minutes_before"] for r in group) if group else None
+        mean_after = statistics.fmean(r["minutes_after"] for r in group) if group else None
+        return {
+            "n": len(group),
+            "minutes_before": before,
+            "minutes_after": after,
+            "reduction_percent": (
+                round((mean_before - mean_after) / mean_before * 100, 1) if mean_before else None
+            ),
+        }
+
+    categories = sorted({r["business_category"] for r in people})
+    return {
+        **block(people),
+        "from_v1": sum(1 for r in people if r["survey_version"] == 1),
+        "from_v2": sum(1 for r in people if r["survey_version"] == 2),
+        "by_category": {c: block([r for r in people if r["business_category"] == c]) for c in categories},
+        "used_ai_before_count": sum(1 for r in people if r["used_ai_before"]),
+    }
+
+
+def version_summary(responses: list[dict], version: int) -> dict:
+    rows = [r for r in responses if r["survey_version"] == version]
+    if version == 1:
+        groups = [(key, label, [i - 1 for i in items]) for key, label, items in SURVEY_DIMENSIONS]
+        item_labels = [str(i) for i in range(1, 11)]
+    else:
+        groups = [(key, label, list(range(d * 5, d * 5 + 5))) for d, (key, label) in enumerate(SURVEY_V2_DIMENSIONS)]
+        item_labels = [f"{d}.{i}" for d in range(1, 6) for i in range(1, 6)]
     items = [
-        {"item": i, **likert_stats([r["scores"][i - 1] for r in responses])}
-        for i in range(1, 11)
+        {"item": label, **likert_stats([r["scores"][k] for r in rows])}
+        for k, label in enumerate(item_labels)
     ]
     dimensions = [
         {
             "key": key,
             "label": label,
-            "items": item_numbers,
-            **likert_stats([r["scores"][i - 1] for r in responses for i in item_numbers]),
+            "items": [item_labels[k] for k in idx],
+            **likert_stats([r["scores"][k] for r in rows for k in idx]),
         }
-        for key, label, item_numbers in SURVEY_DIMENSIONS
+        for key, label, idx in groups
     ]
-
     by_category: dict[str, int] = {}
-    for r in responses:
+    for r in rows:
         by_category[r["business_category"]] = by_category.get(r["business_category"], 0) + 1
-
-    mean_before = statistics.fmean(r["minutes_before"] for r in responses) if responses else None
-    mean_after = statistics.fmean(r["minutes_after"] for r in responses) if responses else None
-    reduction_percent = (
-        round((mean_before - mean_after) / mean_before * 100, 1)
-        if mean_before
-        else None
-    )
-
     return {
-        "total": len(responses),
-        "demo_count": sum(1 for r in responses if r["is_demo"]),
-        "used_ai_before_count": sum(1 for r in responses if r["used_ai_before"]),
+        "total": len(rows),
+        "used_ai_before_count": sum(1 for r in rows if r["used_ai_before"]),
         "by_category": by_category,
-        "time": {
-            "mean_minutes_before": round(mean_before, 1) if mean_before is not None else None,
-            "mean_minutes_after": round(mean_after, 1) if mean_after is not None else None,
-            "reduction_percent": reduction_percent,
-        },
         "items": items,
         "dimensions": dimensions,
-        "overall": likert_stats([s for r in responses for s in r["scores"]]),
+        "overall": likert_stats([s for r in rows for s in r["scores"]]),
+    }
+
+
+# Demo-account answers are always excluded: those accounts are shared by
+# anonymous visitors, so their responses aren't attributable to a user.
+@app.get("/admin/survey/summary")
+@limiter.limit("60/minute")
+def admin_survey_summary(request: Request):
+    require_admin(request)
+    rows = list_survey_responses(include_demo=False)
+    responses = [survey_response_to_dict(row) for row in rows]
+    return {
+        "v1": version_summary(responses, 1),
+        "v2": version_summary(responses, 2),
+        "time": time_summary(rows),
         "responses": responses,
     }
 

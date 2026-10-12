@@ -245,8 +245,13 @@ export interface SurveyInput {
   scores: number[];
   comment: string | null;
 }
+export interface SurveyV2Input extends Omit<SurveyInput, "scores"> {
+  answers: number[];
+}
 export interface SurveyStatus {
+  // Whether the questionnaire currently open (survey_version) was answered.
   submitted: boolean;
+  survey_version: number;
   generation_count: number;
 }
 export interface LikertStats {
@@ -256,22 +261,37 @@ export interface LikertStats {
 }
 export interface SurveyResponse extends SurveyInput {
   id: number;
-  is_demo: boolean;
+  survey_version: number;
   created_at: string;
 }
-export interface SurveySummary {
+export interface SurveyVersionSummary {
   total: number;
-  demo_count: number;
   used_ai_before_count: number;
   by_category: Record<string, number>;
-  time: {
-    mean_minutes_before: number | null;
-    mean_minutes_after: number | null;
-    reduction_percent: number | null;
-  };
-  items: (LikertStats & { item: number })[];
-  dimensions: (LikertStats & { key: string; label: string; items: number[] })[];
+  items: (LikertStats & { item: string })[];
+  dimensions: (LikertStats & { key: string; label: string; items: string[] })[];
   overall: LikertStats;
+}
+export interface MinutesStats {
+  mean: number | null;
+  sd: number | null;
+}
+export interface SurveyTimeBlock {
+  n: number;
+  minutes_before: MinutesStats;
+  minutes_after: MinutesStats;
+  reduction_percent: number | null;
+}
+export interface SurveySummary {
+  v1: SurveyVersionSummary;
+  v2: SurveyVersionSummary;
+  // Part 1 time answers pooled across both rounds, one per person (v2 wins).
+  time: SurveyTimeBlock & {
+    from_v1: number;
+    from_v2: number;
+    by_category: Record<string, SurveyTimeBlock>;
+    used_ai_before_count: number;
+  };
   responses: SurveyResponse[];
 }
 export interface ApprovalByMode {
@@ -403,8 +423,11 @@ export const api = {
   async submitSurvey(input: SurveyInput): Promise<void> {
     await request("/survey", { method: "POST", body: JSON.stringify(input) });
   },
-  async adminGetSurveySummary(includeDemo: boolean): Promise<SurveySummary> {
-    return request(`/admin/survey/summary?include_demo=${includeDemo}`);
+  async submitSurveyV2(input: SurveyV2Input): Promise<void> {
+    await request("/survey/v2", { method: "POST", body: JSON.stringify(input) });
+  },
+  async adminGetSurveySummary(): Promise<SurveySummary> {
+    return request("/admin/survey/summary");
   },
   async createSupportTicket(message: string): Promise<SupportTicket> {
     return request("/support-tickets", {

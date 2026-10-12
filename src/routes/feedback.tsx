@@ -7,7 +7,7 @@ import { AppShell, PageHeader, useCurrentUser } from "@/components/app-shell";
 import { useRequireAuth } from "@/lib/auth-guard";
 import { markSurveySubmitted, useSurveyStatus } from "@/components/survey-prompt";
 import { api, businessCategoryLabel, type SurveyBusinessCategory } from "@/lib/api";
-import { SURVEY_SECTIONS } from "@/lib/survey";
+import { SURVEY_V2_ITEM_COUNT, SURVEY_V2_SECTIONS } from "@/lib/survey";
 
 export const Route = createFileRoute("/feedback")({
   head: () => ({
@@ -53,7 +53,7 @@ function FeedbackPage() {
   const [usedAiBefore, setUsedAiBefore] = useState<boolean | null>(null);
   const [minutesBefore, setMinutesBefore] = useState("");
   const [minutesAfter, setMinutesAfter] = useState("");
-  const [scores, setScores] = useState<(number | null)[]>(Array(10).fill(null));
+  const [scores, setScores] = useState<(number | null)[]>(Array(SURVEY_V2_ITEM_COUNT).fill(null));
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
@@ -68,22 +68,22 @@ function FeedbackPage() {
     isMinutes(minutesBefore) &&
     isMinutes(minutesAfter);
   const answeredCount = scores.filter((s) => s !== null).length;
-  const step2Valid = answeredCount === 10;
+  const step2Valid = answeredCount === SURVEY_V2_ITEM_COUNT;
 
   async function submit() {
     if (!user || !step1Valid || !step2Valid || submitting) return;
     setSubmitting(true);
     try {
-      await api.submitSurvey({
+      await api.submitSurveyV2({
         business_category: effectiveCategory!,
         business_category_other: effectiveCategory === "other" ? categoryOther.trim() : null,
         used_ai_before: usedAiBefore!,
         minutes_before: Number(minutesBefore),
         minutes_after: Number(minutesAfter),
-        scores: scores as number[],
+        answers: scores as number[],
         comment: comment.trim() || null,
       });
-      markSurveySubmitted(user.email);
+      markSurveySubmitted(user.email, 2);
       queryClient.invalidateQueries({ queryKey: ["survey", "me"] });
       setDone(true);
       window.scrollTo({ top: 0 });
@@ -115,7 +115,7 @@ function FeedbackPage() {
         <div className="mx-auto max-w-xl p-6 md:p-8">
           <div className="glass-card rounded-2xl p-8 text-center">
             <CheckCircle2 className="mx-auto mb-4 h-14 w-14 text-teal" />
-            <h1 className="mb-2 text-xl font-extrabold">ขอบคุณที่ตอบแบบประเมินค่ะ 💛</h1>
+            <h1 className="mb-2 text-xl font-extrabold">ขอบคุณ ท่านได้ตอบแบบประเมินแล้ว</h1>
             <p className="mb-6 text-sm text-muted-foreground">
               ความเห็นของคุณจะช่วยให้ FAHSAI พัฒนาให้ดียิ่งขึ้น
             </p>
@@ -208,8 +208,8 @@ function FeedbackPage() {
             <p className="text-sm text-muted-foreground">
               แตะตัวเลขที่ตรงกับความคิดเห็นของท่าน • 5 = มากที่สุด … 1 = น้อยที่สุด
             </p>
-            {SURVEY_SECTIONS.map((section, sectionIndex) => {
-              const offset = SURVEY_SECTIONS.slice(0, sectionIndex).reduce(
+            {SURVEY_V2_SECTIONS.map((section, sectionIndex) => {
+              const offset = SURVEY_V2_SECTIONS.slice(0, sectionIndex).reduce(
                 (n, s) => n + s.items.length,
                 0,
               );
@@ -222,7 +222,7 @@ function FeedbackPage() {
                       return (
                         <div key={index}>
                           <div className="mb-2 text-sm">
-                            {index + 1}. {text}
+                            {sectionIndex + 1}.{i + 1} {text}
                           </div>
                           <div className="grid grid-cols-5 gap-1.5">
                             {SCALE.map((s) => {
@@ -294,7 +294,9 @@ function FeedbackPage() {
               onClick={() => goTo(step + 1)}
               className="flex items-center gap-1 rounded-xl bg-gradient-to-r from-gold to-teal px-5 py-2.5 text-sm font-bold text-primary-foreground disabled:opacity-40"
             >
-              {step === 1 && !step2Valid ? `ตอบแล้ว ${answeredCount}/10` : "ถัดไป"}
+              {step === 1 && !step2Valid
+                ? `ตอบแล้ว ${answeredCount}/${SURVEY_V2_ITEM_COUNT}`
+                : "ถัดไป"}
               <ChevronRight className="h-4 w-4" />
             </button>
           ) : isAdmin ? (
@@ -321,7 +323,8 @@ function FeedbackPage() {
 function isMinutes(value: string) {
   if (value.trim() === "") return false;
   const n = Number(value);
-  return Number.isInteger(n) && n >= 0 && n <= 1440;
+  // v2 asks for a positive number of minutes (matches the backend).
+  return Number.isInteger(n) && n >= 1 && n <= 1440;
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
