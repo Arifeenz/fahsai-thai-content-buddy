@@ -29,7 +29,11 @@ import logo from "@/assets/fahsai-logo.png";
 import { api, type TeamPage } from "@/lib/api";
 import { useState, type ReactNode } from "react";
 import { Drawer, DrawerContent, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer";
-import { SurveyFloatingButton, SurveySidebarLink } from "@/components/survey-prompt";
+import {
+  SurveyFloatingButton,
+  SurveySidebarLink,
+  useSurveyStatus,
+} from "@/components/survey-prompt";
 
 export function useCurrentUserQuery() {
   return useQuery({ queryKey: ["me"], queryFn: () => api.getMe(), retry: false });
@@ -106,6 +110,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
   const user = useCurrentUser();
+  const showSurveyFab = useSurveyStatus(user).visible && pathname !== "/feedback";
   const allItems = user?.role === "admin" ? adminNavItems : userNavItems;
   // A restricted team member (allowed_pages is a real array, not null) only
   // sees nav items for pages the owner granted -- this is purely cosmetic,
@@ -210,7 +215,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         <span className="font-extrabold tracking-wide">FAHSAI</span>
       </header>
 
-      <main className="min-w-0 flex-1 pb-24 md:pb-8">
+      {/* pb-40 leaves room for the floating survey button above the bottom nav */}
+      <main className={"min-w-0 flex-1 md:pb-8 " + (showSurveyFab ? "pb-40" : "pb-24")}>
         {user?.is_demo && (
           <div className="flex flex-wrap items-center gap-3 border-b border-border bg-teal/10 px-4 py-2.5 text-sm md:px-8">
             <Info className="h-4 w-4 shrink-0 text-teal" />
@@ -243,7 +249,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         {children}
       </main>
 
-      {pathname !== "/feedback" && <SurveyFloatingButton user={user} />}
+      {showSurveyFab && <SurveyFloatingButton user={user} />}
 
       {/* Mobile bottom nav */}
       <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-sidebar-border bg-sidebar/95 backdrop-blur md:hidden">

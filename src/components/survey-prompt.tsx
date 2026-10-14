@@ -183,18 +183,43 @@ export function SurveySidebarLink({ user }: { user: AuthUser | undefined }) {
   );
 }
 
+// Collapses to an icon while the user scrolls down (so it stops covering
+// buttons on the right edge) and shows its label again near the top or when
+// they scroll back up.
+function useCompactOnScrollDown() {
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    let last = window.scrollY;
+    const onScroll = () => {
+      const y = window.scrollY;
+      if (Math.abs(y - last) < 8) return;
+      setCompact(y > 120 && y > last);
+      last = y;
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  return compact;
+}
+
 // Mobile bottom nav is already full, so on phones the always-visible entry
-// point floats just above it instead.
+// point floats just above it instead. AppShell adds extra bottom padding while
+// it shows, so the end of every page can scroll clear of it.
 export function SurveyFloatingButton({ user }: { user: AuthUser | undefined }) {
   const { visible } = useSurveyStatus(user);
+  const compact = useCompactOnScrollDown();
   if (!visible) return null;
   return (
     <Link
       to="/feedback"
-      className="fixed bottom-20 right-4 z-30 flex items-center gap-2 rounded-full bg-gradient-to-r from-gold to-teal px-4 py-2.5 text-sm font-bold text-primary-foreground shadow-lg md:hidden"
+      aria-label="ประเมินระบบ"
+      className={
+        "fixed bottom-20 right-4 z-30 flex h-11 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-gold to-teal text-sm font-bold text-primary-foreground shadow-lg transition-all md:hidden " +
+        (compact ? "w-11" : "px-4")
+      }
     >
-      <ClipboardCheck className="h-4 w-4" />
-      ประเมินระบบ
+      <ClipboardCheck className="h-5 w-5 shrink-0" />
+      {!compact && "ประเมินระบบ"}
     </Link>
   );
 }

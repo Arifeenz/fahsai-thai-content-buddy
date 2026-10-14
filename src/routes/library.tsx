@@ -125,6 +125,15 @@ function ContentCard({ item }: { item: ContentItem }) {
     onError: () => toast.error("ลบไม่สำเร็จ ลองอีกครั้งนะคะ"),
   });
 
+  // Delete is irreversible and sits next to "copy", so it takes two taps: the
+  // first arms it (shown in red), a second within 4 seconds confirms.
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  useEffect(() => {
+    if (!confirmDelete) return;
+    const t = setTimeout(() => setConfirmDelete(false), 4000);
+    return () => clearTimeout(t);
+  }, [confirmDelete]);
+
   async function handleCopy() {
     try {
       await navigator.clipboard.writeText(item.preview);
@@ -152,7 +161,7 @@ function ContentCard({ item }: { item: ContentItem }) {
         {(isTruncated || expanded) && (
           <button
             onClick={() => setExpanded((v) => !v)}
-            className="mt-1 flex items-center gap-0.5 text-[11px] text-teal hover:underline"
+            className="mt-1 flex min-h-8 items-center gap-0.5 py-1 text-xs text-teal hover:underline"
           >
             {expanded ? (
               <>
@@ -169,16 +178,21 @@ function ContentCard({ item }: { item: ContentItem }) {
           <ContentFeedbackControl item={item} />
           <button
             onClick={handleCopy}
-            className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+            className="flex h-9 items-center gap-1.5 rounded-full border border-border px-3 text-xs text-muted-foreground hover:text-foreground"
           >
-            <Copy className="h-3.5 w-3.5" /> คัดลอก
+            <Copy className="h-4 w-4" /> คัดลอก
           </button>
           <button
-            onClick={() => deleteMutation.mutate()}
+            onClick={() => (confirmDelete ? deleteMutation.mutate() : setConfirmDelete(true))}
             disabled={deleteMutation.isPending}
-            className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-destructive disabled:opacity-60"
+            className={
+              "flex h-9 items-center gap-1.5 rounded-full border px-3 text-xs transition disabled:opacity-60 " +
+              (confirmDelete
+                ? "border-destructive bg-destructive/15 font-semibold text-destructive"
+                : "border-transparent text-muted-foreground hover:text-destructive")
+            }
           >
-            <Trash2 className="h-3.5 w-3.5" /> ลบ
+            <Trash2 className="h-4 w-4" /> {confirmDelete ? "แตะอีกครั้งเพื่อลบ" : "ลบ"}
           </button>
         </div>
         <PostUrlField item={item} />

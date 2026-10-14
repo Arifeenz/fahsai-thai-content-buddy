@@ -76,7 +76,9 @@ function AdminSurveyPage() {
         {!data ? (
           <div className="text-sm text-muted-foreground">กำลังโหลด...</div>
         ) : (
-          <div className="grid gap-6">
+          // minmax(0,1fr): grid items default to min-width:auto and would grow to the
+          // tables' 560px, widening the whole page instead of scrolling the table
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-6">
             <TimeSection time={data.time} />
 
             <div
@@ -191,7 +193,7 @@ function VersionSection({
     );
   }
   return (
-    <div className="grid gap-6">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-6">
       <div className="grid gap-4 sm:grid-cols-3">
         <Stat label="จำนวนผู้ตอบ" value={`${summary.total} คน`} />
         <Stat

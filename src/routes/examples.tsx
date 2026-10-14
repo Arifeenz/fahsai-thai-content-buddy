@@ -206,13 +206,14 @@ function ExamplesPage() {
               />
             )}
           </div>
-          <div className="mb-3 flex gap-2">
+          {/* 2 columns on phones -- four platforms in one row overflowed a 360px screen */}
+          <div className="mb-3 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
             {platformsForCategory.map(({ key, icon: Icon }) => (
               <button
                 key={key}
                 onClick={() => setPlatform(key)}
                 className={
-                  "flex items-center gap-2 rounded-full border px-4 py-2 text-sm " +
+                  "flex items-center justify-center gap-2 rounded-full border px-4 py-2 text-sm " +
                   (platform === key
                     ? "border-teal bg-teal/15 text-teal"
                     : "border-border text-muted-foreground hover:text-foreground")
