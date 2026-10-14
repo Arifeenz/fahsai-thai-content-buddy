@@ -120,7 +120,11 @@ function buildCalendarCells(viewDate: Date): CalendarCell[] {
   }
   let trailDay = 1;
   while (cells.length % 7 !== 0) {
-    cells.push({ iso: dateToIso(new Date(year, month + 1, trailDay)), day: trailDay, inMonth: false });
+    cells.push({
+      iso: dateToIso(new Date(year, month + 1, trailDay)),
+      day: trailDay,
+      inMonth: false,
+    });
     trailDay++;
   }
   return cells;
@@ -358,7 +362,7 @@ function SchedulePage() {
             <button
               type="button"
               onClick={goToToday}
-              className="ml-1 rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground"
+              className="ml-1 min-h-9 rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground"
             >
               วันนี้
             </button>

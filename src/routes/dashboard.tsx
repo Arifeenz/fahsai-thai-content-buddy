@@ -108,13 +108,13 @@ function EventsCalendarCard() {
           <CalendarDays className="h-4 w-4 text-teal" />
           <h2 className="text-sm font-bold">วันสำคัญที่ใกล้จะมาถึง</h2>
         </div>
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <label className="-my-2 flex min-h-10 cursor-pointer items-center gap-2 text-xs text-muted-foreground">
           ซ่อนวันของระบบ
           <input
             type="checkbox"
             checked={user?.hide_global_events ?? false}
             onChange={toggleHideGlobal}
-            className="h-4 w-4 accent-teal"
+            className="h-5 w-5 accent-teal"
           />
         </label>
       </div>
@@ -129,17 +129,19 @@ function EventsCalendarCard() {
               to="/create"
               search={{ date: addDaysIso(ev.days_until) }}
               title="สร้างโพสต์"
-              className="shrink-0 text-muted-foreground hover:text-teal"
+              aria-label="สร้างโพสต์"
+              className="-my-1 grid h-9 w-9 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-white/5 hover:text-teal"
             >
-              <CalendarPlus className="h-3.5 w-3.5" />
+              <CalendarPlus className="h-4 w-4" />
             </Link>
             {ev.is_personal && (
               <button
                 onClick={() => removeEvent(ev.id)}
                 title="ลบ"
-                className="shrink-0 text-muted-foreground hover:text-destructive"
+                aria-label="ลบ"
+                className="-my-1 grid h-9 w-9 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-white/5 hover:text-destructive"
               >
-                <Trash2 className="h-3.5 w-3.5" />
+                <Trash2 className="h-4 w-4" />
               </button>
             )}
           </li>
@@ -151,7 +153,7 @@ function EventsCalendarCard() {
       {events.length > 0 && (
         <Link
           to="/schedule"
-          className="mt-3 inline-flex items-center gap-1 text-xs text-teal hover:underline"
+          className="mt-1 inline-flex min-h-10 items-center gap-1 text-xs text-teal hover:underline"
         >
           ดูตารางโพสต์ทั้งหมด <ArrowRight className="h-3 w-3" />
         </Link>
@@ -182,7 +184,11 @@ function EventsCalendarCard() {
           onChange={(e) => setDay(Number(e.target.value))}
           className="w-14 rounded-full border border-border bg-input px-2 py-1.5 text-xs"
         />
-        <button type="submit" className="rounded-full bg-teal/15 p-1.5 text-teal hover:bg-teal/25">
+        <button
+          type="submit"
+          aria-label="เพิ่มวันสำคัญ"
+          className="grid h-9 w-9 place-items-center rounded-full bg-teal/15 text-teal hover:bg-teal/25"
+        >
           <Plus className="h-4 w-4" />
         </button>
       </form>
@@ -429,9 +435,7 @@ function Dashboard() {
             user?.email ? `ภาพรวมคอนเทนต์ของวันนี้ • ${user.email}` : "ภาพรวมคอนเทนต์ของวันนี้"
           }
         />
-        {dailyQuote && (
-          <p className="-mt-4 mb-6 text-sm italic text-teal">"{dailyQuote}"</p>
-        )}
+        {dailyQuote && <p className="-mt-4 mb-6 text-sm italic text-teal">"{dailyQuote}"</p>}
         <SurveyDashboardCard user={user} />
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -505,7 +509,10 @@ function Dashboard() {
           <div className="glass-card rounded-2xl p-6 lg:col-span-2">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-bold">คอนเทนต์ล่าสุด</h2>
-              <Link to="/library" className="text-sm text-teal hover:underline">
+              <Link
+                to="/library"
+                className="-my-2 inline-flex min-h-10 items-center text-sm text-teal hover:underline"
+              >
                 ดูทั้งหมด →
               </Link>
             </div>

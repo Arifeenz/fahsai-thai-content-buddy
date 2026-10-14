@@ -564,7 +564,7 @@ function CreateContent() {
                         key={chip.label}
                         type="button"
                         onClick={() => insertChip(chip.insert)}
-                        className="rounded-full border border-dashed border-border px-3 py-1 text-xs text-muted-foreground hover:border-teal hover:text-teal"
+                        className="min-h-8 rounded-full border border-dashed border-border px-3 py-1 text-xs text-muted-foreground hover:border-teal hover:text-teal"
                       >
                         + {chip.label}
                       </button>

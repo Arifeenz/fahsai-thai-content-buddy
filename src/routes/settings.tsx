@@ -31,7 +31,7 @@ export const Route = createFileRoute("/settings")({
 
 function Row({ icon: Icon, title, desc, children }: any) {
   return (
-    <div className="glass-card grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 rounded-2xl p-5">
+    <div className="glass-card grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 sm:grid-cols-[auto_minmax(0,1fr)_auto] rounded-2xl p-5">
       <div className="grid h-10 w-10 place-items-center rounded-lg bg-white/5 text-teal">
         <Icon className="h-5 w-5" />
       </div>
@@ -39,7 +39,8 @@ function Row({ icon: Icon, title, desc, children }: any) {
         <div className="font-bold">{title}</div>
         <div className="text-sm text-muted-foreground">{desc}</div>
       </div>
-      <div className="shrink-0">{children}</div>
+      {/* below the text on phones, so long descriptions keep the full card width */}
+      <div className="col-start-2 shrink-0 sm:col-start-auto">{children}</div>
     </div>
   );
 }
@@ -100,7 +101,7 @@ function ChangePasswordRow({ hasPassword }: { hasPassword: boolean }) {
           setOpen((o) => !o);
           reset();
         }}
-        className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 text-left"
+        className="grid w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 sm:grid-cols-[auto_minmax(0,1fr)_auto] text-left"
       >
         <div className="grid h-10 w-10 place-items-center rounded-lg bg-white/5 text-teal">
           <Lock className="h-5 w-5" />
@@ -113,7 +114,7 @@ function ChangePasswordRow({ hasPassword }: { hasPassword: boolean }) {
               : "ตั้งรหัสผ่านสำหรับบัญชีนี้ (ปัจจุบันเข้าผ่าน Google)"}
           </div>
         </div>
-        <span className="shrink-0 rounded-full border border-border px-4 py-1.5 text-xs text-muted-foreground">
+        <span className="col-start-2 shrink-0 justify-self-start rounded-full border border-border px-4 py-1.5 text-xs text-muted-foreground sm:col-start-auto sm:justify-self-auto">
           {open ? "ปิด" : hasPassword ? "เปลี่ยน" : "ตั้งรหัสผ่าน"}
         </span>
       </button>
@@ -192,7 +193,7 @@ function ReportIssueRow() {
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 text-left"
+        className="grid w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 sm:grid-cols-[auto_minmax(0,1fr)_auto] text-left"
       >
         <div className="grid h-10 w-10 place-items-center rounded-lg bg-white/5 text-teal">
           <LifeBuoy className="h-5 w-5" />
@@ -201,7 +202,7 @@ function ReportIssueRow() {
           <div className="font-bold">แจ้งปัญหา</div>
           <div className="text-sm text-muted-foreground">เจอปัญหาการใช้งาน แจ้งทีมงานได้ที่นี่</div>
         </div>
-        <span className="shrink-0 rounded-full border border-border px-4 py-1.5 text-xs text-muted-foreground">
+        <span className="col-start-2 shrink-0 justify-self-start rounded-full border border-border px-4 py-1.5 text-xs text-muted-foreground sm:col-start-auto sm:justify-self-auto">
           {open ? "ปิด" : "แจ้งปัญหา"}
         </span>
       </button>
@@ -354,7 +355,7 @@ function TeamManagementCard() {
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 text-left"
+        className="grid w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 sm:grid-cols-[auto_minmax(0,1fr)_auto] text-left"
       >
         <div className="grid h-10 w-10 place-items-center rounded-lg bg-white/5 text-teal">
           <Users className="h-5 w-5" />
@@ -365,7 +366,7 @@ function TeamManagementCard() {
             เชิญทีมงานมาช่วยดูแลร้าน สูงสุด {MAX_TEAM_SIZE} คนรวมคุณ
           </div>
         </div>
-        <span className="shrink-0 rounded-full border border-border px-4 py-1.5 text-xs text-muted-foreground">
+        <span className="col-start-2 shrink-0 justify-self-start rounded-full border border-border px-4 py-1.5 text-xs text-muted-foreground sm:col-start-auto sm:justify-self-auto">
           {open ? "ปิด" : "จัดการ"}
         </span>
       </button>

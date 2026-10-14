@@ -27,7 +27,7 @@ import {
 import { toast } from "sonner";
 import logo from "@/assets/fahsai-logo.png";
 import { api, type TeamPage } from "@/lib/api";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Drawer, DrawerContent, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer";
 import {
   SurveyFloatingButton,
@@ -71,6 +71,39 @@ const adminNavItems = [
 ] as const;
 
 const exactMatchOnly = new Set(["/dashboard", "/admin"]);
+
+// The bottom nav columns are ~60px wide on a phone; these long labels were
+// cut to "อัตลักษณ์แ…". The sidebar and the "เพิ่มเติม" drawer keep the full ones.
+const MOBILE_SHORT_LABELS: Record<string, string> = {
+  "/brand-dna": "แบรนด์",
+  "/create": "สร้างโพสต์",
+  "/admin": "ภาพรวม",
+  "/admin/content": "คอนเทนต์",
+  "/admin/templates": "เทมเพลต",
+};
+
+// Banner close buttons remember the choice for the rest of the browser session
+// (AppShell remounts on every page, so plain state brought banners back).
+// Read after mount so server and client render the same first frame.
+function useSessionDismissed(key: string): [boolean, () => void] {
+  const [dismissed, setDismissed] = useState(false);
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem(key) === "1") setDismissed(true);
+    } catch {
+      // storage blocked: the banner simply shows again on the next page
+    }
+  }, [key]);
+  function dismiss() {
+    try {
+      sessionStorage.setItem(key, "1");
+    } catch {
+      // ignore
+    }
+    setDismissed(true);
+  }
+  return [dismissed, dismiss];
+}
 
 // Mobile bottom nav only has room for a handful of icon+label columns before
 // Thai labels start crowding/overlapping each other -- cap what's shown
@@ -123,7 +156,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           return pageKey === undefined || allowedPages.includes(pageKey);
         })
       : allItems;
-  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [bannerDismissed, dismissEmailBanner] = useSessionDismissed("fahsai.banner.verify-email");
+  const [demoBannerDismissed, dismissDemoBanner] = useSessionDismissed("fahsai.banner.demo");
   const [resending, setResending] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
 
@@ -217,13 +251,21 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {/* pb-40 leaves room for the floating survey button above the bottom nav */}
       <main className={"min-w-0 flex-1 md:pb-8 " + (showSurveyFab ? "pb-40" : "pb-24")}>
-        {user?.is_demo && (
-          <div className="flex flex-wrap items-center gap-3 border-b border-border bg-teal/10 px-4 py-2.5 text-sm md:px-8">
+        {user?.is_demo && !demoBannerDismissed && (
+          <div className="flex items-center gap-3 border-b border-border bg-teal/10 py-1.5 pl-4 pr-1 text-sm md:px-8">
             <Info className="h-4 w-4 shrink-0 text-teal" />
             <span className="flex-1">
               นี่คือบัญชีทดลองที่แชร์กับผู้ใช้ท่านอื่น ข้อมูลอาจถูกแก้ไข/รีเซ็ตได้ตลอดเวลา
               และมีการจำกัดจำนวนครั้งสร้างคอนเทนต์ต่อชั่วโมง
             </span>
+            <button
+              onClick={dismissDemoBanner}
+              className="grid h-10 w-10 shrink-0 place-items-center text-muted-foreground hover:text-foreground"
+              title="ปิด"
+              aria-label="ปิด"
+            >
+              ✕
+            </button>
           </div>
         )}
         {user && !user.email_verified && !bannerDismissed && (
@@ -233,14 +275,15 @@ export function AppShell({ children }: { children: ReactNode }) {
             <button
               onClick={resendVerification}
               disabled={resending}
-              className="font-semibold text-teal underline underline-offset-4 disabled:opacity-60"
+              className="-my-2 min-h-10 font-semibold text-teal underline underline-offset-4 disabled:opacity-60"
             >
               ส่งอีกครั้ง
             </button>
             <button
-              onClick={() => setBannerDismissed(true)}
-              className="text-muted-foreground hover:text-foreground"
+              onClick={dismissEmailBanner}
+              className="-my-2 grid h-10 w-10 shrink-0 place-items-center text-muted-foreground hover:text-foreground"
               title="ปิด"
+              aria-label="ปิด"
             >
               ✕
             </button>
@@ -266,7 +309,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                 }
               >
                 <Icon className="h-5 w-5" />
-                <span className="w-full truncate text-center">{label}</span>
+                <span className="w-full truncate text-center">
+                  {MOBILE_SHORT_LABELS[to] ?? label}
+                </span>
               </Link>
             );
           })}
