@@ -136,7 +136,30 @@ function ContentCard({ item }: { item: ContentItem }) {
 
   // Copying is how content leaves the app to be posted, same as on /create and
   // /schedule -- so a draft or approved item copied from here becomes "posted"
-  // (which is also what unlocks the post-link field below).
+  // (which is also what unlocks the post-link field below). The badge flips
+  // immediately and the save happens in the background; only this item is
+  // patched in the cache, so the whole list isn't refetched on every copy.
+  const markPostedMutation = useMutation({
+    mutationFn: () => api.markContentPosted(item.id),
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ["content"], exact: true });
+      const previous = queryClient.getQueryData<ContentItem[]>(["content"]);
+      queryClient.setQueryData<ContentItem[]>(["content"], (old) =>
+        old?.map((it) => (it.id === item.id ? { ...it, status: "posted" } : it)),
+      );
+      return { previous };
+    },
+    onSuccess: (saved) => {
+      queryClient.setQueryData<ContentItem[]>(["content"], (old) =>
+        old?.map((it) => (it.id === saved.id ? saved : it)),
+      );
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(["content"], context.previous);
+      toast.error("คัดลอกสำเร็จ แต่บันทึกสถานะไม่สำเร็จ ลองรีเฟรชนะคะ");
+    },
+  });
+
   async function handleCopy() {
     try {
       await navigator.clipboard.writeText(item.preview);
@@ -148,13 +171,8 @@ function ContentCard({ item }: { item: ContentItem }) {
       toast.success("คัดลอกข้อความแล้วค่ะ");
       return;
     }
-    try {
-      await api.markContentPosted(item.id);
-      queryClient.invalidateQueries({ queryKey: ["content"] });
-      toast.success("คัดลอกแล้วค่ะ ไปวางในแอปของคุณได้เลย 🎉");
-    } catch {
-      toast.error("คัดลอกสำเร็จ แต่บันทึกสถานะไม่สำเร็จ ลองรีเฟรชนะคะ");
-    }
+    toast.success("คัดลอกแล้วค่ะ ไปวางในแอปของคุณได้เลย 🎉");
+    markPostedMutation.mutate();
   }
 
   return (
