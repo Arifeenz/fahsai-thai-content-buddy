@@ -134,12 +134,26 @@ function ContentCard({ item }: { item: ContentItem }) {
     return () => clearTimeout(t);
   }, [confirmDelete]);
 
+  // Copying is how content leaves the app to be posted, same as on /create and
+  // /schedule -- so a draft or approved item copied from here becomes "posted"
+  // (which is also what unlocks the post-link field below).
   async function handleCopy() {
     try {
       await navigator.clipboard.writeText(item.preview);
-      toast.success("คัดลอกข้อความแล้วค่ะ");
     } catch {
       toast.error("คัดลอกไม่สำเร็จ ลองอีกครั้งนะคะ");
+      return;
+    }
+    if (item.status === "posted") {
+      toast.success("คัดลอกข้อความแล้วค่ะ");
+      return;
+    }
+    try {
+      await api.markContentPosted(item.id);
+      queryClient.invalidateQueries({ queryKey: ["content"] });
+      toast.success("คัดลอกแล้วค่ะ ไปวางในแอปของคุณได้เลย 🎉");
+    } catch {
+      toast.error("คัดลอกสำเร็จ แต่บันทึกสถานะไม่สำเร็จ ลองรีเฟรชนะคะ");
     }
   }
 
